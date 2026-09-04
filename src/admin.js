@@ -2,6 +2,7 @@
 // and suspend access.
 
 import { json, badRequest, notFound, clean, readJson } from './util.js';
+import * as ghl from './ghl.js';
 import { requireAdmin, publicUser } from './auth.js';
 import * as db from './db.js';
 import { sendAdvisorApprovedEmail } from './email.js';
@@ -77,6 +78,9 @@ export async function handleHealth(request, env) {
   const { response } = await requireAdmin(request, env);
   if (response) return response;
 
+  const url = new URL(request.url);
+  const wantScopes = url.searchParams.get('probe') === '1';
+
   let dbOk = false;
   let userCount = 0;
   try {
@@ -85,6 +89,11 @@ export async function handleHealth(request, env) {
     dbOk = true;
   } catch (e) {
     console.error('health db', e);
+  }
+
+  let scopes = null;
+  if (wantScopes && ghl.ghlConfigured(env)) {
+    scopes = await ghl.probeScopes(env, env.GHL_DEFAULT_LOCATION_ID || '');
   }
 
   return json({
@@ -102,6 +111,9 @@ export async function handleHealth(request, env) {
     },
     db: { ok: dbOk, users: userCount },
     appUrl: env.APP_URL || null,
+    // Which GHL areas this token can actually reach. Skipped unless asked for,
+    // since it costs one API call per area.
+    scopes,
     // Names of every binding and var the Worker can actually see. Values are
     // never included; this is here to catch a secret saved under the wrong
     // name or in the build environment instead of the runtime one.

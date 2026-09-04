@@ -313,6 +313,183 @@ export async function listAppointments(env, locationId, { calendarId, startTime,
 }
 
 // ---------------------------------------------------------------------------
+// Conversations and messages
+// ---------------------------------------------------------------------------
+export async function searchConversations(env, locationId, { contactId, query, limit = 40 } = {}) {
+  const data = await request(env, '/conversations/search', {
+    query: {
+      locationId,
+      contactId: contactId || undefined,
+      query: query || undefined,
+      limit: Math.min(Number(limit) || 40, 100),
+    },
+  });
+  return (data.conversations || []).map((c) => ({
+    id: pickId(c),
+    contactId: c.contactId || null,
+    contactName: c.fullName || c.contactName || '',
+    email: c.email || '',
+    phone: c.phone || '',
+    lastMessageBody: c.lastMessageBody || '',
+    lastMessageType: c.lastMessageType || '',
+    lastMessageDate: c.lastMessageDate || null,
+    unreadCount: Number(c.unreadCount || 0),
+    type: c.type || '',
+  }));
+}
+
+export async function listMessages(env, conversationId, { limit = 50 } = {}) {
+  const data = await request(env, `/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    query: { limit: Math.min(Number(limit) || 50, 100) },
+  });
+  // GHL nests the page under messages.messages on this endpoint.
+  const list = data.messages?.messages || data.messages || [];
+  return (Array.isArray(list) ? list : []).map((m) => ({
+    id: pickId(m),
+    body: m.body || '',
+    type: m.messageType || m.type || '',
+    // 1 = inbound from the contact, 2 = outbound from the advisor.
+    direction: m.direction || (m.type === 1 ? 'inbound' : 'outbound'),
+    status: m.status || '',
+    createdAt: m.dateAdded || m.createdAt || null,
+    attachments: Array.isArray(m.attachments) ? m.attachments : [],
+  }));
+}
+
+export async function sendMessage(env, { contactId, type, message, subject, html, conversationId }) {
+  const data = await request(env, '/conversations/messages', {
+    method: 'POST',
+    body: {
+      type,                       // SMS | Email
+      contactId,
+      conversationId: conversationId || undefined,
+      message: message || undefined,
+      subject: subject || undefined,
+      html: html || undefined,
+    },
+  });
+  return { id: pickId(data), conversationId: data.conversationId || conversationId || null };
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+export async function listContactTasks(env, contactId) {
+  const data = await request(env, `/contacts/${encodeURIComponent(contactId)}/tasks`);
+  return (data.tasks || []).map((t) => ({
+    id: pickId(t),
+    title: t.title || '',
+    body: t.body || '',
+    dueDate: t.dueDate || null,
+    completed: Boolean(t.completed),
+    assignedTo: t.assignedTo || null,
+  }));
+}
+
+export async function createContactTask(env, contactId, { title, body, dueDate, assignedTo }) {
+  const data = await request(env, `/contacts/${encodeURIComponent(contactId)}/tasks`, {
+    method: 'POST',
+    body: { title, body: body || undefined, dueDate: dueDate || undefined, assignedTo: assignedTo || undefined, completed: false },
+  });
+  return { id: pickId(data.task || data), title };
+}
+
+export async function setTaskCompleted(env, contactId, taskId, completed) {
+  await request(env, `/contacts/${encodeURIComponent(contactId)}/tasks/${encodeURIComponent(taskId)}/completed`, {
+    method: 'PUT',
+    body: { completed: Boolean(completed) },
+  });
+  return { id: taskId, completed: Boolean(completed) };
+}
+
+// ---------------------------------------------------------------------------
+// Location metadata: custom fields, tags, users
+// ---------------------------------------------------------------------------
+export async function listCustomFields(env, locationId) {
+  const data = await request(env, `/locations/${encodeURIComponent(locationId)}/customFields`);
+  return (data.customFields || []).map((f) => ({
+    id: pickId(f),
+    name: f.name || '',
+    fieldKey: f.fieldKey || '',
+    dataType: f.dataType || '',
+    model: f.model || 'contact',
+  }));
+}
+
+export async function listTags(env, locationId) {
+  const data = await request(env, `/locations/${encodeURIComponent(locationId)}/tags`);
+  return (data.tags || []).map((t) => ({ id: pickId(t), name: t.name || '' }));
+}
+
+export async function listUsers(env, locationId) {
+  const data = await request(env, '/users/', { query: { locationId } });
+  return (data.users || []).map((u) => ({
+    id: pickId(u),
+    name: u.name || [u.firstName, u.lastName].filter(Boolean).join(' '),
+    email: u.email || '',
+    role: u.roles?.role || '',
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Appointments (write)
+// ---------------------------------------------------------------------------
+export async function createAppointment(env, locationId, f) {
+  const data = await request(env, '/calendars/events/appointments', {
+    method: 'POST',
+    body: {
+      locationId,
+      calendarId: f.calendarId,
+      contactId: f.contactId,
+      startTime: f.startTime,
+      endTime: f.endTime || undefined,
+      title: f.title || undefined,
+      appointmentStatus: f.status || 'confirmed',
+      assignedUserId: f.assignedUserId || undefined,
+    },
+  });
+  const e = data.event || data.appointment || data;
+  return { id: pickId(e), title: e.title || f.title || '', startTime: e.startTime || f.startTime };
+}
+
+// ---------------------------------------------------------------------------
+// Scope probe
+//
+// A missing scope on the Private Integration Token surfaces as a 401 or 403,
+// not as an empty result. This pings one cheap read per area so an admin can
+// see exactly which parts of the token are usable, without reading the GHL
+// UI and guessing.
+// ---------------------------------------------------------------------------
+export async function probeScopes(env, locationId) {
+  const checks = {
+    contacts: () => request(env, '/contacts/', { query: { locationId, limit: 1 } }),
+    opportunities: () => request(env, '/opportunities/pipelines', { query: { locationId } }),
+    conversations: () => request(env, '/conversations/search', { query: { locationId, limit: 1 } }),
+    calendars: () => request(env, '/calendars/', { query: { locationId } }),
+    customFields: () => request(env, `/locations/${encodeURIComponent(locationId)}/customFields`),
+    tags: () => request(env, `/locations/${encodeURIComponent(locationId)}/tags`),
+    users: () => request(env, '/users/', { query: { locationId } }),
+  };
+
+  const entries = await Promise.all(
+    Object.entries(checks).map(async ([name, run]) => {
+      try {
+        await run();
+        return [name, { ok: true }];
+      } catch (e) {
+        const status = e instanceof GhlError ? e.status : 502;
+        return [name, {
+          ok: false,
+          status,
+          reason: status === 502 && /reject/i.test(e.message) ? 'scope or permission denied' : e.message,
+        }];
+      }
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
+// ---------------------------------------------------------------------------
 // Error to response
 //
 // Turns a GhlError into a JSON response the UI can render honestly, including
