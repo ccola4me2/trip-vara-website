@@ -48,3 +48,9 @@ GHL_API_VERSION = "2021-07-28"
 # White-labelled GoHighLevel app, used to deep-link the areas that have no
 # useful API (funnel builder, workflow editor, email builder and so on).
 GHL_APP_BASE = "https://app.concinnity.digital"
+
+# Keeps the local CRM copy current. Each run advances whichever sync jobs still
+# have work and no-ops cheaply once everything is complete and recently
+# refreshed, so idle runs cost almost nothing. Every 5 minutes.
+[triggers]
+crons = ["*/5 * * * *"]

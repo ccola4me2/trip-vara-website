@@ -3,6 +3,7 @@
 
 import { json, badRequest, notFound, clean, readJson } from './util.js';
 import * as ghl from './ghl.js';
+import { listSyncState, runSync, resetSync } from './sync.js';
 import { requireAdmin, publicUser } from './auth.js';
 import * as db from './db.js';
 import { sendAdvisorApprovedEmail, checkResend, sendTestEmail } from './email.js';
@@ -142,4 +143,28 @@ export async function handleTestEmail(request, env) {
   const result = await sendTestEmail(env, to);
   await db.logActivity(env, user.id, 'admin.testEmail', `Test email to ${to}`, { ok: result.ok });
   return json(result, result.ok ? 200 : 502);
+}
+
+/** Admin only. Sync status for the default location. */
+export async function handleSyncStatus(request, env) {
+  const { user, response } = await requireAdmin(request, env);
+  if (response) return response;
+  const locationId = ghl.locationFor(env, user);
+  return json({
+    locationId,
+    jobs: await listSyncState(env, locationId),
+    counts: await db.crmCounts(env, locationId),
+  });
+}
+
+/** Admin only. Runs a sync pass now. force=true restarts from scratch. */
+export async function handleRunSync(request, env) {
+  const { user, response } = await requireAdmin(request, env);
+  if (response) return response;
+  const body = await readJson(request);
+  const locationId = ghl.locationFor(env, user);
+  const result = await runSync(env, locationId, { force: Boolean(body.force) });
+  await db.logActivity(env, user.id, 'admin.sync',
+    body.force ? 'Started a full resync' : 'Ran a sync pass', result);
+  return json({ ok: true, result, jobs: await listSyncState(env, locationId) });
 }

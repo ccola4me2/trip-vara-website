@@ -3,36 +3,38 @@
 import { json, badRequest, clean, isValidEmail, normalizeEmail, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as ghl from './ghl.js';
-import { logActivity } from './db.js';
+import * as db from './db.js';
+import { upsertContact } from './sync.js';
 
 export async function handleListLeads(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
+  // Read from the local mirror: fast, and unaffected by upstream rate limits.
   const url = new URL(request.url);
-  try {
-    const result = await ghl.listContacts(env, ghl.locationFor(env, user), {
-      query: url.searchParams.get('q') || undefined,
-      limit: url.searchParams.get('limit') || 50,
-      startAfterId: url.searchParams.get('startAfterId') || undefined,
-      startAfter: url.searchParams.get('startAfter') || undefined,
-    });
-    return json(result);
-  } catch (e) {
-    return ghl.ghlErrorResponse(e);
-  }
+  const locationId = ghl.locationFor(env, user);
+  const result = await db.localContacts(env, locationId, {
+    query: clean(url.searchParams.get('q'), 80) || undefined,
+    limit: url.searchParams.get('limit') || 50,
+    offset: url.searchParams.get('offset') || 0,
+  });
+
+  // An empty mirror on a configured account means the first sync has not run
+  // yet, which is a different thing from having no contacts.
+  const state = await env.DB.prepare('SELECT status FROM sync_state WHERE id = ?')
+    .bind(`contacts:${locationId}`).first();
+  return json({ ...result, syncing: !state || state.status !== 'complete' });
 }
 
 export async function handleGetLead(request, env, contactId) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
+  const local = await db.localContact(env, contactId);
+  if (local) return json({ contact: local, notes: [] });
   try {
-    const [contact, notes] = await Promise.all([
-      ghl.getContact(env, contactId),
-      ghl.listContactNotes(env, contactId).catch(() => []),
-    ]);
+    const contact = await ghl.getContact(env, contactId);
     if (!contact) return json({ error: 'Contact not found.' }, 404);
-    return json({ contact, notes });
+    return json({ contact, notes: [] });
   } catch (e) {
     return ghl.ghlErrorResponse(e);
   }
@@ -53,11 +55,15 @@ export async function handleCreateLead(request, env) {
   if (email && !isValidEmail(email)) return badRequest('Enter a valid email address.');
 
   try {
-    const contact = await ghl.createContact(env, ghl.locationFor(env, user), {
+    const locationId = ghl.locationFor(env, user);
+    const contact = await ghl.createContact(env, locationId, {
       firstName, lastName, email, phone,
       source: clean(body.source, 80) || 'Trip Vara portal',
     });
-    await logActivity(env, user.id, 'lead.create', `Added lead ${contact.name}`, { contactId: contact.id });
+    // Mirror straight away rather than waiting for the next sync, so the new
+    // contact is in the list the moment the dialog closes.
+    if (contact && contact.id) await upsertContact(env, locationId, contact);
+    await db.logActivity(env, user.id, 'lead.create', `Added lead ${contact.name}`, { contactId: contact.id });
     return json({ ok: true, contact }, 201);
   } catch (e) {
     return ghl.ghlErrorResponse(e);
@@ -79,7 +85,8 @@ export async function handleUpdateLead(request, env, contactId) {
       email,
       phone: body.phone === undefined ? undefined : clean(body.phone, 40),
     });
-    await logActivity(env, user.id, 'lead.update', `Updated ${contact.name}`, { contactId });
+    if (contact && contact.id) await upsertContact(env, ghl.locationFor(env, user), contact);
+    await db.logActivity(env, user.id, 'lead.update', `Updated ${contact.name}`, { contactId });
     return json({ ok: true, contact });
   } catch (e) {
     return ghl.ghlErrorResponse(e);
@@ -96,7 +103,7 @@ export async function handleCreateLeadNote(request, env, contactId) {
 
   try {
     await ghl.createContactNote(env, contactId, note, user.ghl_user_id || undefined);
-    await logActivity(env, user.id, 'lead.note', 'Added a note', { contactId });
+    await db.logActivity(env, user.id, 'lead.note', 'Added a note', { contactId });
     const notes = await ghl.listContactNotes(env, contactId).catch(() => []);
     return json({ ok: true, notes }, 201);
   } catch (e) {
@@ -119,12 +126,10 @@ export async function handleContactDetail(request, env, contactId) {
   const locationId = ghl.locationFor(env, user);
 
   const [contact, notes, tasks, opportunities] = await Promise.all([
-    ghl.getContact(env, contactId),
+    db.localContact(env, contactId).then((c) => c || ghl.getContact(env, contactId)),
     ghl.listContactNotes(env, contactId).catch(() => null),
     ghl.listContactTasks(env, contactId).catch(() => null),
-    ghl.searchOpportunities(env, locationId, { limit: 100 })
-      .then((r) => r.opportunities.filter((o) => o.contactId === contactId))
-      .catch(() => null),
+    db.localOpportunitiesForContact(env, contactId).catch(() => null),
   ]).catch((e) => { throw e; });
 
   if (!contact) return json({ error: 'Contact not found.' }, 404);
@@ -159,7 +164,7 @@ export async function handleCreateTask(request, env, contactId) {
       dueDate: body.dueDate || undefined,
       assignedTo: user.ghl_user_id || undefined,
     });
-    await logActivity(env, user.id, 'task.create', `Added task "${title}"`, { contactId });
+    await db.logActivity(env, user.id, 'task.create', `Added task "${title}"`, { contactId });
     return json({ ok: true, task }, 201);
   } catch (e) {
     return ghl.ghlErrorResponse(e);
@@ -173,7 +178,7 @@ export async function handleToggleTask(request, env, contactId, taskId) {
   const body = await readJson(request);
   try {
     const task = await ghl.setTaskCompleted(env, contactId, taskId, Boolean(body.completed));
-    await logActivity(env, user.id, 'task.update',
+    await db.logActivity(env, user.id, 'task.update',
       body.completed ? 'Completed a task' : 'Reopened a task', { contactId, taskId });
     return json({ ok: true, task });
   } catch (e) {

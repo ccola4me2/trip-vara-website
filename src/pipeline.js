@@ -3,7 +3,8 @@
 import { json, badRequest, clean, oneOf, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as ghl from './ghl.js';
-import { logActivity } from './db.js';
+import * as db from './db.js';
+import { upsertOpportunity } from './sync.js';
 
 const OPP_STATUSES = ['open', 'won', 'lost', 'abandoned'];
 
@@ -11,7 +12,7 @@ export async function handleListPipelines(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
   try {
-    return json({ pipelines: await ghl.listPipelines(env, ghl.locationFor(env, user)) });
+    return json({ pipelines: await db.localPipelines(env, ghl.locationFor(env, user)) });
   } catch (e) {
     return ghl.ghlErrorResponse(e);
   }
@@ -30,18 +31,18 @@ export async function handleListOpportunities(request, env) {
   const locationId = ghl.locationFor(env, user);
 
   try {
-    const pipelines = await ghl.listPipelines(env, locationId);
+    const pipelines = await db.localPipelines(env, locationId);
     if (!pipelines.length) return json({ pipelines: [], pipeline: null, stages: [], opportunities: [] });
 
     const wanted = url.searchParams.get('pipelineId');
     const pipeline = pipelines.find((p) => p.id === wanted) || pipelines[0];
 
-    const { opportunities, total } = await ghl.searchOpportunities(env, locationId, {
+    const opportunities = await db.localOpportunities(env, locationId, {
       pipelineId: pipeline.id,
       status: url.searchParams.get('status') || undefined,
-      query: url.searchParams.get('q') || undefined,
-      limit: 100,
+      query: clean(url.searchParams.get('q'), 80) || undefined,
     });
+    const total = opportunities.length;
 
     // Group into the pipeline's stage order, with anything unstaged last.
     const byStage = new Map(pipeline.stages.map((s) => [s.id, []]));
@@ -102,7 +103,8 @@ export async function handleCreateOpportunity(request, env) {
       monetaryValue: body.monetaryValue,
       assignedTo: user.ghl_user_id || undefined,
     });
-    await logActivity(env, user.id, 'opportunity.create', `Created ${name}`, { id: opportunity.id });
+    if (opportunity && opportunity.id) await upsertOpportunity(env, ghl.locationFor(env, user), opportunity);
+    await db.logActivity(env, user.id, 'opportunity.create', `Created ${name}`, { id: opportunity.id });
     return json({ ok: true, opportunity }, 201);
   } catch (e) {
     return ghl.ghlErrorResponse(e);
@@ -123,7 +125,8 @@ export async function handleUpdateOpportunity(request, env, opportunityId) {
 
   try {
     const opportunity = await ghl.updateOpportunity(env, opportunityId, fields);
-    await logActivity(env, user.id, 'opportunity.update', `Updated ${opportunity.name}`, {
+    if (opportunity && opportunity.id) await upsertOpportunity(env, ghl.locationFor(env, user), opportunity);
+    await db.logActivity(env, user.id, 'opportunity.update', `Updated ${opportunity.name}`, {
       id: opportunityId, ...fields,
     });
     return json({ ok: true, opportunity });

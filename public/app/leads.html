@@ -58,10 +58,14 @@ const countEl = document.getElementById('count');
 const search = document.getElementById('search');
 const dialog = document.getElementById('lead-dialog');
 
-function render(contacts, total) {
+function render(contacts, total, syncing) {
   countEl.textContent = total ? `${total} contact${total === 1 ? '' : 's'}` : '';
   if (!contacts.length) {
-    panel.innerHTML = '<div class="empty"><h3>No leads yet</h3><p>Contacts you add here go straight into Trip Vara Tools.</p></div>';
+    // An empty list while the first import is still running is not the same
+    // as having no contacts, and saying so avoids a false alarm.
+    panel.innerHTML = syncing
+      ? '<div class="empty"><h3>Importing your contacts</h3><p>The first import is still running. This page fills in as it goes, usually within a few minutes.</p></div>'
+      : '<div class="empty"><h3>No leads yet</h3><p>Contacts you add here go straight into Trip Vara Tools.</p></div>';
     return;
   }
   panel.innerHTML = `<div class="table-wrap"><table>
@@ -92,7 +96,7 @@ async function load() {
   try {
     const q = search.value.trim();
     const data = await api(`/api/leads${q ? `?q=${encodeURIComponent(q)}` : ''}`, { signal: controller.signal });
-    render(data.contacts, data.total);
+    render(data.contacts, data.total, data.syncing);
   } catch (err) {
     if (err.name === 'AbortError') return;
     countEl.textContent = '';

@@ -22,6 +22,15 @@
       </select>
     </header>
     <div class="content">
+      <section class="card" id="sync">
+        <div class="card-head"><h2>CRM data sync</h2>
+          <div class="toolbar" style="margin:0;">
+            <button class="btn btn-ghost btn-sm" id="sync-now">Sync now</button>
+            <button class="btn btn-danger btn-sm" id="sync-full">Full resync</button>
+          </div>
+        </div>
+        <div id="sync-body" class="card-pad"><p class="spinner">Loading...</p></div>
+      </section>
       <section id="stats" class="stat-grid"></section>
       <section class="card" id="panel"><p class="spinner">Loading advisors...</p></section>
     </div>
@@ -99,7 +108,56 @@ async function load() {
     render(data.users, data.counts);
   } catch (err) { showError(panel, err); }
 }
+// --- CRM sync -------------------------------------------------------------
+const syncBody = document.getElementById('sync-body');
+const SYNC_TONE = { complete: 'badge-green', running: 'badge-amber', error: 'badge-red', idle: 'badge-navy' };
+
+function renderSync(d) {
+  const byKind = Object.fromEntries((d.jobs || []).map((j) => [j.kind, j]));
+  const row = (kind, label, count) => {
+    const j = byKind[kind];
+    const status = j ? j.status : 'never run';
+    const tone = SYNC_TONE[status] || 'badge-navy';
+    return `<tr><td><span class="name">${esc(label)}</span></td>
+      <td><span class="badge ${tone}">${esc(status)}</span>
+        ${j && j.detail ? `<div class="muted">${esc(j.detail)}</div>` : ''}</td>
+      <td class="num">${count}</td>
+      <td><span class="muted">${esc(j && j.updated_at ? timeAgo(j.updated_at) : '-')}</span></td></tr>`;
+  };
+  syncBody.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Data</th><th>Status</th><th class="num">Stored</th><th>Last run</th></tr></thead>
+      <tbody>
+        ${row('contacts', 'Contacts', d.counts.contacts)}
+        ${row('opportunities', 'Opportunities', d.counts.opportunities)}
+        ${row('pipelines', 'Pipelines', d.counts.pipelines)}
+      </tbody></table></div>
+    <p class="field-hint" style="margin-top:.9rem;">The portal reads from its own copy, so lists stay fast
+    and keep working when the upstream API is slow. A background job refreshes it every five minutes and
+    picks up where it left off, so a large first import finishes across several runs.</p>`;
+}
+
+async function loadSync() {
+  syncBody.innerHTML = '<p class="spinner">Loading...</p>';
+  try { renderSync(await api('/api/admin/sync')); }
+  catch (err) { showError(syncBody, err); }
+}
+
+document.getElementById('sync-now').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  try { renderSync(await api('/api/admin/sync', { method: 'POST', body: {} })); await loadSync(); }
+  catch (err) { alert(err.message); }
+  finally { e.target.disabled = false; }
+});
+
+document.getElementById('sync-full').addEventListener('click', async (e) => {
+  if (!confirm('Start a full resync? It re-reads everything from the CRM. Existing rows are updated, never deleted.')) return;
+  e.target.disabled = true;
+  try { await api('/api/admin/sync', { method: 'POST', body: { force: true } }); await loadSync(); }
+  catch (err) { alert(err.message); }
+  finally { e.target.disabled = false; }
+});
+
 filter.addEventListener('change', load);
-await load();
+await Promise.all([load(), loadSync()]);
 </script>
 </body></html>

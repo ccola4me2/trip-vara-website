@@ -38,8 +38,11 @@ import {
 import { handleDashboard, handleProduction } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth, handleTestEmail,
+  handleSyncStatus, handleRunSync,
 } from './admin.js';
 import { purgeExpiredSessions } from './db.js';
+import { runSync } from './sync.js';
+import { locationFor } from './ghl.js';
 
 // Pages any visitor may reach.
 const PUBLIC_PAGES = new Set([
@@ -90,9 +93,13 @@ export default {
     }
   },
 
-  // Housekeeping: drop expired sessions so the table does not grow forever.
+  // Keeps the local CRM copy current and drops expired sessions. Both are
+  // resumable or cheap, so an idle run costs almost nothing.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(purgeExpiredSessions(env).catch((e) => console.error('purge', e)));
+    ctx.waitUntil(
+      runSync(env, locationFor(env, null)).catch((e) => console.error('sync', e))
+    );
   },
 };
 
@@ -205,6 +212,8 @@ async function routeApi(request, env, path, method) {
   // ---- admin ------------------------------------------------------------
   if (path === '/api/admin/health' && method === 'GET') return handleHealth(request, env);
   if (path === '/api/admin/test-email' && method === 'POST') return handleTestEmail(request, env);
+  if (path === '/api/admin/sync' && method === 'GET') return handleSyncStatus(request, env);
+  if (path === '/api/admin/sync' && method === 'POST') return handleRunSync(request, env);
   if (path === '/api/admin/advisors' && method === 'GET') return handleListAdvisors(request, env);
   if (advisorMatch && method === 'PUT') {
     const id = decodeURIComponent(advisorMatch[1]);
