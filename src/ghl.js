@@ -560,6 +560,10 @@ export async function probeScopes(env, locationId) {
 export async function probeCapabilities(env, locationId) {
   const loc = encodeURIComponent(locationId);
   const alt = { altId: locationId, altType: 'location', limit: 1 };
+  // The invoice and media endpoints reject a request that omits these, with a
+  // 422 rather than a 4xx about permissions, so they have to be sent even for
+  // a probe that only cares whether the area is reachable.
+  const paged = { ...alt, offset: '0' };
 
   const areas = [
     ['contacts', 'Contacts', () => request(env, '/contacts/', { query: { locationId, limit: 1 } })],
@@ -579,13 +583,13 @@ export async function probeCapabilities(env, locationId) {
     ['campaigns', 'Campaigns', () => request(env, '/campaigns/', { query: { locationId } })],
     ['triggerLinks', 'Trigger links', () => request(env, '/links/', { query: { locationId } })],
     ['businesses', 'Businesses', () => request(env, '/businesses/', { query: { locationId } })],
-    ['invoices', 'Invoices', () => request(env, '/invoices/', { query: alt })],
-    ['invoiceTemplates', 'Invoice templates', () => request(env, '/invoices/template', { query: alt })],
+    ['invoices', 'Invoices', () => request(env, '/invoices/', { query: paged })],
+    ['invoiceTemplates', 'Invoice templates', () => request(env, '/invoices/template', { query: paged })],
     ['orders', 'Payment orders', () => request(env, '/payments/orders', { query: alt })],
     ['transactions', 'Transactions', () => request(env, '/payments/transactions', { query: alt })],
     ['subscriptions', 'Subscriptions', () => request(env, '/payments/subscriptions', { query: alt })],
     ['products', 'Products', () => request(env, '/products/', { query: { locationId, limit: 1 } })],
-    ['media', 'Media library', () => request(env, '/medias/files', { query: { ...alt, sortBy: 'createdAt', sortOrder: 'desc' } })],
+    ['media', 'Media library', () => request(env, '/medias/files', { query: { ...alt, sortBy: 'createdAt', sortOrder: 'desc', type: 'file' } })],
     ['blogs', 'Blogs', () => request(env, '/blogs/site/all', { query: { locationId, limit: 1, skip: 0 } })],
     ['funnels', 'Funnels', () => request(env, '/funnels/funnel/list', { query: { locationId } })],
     ['social', 'Social planner', () => request(env, `/social-media-posting/${loc}/accounts`)],
