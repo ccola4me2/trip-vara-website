@@ -25,7 +25,7 @@ import {
   handleUpdateBooking, handleDeleteBooking,
 } from './bookings.js';
 import { handleDashboard, handleProduction } from './reports.js';
-import { handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl } from './admin.js';
+import { handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth } from './admin.js';
 import { purgeExpiredSessions } from './db.js';
 
 // Pages any visitor may reach.
@@ -137,6 +137,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/reports/production' && method === 'GET') return handleProduction(request, env);
 
   // ---- admin ------------------------------------------------------------
+  if (path === '/api/admin/health' && method === 'GET') return handleHealth(request, env);
   if (path === '/api/admin/advisors' && method === 'GET') return handleListAdvisors(request, env);
   if (advisorMatch && method === 'PUT') {
     const id = decodeURIComponent(advisorMatch[1]);

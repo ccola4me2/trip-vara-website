@@ -65,3 +65,46 @@ export async function handleSetAdvisorGhl(request, env, userId) {
     `Bound ${updated.email} to location ${updated.ghl_location_id || 'default'}`, { userId });
   return json({ ok: true, user: publicUser(updated) });
 }
+
+/**
+ * Configuration health, admin only.
+ *
+ * Reports whether each secret and binding is actually reachable at runtime.
+ * Deliberately reports presence only, never a value, so it is safe to call
+ * from the browser and safe to paste into a support thread.
+ */
+export async function handleHealth(request, env) {
+  const { response } = await requireAdmin(request, env);
+  if (response) return response;
+
+  let dbOk = false;
+  let userCount = 0;
+  try {
+    const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
+    userCount = row?.n ?? 0;
+    dbOk = true;
+  } catch (e) {
+    console.error('health db', e);
+  }
+
+  return json({
+    ghl: {
+      tokenPresent: Boolean(env.GHL_API_TOKEN),
+      tokenLength: env.GHL_API_TOKEN ? String(env.GHL_API_TOKEN).length : 0,
+      defaultLocationId: env.GHL_DEFAULT_LOCATION_ID || null,
+      apiBase: env.GHL_API_BASE || null,
+      apiVersion: env.GHL_API_VERSION || null,
+    },
+    email: {
+      resendKeyPresent: Boolean(env.RESEND_API_KEY),
+      mailFrom: env.MAIL_FROM || null,
+      notifyEmail: env.NOTIFY_EMAIL || null,
+    },
+    db: { ok: dbOk, users: userCount },
+    appUrl: env.APP_URL || null,
+    // Names of every binding and var the Worker can actually see. Values are
+    // never included; this is here to catch a secret saved under the wrong
+    // name or in the build environment instead of the runtime one.
+    visibleKeys: Object.keys(env).sort(),
+  });
+}
