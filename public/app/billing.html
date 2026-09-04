@@ -96,7 +96,7 @@ function render(d) {
           <td>${i.dueDate ? esc(timeAgo(i.dueDate)) : '<span class="muted">-</span>'}</td>
           <td class="num">${money(i.totalCents)}</td>
           <td class="num">${money(i.paidCents)}</td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="empty"><h3>No invoices yet</h3><p>Invoices raised in GoHighLevel appear here.</p></div>';
+    : '<div class="empty"><h3>No invoices yet</h3><p>Invoices raised in your CRM appear here.</p></div>';
 
   document.getElementById('tx-count').textContent = d.unavailable.transactions ? 'unavailable' : `${d.transactions.length} shown`;
   panelTx.innerHTML = d.unavailable.transactions

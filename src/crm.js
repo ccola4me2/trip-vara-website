@@ -1,12 +1,15 @@
-// Deep links into GoHighLevel.
+// Deep links into the CRM.
 //
 // Some of the sub-account has no API worth building against: the funnel
 // builder, the workflow editor, the email builder. Rather than leave an
 // advisor at a dead end, the portal points straight at those screens, already
 // scoped to their location.
 //
-// The paths live in one array on purpose. GHL moves them occasionally, and a
-// wrong one should be a one-line fix rather than a hunt.
+// The paths live in one array on purpose. The upstream app moves them
+// occasionally, and a wrong one should be a one-line fix rather than a hunt.
+//
+// Nothing here names the underlying vendor. Advisors see "CRM" throughout;
+// the white-label host in GHL_APP_BASE is what they actually land on.
 
 import { json } from './util.js';
 import { requireUser } from './auth.js';
@@ -14,7 +17,7 @@ import * as ghl from './ghl.js';
 
 const SECTIONS = [
   { key: 'dashboard', label: 'Dashboard', path: 'dashboard',
-    note: 'The sub-account home in GoHighLevel.' },
+    note: 'Your CRM home.' },
   { key: 'workflows', label: 'Workflows', path: 'automation/workflows',
     note: 'Build and edit automations. The portal can add a contact to one, but not author it.' },
   { key: 'funnels', label: 'Funnels & websites', path: 'funnels-websites/funnels',

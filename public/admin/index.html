@@ -79,9 +79,9 @@ function render(users, counts) {
   }));
 
   panel.querySelectorAll('[data-bind]').forEach((btn) => btn.addEventListener('click', async () => {
-    const ghlLocationId = prompt('GoHighLevel location id (blank uses the shared default):', btn.dataset.loc);
+    const ghlLocationId = prompt('CRM location id (blank uses the shared default):', btn.dataset.loc);
     if (ghlLocationId === null) return;
-    const ghlUserId = prompt('GoHighLevel user id for this advisor (optional):', btn.dataset.usr);
+    const ghlUserId = prompt('CRM user id for this advisor (optional):', btn.dataset.usr);
     if (ghlUserId === null) return;
     try {
       await api(`/api/admin/advisors/${encodeURIComponent(btn.dataset.bind)}/ghl`,

@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Pipeline</h1><p class="sub">Open opportunities by stage, live from GoHighLevel.</p></div>
+      <div><h1>Pipeline</h1><p class="sub">Open opportunities by stage, live from your CRM.</p></div>
       <div class="toolbar" style="margin:0;">
         <select id="pipeline-select" aria-label="Pipeline" hidden></select>
         <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
@@ -74,7 +74,7 @@ let lastData = null;
 function render(data) {
   lastData = data;
   if (!data.pipeline) {
-    panel.innerHTML = '<div class="card"><div class="empty"><h3>No pipelines found</h3><p>Create a pipeline in GoHighLevel and it will show up here.</p></div></div>';
+    panel.innerHTML = '<div class="card"><div class="empty"><h3>No pipelines found</h3><p>Create a pipeline in your CRM and it will show up here.</p></div></div>';
     return;
   }
 

@@ -63,7 +63,7 @@ try {
     showError(document.getElementById('ghl-state'), { code: 'not_configured' });
   } else if (d.ghlStatus === 'error') {
     document.getElementById('ghl-state').innerHTML =
-      '<div class="notice notice-error">Could not reach GoHighLevel just now. Booking numbers above are still accurate.</div>';
+      '<div class="notice notice-error">Could not reach the CRM just now. Booking numbers above are still accurate.</div>';
   }
 
   const pay = d.upcomingPayments;
