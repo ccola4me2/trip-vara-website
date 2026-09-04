@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Media | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Media</h1><p class="sub">Files in your Trip Vara Tools library.</p></div>
+      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section class="card" id="panel"><p class="spinner">Loading files...</p></section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, showError } from '/js/app.js';
+await mountShell();
+const panel = document.getElementById('panel');
+const isImage = (n) => /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(n || '');
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading files...</p>';
+  try {
+    const d = await api('/api/library');
+    if (d.unavailable && d.unavailable.files) {
+      panel.innerHTML = '<div class="empty"><p>The media library is not available with the current Trip Vara Tools permissions.</p></div>';
+      return;
+    }
+    if (!d.files.length) {
+      panel.innerHTML = '<div class="empty"><h3>No files</h3><p>Anything uploaded to Trip Vara Tools appears here.</p></div>';
+      return;
+    }
+    panel.innerHTML = `<div class="media-grid">${d.files.map((f) => `
+      <a class="media-item" href="${esc(f.url)}" target="_blank" rel="noopener" style="text-decoration:none;display:block;">
+        ${isImage(f.name) && f.url
+          ? `<img src="${esc(f.url)}" alt="" loading="lazy">`
+          : '<div style="height:96px;display:flex;align-items:center;justify-content:center;color:var(--ink-400);font-size:.75rem;background:var(--navy-50);">file</div>'}
+        <div class="cap">${esc(f.name)}</div>
+      </a>`).join('')}</div>`;
+  } catch (err) { showError(document.getElementById('err'), err); panel.innerHTML = ''; }
+}
+document.getElementById('refresh').addEventListener('click', load);
+await load();
+</script>
+</body></html>

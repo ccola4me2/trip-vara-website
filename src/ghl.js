@@ -697,6 +697,250 @@ export async function listFormSubmissions(env, locationId, { formId, limit = 50,
 }
 
 // ---------------------------------------------------------------------------
+// Marketing: funnels, blogs, email templates, campaigns, trigger links, social
+//
+// All read-only. The builders behind these have no API and stay upstream, but
+// everything they produce is listed here.
+// ---------------------------------------------------------------------------
+export async function listFunnels(env, locationId) {
+  const data = await request(env, '/funnels/funnel/list', { query: { locationId } });
+  const list = data.funnels || data.data || [];
+  return (Array.isArray(list) ? list : []).map((f) => ({
+    id: pickId(f),
+    name: f.name || 'Funnel',
+    type: f.type || '',
+    url: f.url || '',
+    updatedAt: f.updatedAt || f.dateUpdated || null,
+  })).filter((f) => f.id);
+}
+
+export async function listBlogSites(env, locationId) {
+  const data = await request(env, '/blogs/site/all', { query: { locationId, limit: 50, skip: 0 } });
+  const list = data.data || data.blogs || data.sites || [];
+  return (Array.isArray(list) ? list : []).map((b) => ({
+    id: pickId(b),
+    name: b.name || 'Blog',
+    url: b.url || '',
+  })).filter((b) => b.id);
+}
+
+export async function listBlogPosts(env, locationId, blogId) {
+  const data = await request(env, '/blogs/posts/all', {
+    query: { locationId, blogId, limit: 50, offset: 0 },
+  });
+  const list = data.data || data.blogs || data.posts || [];
+  return (Array.isArray(list) ? list : []).map((b) => ({
+    id: pickId(b),
+    title: b.title || 'Post',
+    status: b.status || '',
+    url: b.urlSlug || b.url || '',
+    publishedAt: b.publishedAt || b.updatedAt || null,
+  })).filter((b) => b.id);
+}
+
+export async function listEmailTemplates(env, locationId) {
+  const data = await request(env, '/emails/builder', {
+    query: { locationId, limit: 50, offset: 0 },
+  });
+  const list = data.data || data.builders || data.templates || [];
+  return (Array.isArray(list) ? list : []).map((t) => ({
+    id: pickId(t) || t.templateId || null,
+    name: t.name || t.templateName || 'Template',
+    updatedAt: t.updatedAt || t.dateUpdated || null,
+    type: t.templateType || t.type || '',
+  })).filter((t) => t.id);
+}
+
+export async function listCampaigns(env, locationId) {
+  const data = await request(env, '/campaigns/', { query: { locationId } });
+  return (data.campaigns || []).map((c) => ({
+    id: pickId(c),
+    name: c.name || 'Campaign',
+    status: c.status || '',
+    createdAt: c.createdAt || null,
+  })).filter((c) => c.id);
+}
+
+export async function listTriggerLinks(env, locationId) {
+  const data = await request(env, '/links/', { query: { locationId } });
+  return (data.links || []).map((l) => ({
+    id: pickId(l),
+    name: l.name || 'Link',
+    redirectTo: l.redirectTo || '',
+    fieldKey: l.fieldKey || '',
+  })).filter((l) => l.id);
+}
+
+export async function listSocialAccounts(env, locationId) {
+  const data = await request(env, `/social-media-posting/${encodeURIComponent(locationId)}/accounts`);
+  const list = data.results?.accounts || data.accounts || [];
+  return (Array.isArray(list) ? list : []).map((a) => ({
+    id: pickId(a),
+    name: a.name || a.username || 'Account',
+    platform: a.platform || '',
+    avatar: a.avatar || '',
+  })).filter((a) => a.id);
+}
+
+export async function listSocialPosts(env, locationId) {
+  // This one is a POST that reads, which is unusual but is how the API works.
+  const now = Date.now();
+  const data = await request(env, `/social-media-posting/${encodeURIComponent(locationId)}/posts/list`, {
+    method: 'POST',
+    body: {
+      type: 'all',
+      accountIds: [],
+      fromDate: new Date(now - 90 * 86400000).toISOString(),
+      toDate: new Date(now + 90 * 86400000).toISOString(),
+    },
+  });
+  const list = data.results?.posts || data.posts || [];
+  return (Array.isArray(list) ? list : []).map((post) => ({
+    id: pickId(post),
+    summary: post.summary || post.text || '',
+    status: post.status || '',
+    platform: (post.accountIds && post.accountIds.length) ? 'scheduled' : '',
+    createdAt: post.createdAt || null,
+    publishedAt: post.publishedAt || post.scheduleDate || null,
+  })).filter((x) => x.id);
+}
+
+// ---------------------------------------------------------------------------
+// Catalog: products and prices
+// ---------------------------------------------------------------------------
+export async function listProducts(env, locationId, { limit = 100 } = {}) {
+  const data = await request(env, '/products/', {
+    query: { locationId, limit: Math.min(Number(limit) || 100, 100), offset: 0 },
+  });
+  const list = data.products || data.data || [];
+  return (Array.isArray(list) ? list : []).map((pr) => ({
+    id: pickId(pr),
+    name: pr.name || 'Product',
+    description: pr.description || '',
+    productType: pr.productType || '',
+    image: pr.image || '',
+    updatedAt: pr.updatedAt || null,
+  })).filter((pr) => pr.id);
+}
+
+export async function listProductPrices(env, locationId, productId) {
+  const data = await request(env, `/products/${encodeURIComponent(productId)}/price`, {
+    query: { locationId, limit: 20, offset: 0 },
+  });
+  const list = data.prices || data.data || [];
+  return (Array.isArray(list) ? list : []).map((pr) => ({
+    id: pickId(pr),
+    name: pr.name || '',
+    amountCents: Math.round(Number(pr.amount || 0) * 100),
+    currency: pr.currency || 'USD',
+    type: pr.type || '',
+  })).filter((x) => x.id);
+}
+
+// ---------------------------------------------------------------------------
+// Media library
+// ---------------------------------------------------------------------------
+export async function listMedia(env, locationId, { limit = 60 } = {}) {
+  const data = await request(env, '/medias/files', {
+    query: {
+      altId: locationId, altType: 'location', type: 'file',
+      sortBy: 'createdAt', sortOrder: 'desc',
+      limit: Math.min(Number(limit) || 60, 100), offset: 0,
+    },
+  });
+  const list = data.files || data.data || [];
+  return (Array.isArray(list) ? list : []).map((f) => ({
+    id: pickId(f),
+    name: f.name || 'File',
+    url: f.url || '',
+    path: f.path || '',
+    parentId: f.parentId || null,
+  })).filter((f) => f.id);
+}
+
+// ---------------------------------------------------------------------------
+// Account: location settings, custom values, custom objects, businesses
+// ---------------------------------------------------------------------------
+export async function getLocation(env, locationId) {
+  const data = await request(env, `/locations/${encodeURIComponent(locationId)}`);
+  const l = data.location || data;
+  return {
+    id: pickId(l),
+    name: l.name || '',
+    email: l.email || '',
+    phone: l.phone || '',
+    website: l.website || '',
+    timezone: l.timezone || '',
+    address: [l.address, l.city, l.state, l.postalCode, l.country].filter(Boolean).join(', '),
+  };
+}
+
+export async function listCustomValues(env, locationId) {
+  const data = await request(env, `/locations/${encodeURIComponent(locationId)}/customValues`);
+  return (data.customValues || []).map((v) => ({
+    id: pickId(v),
+    name: v.name || '',
+    fieldKey: v.fieldKey || '',
+    value: v.value || '',
+  })).filter((v) => v.id);
+}
+
+export async function listCustomObjects(env, locationId) {
+  const data = await request(env, '/objects/', { query: { locationId } });
+  const list = data.objects || data.data || [];
+  return (Array.isArray(list) ? list : []).map((o) => ({
+    id: pickId(o) || o.key || null,
+    key: o.key || '',
+    label: o.labels?.singular || o.name || o.key || 'Object',
+    plural: o.labels?.plural || '',
+  })).filter((o) => o.id);
+}
+
+export async function listBusinesses(env, locationId) {
+  const data = await request(env, '/businesses/', { query: { locationId } });
+  return (data.businesses || []).map((b) => ({
+    id: pickId(b),
+    name: b.name || 'Business',
+    email: b.email || '',
+    phone: b.phone || '',
+    website: b.website || '',
+  })).filter((b) => b.id);
+}
+
+// ---------------------------------------------------------------------------
+// Surveys
+// ---------------------------------------------------------------------------
+export async function listSurveys(env, locationId) {
+  const data = await request(env, '/surveys/', { query: { locationId, limit: 50, skip: 0 } });
+  return (data.surveys || []).map((sv) => ({
+    id: pickId(sv),
+    name: sv.name || 'Survey',
+    createdAt: sv.createdAt || null,
+  })).filter((sv) => sv.id);
+}
+
+export async function listSurveySubmissions(env, locationId, { surveyId, limit = 50, page = 1, q } = {}) {
+  const data = await request(env, '/surveys/submissions', {
+    query: {
+      locationId, surveyId: surveyId || undefined, q: q || undefined,
+      limit: Math.min(Number(limit) || 50, 100), page,
+    },
+  });
+  const list = data.submissions || [];
+  return {
+    submissions: list.map((sub) => ({
+      id: pickId(sub),
+      surveyId: sub.surveyId || null,
+      name: sub.name || '',
+      email: sub.email || '',
+      contactId: sub.contactId || null,
+      createdAt: sub.createdAt || null,
+    })),
+    total: Number(data.meta?.total ?? list.length ?? 0),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Scope probe
 //
 // A missing scope on the Private Integration Token surfaces as a 401 or 403,

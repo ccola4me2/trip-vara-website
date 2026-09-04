@@ -22,9 +22,10 @@ export async function handleBilling(request, env) {
   const locationId = ghl.locationFor(env, user);
 
   // Each source is independent, so one failing does not blank the page.
-  const [invoiceRes, txRes, bookingStats] = await Promise.all([
+  const [invoiceRes, txRes, subs, bookingStats] = await Promise.all([
     ghl.listInvoices(env, locationId, { limit }).catch((e) => ({ error: e })),
     ghl.listTransactions(env, locationId, { limit }).catch((e) => ({ error: e })),
+    ghl.listSubscriptions(env, locationId, { limit }).catch(() => null),
     db.bookingStats(env, user.id),
   ]);
 
@@ -46,6 +47,7 @@ export async function handleBilling(request, env) {
   return json({
     invoices,
     transactions,
+    subscriptions: subs || [],
     stats: {
       invoicedCents,
       collectedCents,
@@ -63,6 +65,7 @@ export async function handleBilling(request, env) {
     unavailable: {
       invoices: Boolean(invoiceRes.error),
       transactions: Boolean(txRes.error),
+      subscriptions: subs === null,
     },
   });
 }

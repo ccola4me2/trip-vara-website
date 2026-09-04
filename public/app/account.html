@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Account</h1><p class="sub">Your Trip Vara Tools account: users, fields, values and tags.</p></div>
+      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section class="card" id="loc"></section>
+      <div class="tabs" id="tabs"></div>
+      <section class="card" id="panel"><p class="spinner">Loading...</p></section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, showError } from '/js/app.js';
+await mountShell();
+
+const tabsEl = document.getElementById('tabs');
+const panel = document.getElementById('panel');
+const locEl = document.getElementById('loc');
+let data = null;
+let active = 'users';
+
+const TABS = [
+  { key: 'users', label: 'Users' },
+  { key: 'customFields', label: 'Custom fields' },
+  { key: 'customValues', label: 'Custom values' },
+  { key: 'tags', label: 'Tags' },
+  { key: 'customObjects', label: 'Custom objects' },
+  { key: 'businesses', label: 'Businesses' },
+];
+
+const ROW = {
+  users: (u) => [u.name || u.email, [u.email, u.role].filter(Boolean).join('  ·  ')],
+  customFields: (f) => [f.name, [f.dataType, f.fieldKey].filter(Boolean).join('  ·  ')],
+  customValues: (v) => [v.name, v.value],
+  tags: (t) => [t.name, ''],
+  customObjects: (o) => [o.label, [o.key, o.plural].filter(Boolean).join('  ·  ')],
+  businesses: (b) => [b.name, [b.email, b.phone, b.website].filter(Boolean).join('  ·  ')],
+};
+
+function renderLocation() {
+  const l = data.location;
+  if (!l) { locEl.hidden = true; return; }
+  locEl.innerHTML = `<div class="card-head"><h2>${esc(l.name || 'Account')}</h2></div>
+    <div class="card-pad"><dl class="kv">
+      ${[['Email', l.email], ['Phone', l.phone], ['Website', l.website],
+         ['Timezone', l.timezone], ['Address', l.address]]
+        .filter(([, v]) => v)
+        .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('') || '<dt>No details</dt><dd>-</dd>'}
+    </dl></div>`;
+}
+
+function renderTabs() {
+  tabsEl.innerHTML = TABS.map((t) => {
+    const off = data.unavailable && data.unavailable[t.key];
+    const n = Array.isArray(data[t.key]) ? data[t.key].length : 0;
+    return `<button class="tab" type="button" data-key="${t.key}" aria-selected="${t.key === active}">
+      ${esc(t.label)}<span class="n">${off ? '—' : n}</span></button>`;
+  }).join('');
+  tabsEl.querySelectorAll('[data-key]').forEach((b) =>
+    b.addEventListener('click', () => { active = b.dataset.key; renderTabs(); renderPanel(); }));
+}
+
+function renderPanel() {
+  if (data.unavailable && data.unavailable[active]) {
+    panel.innerHTML = '<div class="empty"><p>This area is not available with the current Trip Vara Tools permissions.</p></div>';
+    return;
+  }
+  const items = Array.isArray(data[active]) ? data[active] : [];
+  if (!items.length) {
+    panel.innerHTML = '<div class="empty"><h3>Nothing here</h3><p>This part of the account is empty.</p></div>';
+    return;
+  }
+  panel.innerHTML = `<ul class="rows">${items.map((it) => {
+    const [title, meta] = ROW[active](it);
+    return `<li><div class="t">${esc(title || '-')}</div>${meta ? `<div class="m">${esc(meta)}</div>` : ''}</li>`;
+  }).join('')}</ul>`;
+}
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading...</p>';
+  try { data = await api('/api/account'); renderLocation(); renderTabs(); renderPanel(); }
+  catch (err) { tabsEl.innerHTML = ''; locEl.hidden = true; showError(document.getElementById('err'), err); panel.innerHTML = ''; }
+}
+document.getElementById('refresh').addEventListener('click', load);
+await load();
+</script>
+</body></html>

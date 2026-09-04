@@ -28,6 +28,10 @@
         <div class="card-head"><h2>Transactions</h2><span class="muted" id="tx-count"></span></div>
         <div id="transactions"></div>
       </section>
+      <section class="card">
+        <div class="card-head"><h2>Subscriptions</h2><span class="muted" id="sub-count"></span></div>
+        <div id="subscriptions"></div>
+      </section>
     </div>
   </div>
 </div>
@@ -115,9 +119,23 @@ function render(d) {
     : '<div class="empty"><h3>No transactions yet</h3><p>Payments taken through Trip Vara Tools appear here.</p></div>';
 }
 
+function renderSubscriptions(d) {
+  const el = document.getElementById('subscriptions');
+  document.getElementById('sub-count').textContent =
+    d.unavailable.subscriptions ? 'unavailable' : `${d.subscriptions.length} shown`;
+  el.innerHTML = d.unavailable.subscriptions
+    ? '<div class="empty"><p>Subscriptions are not available with the current Trip Vara Tools permissions.</p></div>'
+    : d.subscriptions.length
+    ? `<ul class="rows">${d.subscriptions.map((sub) => `<li><div class="row-between">
+        <div><div class="t">${esc(sub.contactName || 'Subscriber')}</div>
+          <div class="m"><span class="badge ${TX_TONE[sub.status] || 'badge-navy'}">${esc(sub.status || 'unknown')}</span></div></div>
+        <div class="num">${money(sub.amountCents)}</div></div></li>`).join('')}</ul>`
+    : '<div class="empty"><p>No recurring subscriptions.</p></div>';
+}
+
 async function load() {
   panelInv.innerHTML = '<p class="spinner">Loading...</p>';
-  try { render(await api('/api/billing')); }
+  try { const d = await api('/api/billing'); render(d); renderSubscriptions(d); }
   catch (err) { statsEl.innerHTML = ''; showError(errBox, err); panelInv.innerHTML = ''; }
 }
 document.getElementById('refresh').addEventListener('click', load);

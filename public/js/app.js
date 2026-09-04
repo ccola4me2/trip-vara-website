@@ -86,15 +86,26 @@ export function daysUntil(iso) {
 
 // --------------------------------------------------------------- shell ---
 const NAV = [
+  { group: 'Work' },
   { href: '/app/', label: 'Dashboard', icon: 'M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5' },
   { href: '/app/inbox', label: 'Inbox', icon: 'M3 8l9 6 9-6M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z' },
   { href: '/app/leads', label: 'Leads', icon: 'M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M9.5 9.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 11h2m-1-1v2' },
   { href: '/app/pipeline', label: 'Pipeline', icon: 'M4 5h16M4 12h10M4 19h6' },
   { href: '/app/calendar', label: 'Calendar', icon: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm4-4v4m8-4v4M4 11h16' },
+
+  { group: 'Money' },
   { href: '/app/bookings', label: 'Bookings', icon: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm4-4v4m8-4v4M4 10h16' },
   { href: '/app/billing', label: 'Billing', icon: 'M3 10h18M6 6h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 8h4' },
-  { href: '/app/forms', label: 'Forms', icon: 'M9 12h6m-6 4h6M8 4h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4h6' },
+  { href: '/app/catalog', label: 'Products', icon: 'M20 7 12 3 4 7l8 4 8-4Zm0 0v10l-8 4-8-4V7' },
   { href: '/app/reports', label: 'Reports', icon: 'M5 20V10m7 10V4m7 16v-7' },
+
+  { group: 'Content' },
+  { href: '/app/forms', label: 'Forms', icon: 'M9 12h6m-6 4h6M8 4h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4h6' },
+  { href: '/app/marketing', label: 'Marketing', icon: 'M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1Zm14-3a5 5 0 0 1 0 8' },
+  { href: '/app/library', label: 'Media', icon: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6Zm2 10 4-4 3 3 3-3 4 4M9 9.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z' },
+
+  { group: 'Setup' },
+  { href: '/app/account', label: 'Account', icon: 'M12 3l8 4v5c0 4.5-3.2 8.3-8 9-4.8-.7-8-4.5-8-9V7l8-4Z' },
   { href: '/app/crm', label: 'Trip Vara Tools', icon: 'M14 3h7v7m0-7L10 14M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5' },
   { href: '/app/settings', label: 'Settings', icon: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8-3.5a8 8 0 0 1-.1 1.2l2 1.6-2 3.4-2.4-1a8 8 0 0 1-2 1.2l-.4 2.6h-4l-.4-2.6a8 8 0 0 1-2-1.2l-2.4 1-2-3.4 2-1.6A8 8 0 0 1 4 12a8 8 0 0 1 .1-1.2l-2-1.6 2-3.4 2.4 1a8 8 0 0 1 2-1.2L11 3h4l.4 2.6a8 8 0 0 1 2 1.2l2.4-1 2 3.4-2 1.6c.06.4.1.8.1 1.2Z' },
 ];
@@ -105,6 +116,7 @@ const ADMIN_NAV = [
 ];
 
 function navLink(item, current) {
+  if (item.group) return `<p class="nav-group">${esc(item.group)}</p>`;
   const active = item.href === current ? ' aria-current="page"' : '';
   return `<a href="${item.href}"${active}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"

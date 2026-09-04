@@ -13,10 +13,14 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Forms</h1><p class="sub">Submissions from your Trip Vara Tools forms.</p></div>
+      <div><h1>Forms &amp; surveys</h1><p class="sub">Submissions from your Trip Vara Tools forms and surveys.</p></div>
       <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
     </header>
     <div class="content">
+      <div class="tabs">
+        <button class="tab" type="button" id="tab-forms" aria-selected="true">Forms</button>
+        <button class="tab" type="button" id="tab-surveys" aria-selected="false">Surveys</button>
+      </div>
       <div class="toolbar">
         <select id="form-filter" aria-label="Form"><option value="">All forms</option></select>
         <input id="search" type="search" placeholder="Search name or email" style="min-width:220px;">
@@ -35,6 +39,20 @@ const filter = document.getElementById('form-filter');
 const search = document.getElementById('search');
 const countEl = document.getElementById('count');
 let formsLoaded = false;
+let mode = 'forms';
+
+document.getElementById('tab-forms').addEventListener('click', () => switchMode('forms'));
+document.getElementById('tab-surveys').addEventListener('click', () => switchMode('surveys'));
+
+function switchMode(next) {
+  if (mode === next) return;
+  mode = next;
+  formsLoaded = false;
+  filter.innerHTML = `<option value="">All ${next}</option>`;
+  document.getElementById('tab-forms').setAttribute('aria-selected', String(next === 'forms'));
+  document.getElementById('tab-surveys').setAttribute('aria-selected', String(next === 'surveys'));
+  load();
+}
 
 function render(d) {
   if (!formsLoaded && d.forms.length) {
@@ -78,7 +96,12 @@ async function load() {
     const params = new URLSearchParams();
     if (filter.value) params.set('formId', filter.value);
     if (search.value.trim()) params.set('q', search.value.trim());
-    render(await api(`/api/forms${params.toString() ? '?' + params : ''}`));
+    if (mode === 'surveys') {
+      const d = await api(`/api/surveys${params.toString() ? '?' + params.toString().replace('formId=', 'surveyId=') : ''}`);
+      render({ forms: d.surveys, submissions: d.submissions.map((x) => ({ ...x, formName: x.surveyName, formId: x.surveyId, phone: '', answers: [] })), total: d.total });
+    } else {
+      render(await api(`/api/forms${params.toString() ? '?' + params : ''}`));
+    }
   } catch (err) { countEl.textContent = ''; showError(panel, err); }
 }
 

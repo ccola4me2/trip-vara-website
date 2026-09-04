@@ -32,6 +32,9 @@ import { handleListCalendar, handleCreateAppointment } from './calendar.js';
 import { handleBilling } from './billing.js';
 import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
 import { handleCrmLinks } from './crm.js';
+import {
+  handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
+} from './library.js';
 import { handleDashboard, handleProduction } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth, handleTestEmail,
@@ -65,6 +68,10 @@ const PAGE_FILES = {
   '/app/billing': '/app/billing.html',
   '/app/forms': '/app/forms.html',
   '/app/crm': '/app/crm.html',
+  '/app/marketing': '/app/marketing.html',
+  '/app/catalog': '/app/catalog.html',
+  '/app/library': '/app/library.html',
+  '/app/account': '/app/account.html',
   '/app/pipeline': '/app/pipeline.html',
   '/app/bookings': '/app/bookings.html',
   '/app/reports': '/app/reports.html',
@@ -182,6 +189,11 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/forms' && method === 'GET') return handleListForms(request, env);
   if (path === '/api/workflows' && method === 'GET') return handleListWorkflows(request, env);
   if (path === '/api/crm/links' && method === 'GET') return handleCrmLinks(request, env);
+  if (path === '/api/surveys' && method === 'GET') return handleSurveys(request, env);
+  if (path === '/api/marketing' && method === 'GET') return handleMarketing(request, env);
+  if (path === '/api/catalog' && method === 'GET') return handleCatalog(request, env);
+  if (path === '/api/library' && method === 'GET') return handleLibrary(request, env);
+  if (path === '/api/account' && method === 'GET') return handleAccount(request, env);
 
   // ---- billing ----------------------------------------------------------
   if (path === '/api/billing' && method === 'GET') return handleBilling(request, env);
