@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reports | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Reports</h1><p class="sub">Production by departure month.</p></div>
+      <select id="range" aria-label="Range" style="width:auto;">
+        <option value="12">Last 12 months</option>
+        <option value="24">Last 24 months</option>
+        <option value="36">Last 36 months</option>
+      </select>
+    </header>
+    <div class="content">
+      <section id="stats" class="stat-grid"></section>
+      <section class="card">
+        <div class="card-head"><h2>Monthly production</h2></div>
+        <div id="chart" class="card-pad"><p class="spinner">Loading...</p></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>By month</h2></div>
+        <div id="table"></div>
+      </section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, money, showError } from '/js/app.js';
+await mountShell();
+
+const chart = document.getElementById('chart');
+const table = document.getElementById('table');
+const statsEl = document.getElementById('stats');
+const range = document.getElementById('range');
+
+function monthLabel(ym) {
+  const [y, m] = String(ym).split('-');
+  const d = new Date(Number(y), Number(m) - 1, 1);
+  return Number.isNaN(d.getTime()) ? ym : d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+}
+
+function render(data) {
+  const s = data.stats;
+  const rate = s.grossCents ? (s.commissionCents / s.grossCents) * 100 : 0;
+  statsEl.innerHTML = `
+    <div class="stat"><p class="label">Total volume</p><p class="value">${money(s.grossCents)}</p>
+      <p class="meta">${s.booked + s.travelled} booked or travelled</p></div>
+    <div class="stat"><p class="label">Total commission</p><p class="value">${money(s.commissionCents)}</p>
+      <p class="meta">${money(s.commissionPaidCents)} received</p></div>
+    <div class="stat"><p class="label">Effective rate</p><p class="value">${rate.toFixed(1)}%</p>
+      <p class="meta">Commission over volume</p></div>
+    <div class="stat"><p class="label">Outstanding</p>
+      <p class="value">${money(s.commissionCents - s.commissionPaidCents)}</p>
+      <p class="meta">Earned, not yet received</p></div>`;
+
+  if (!data.byMonth.length) {
+    chart.innerHTML = '<div class="empty"><h3>Nothing to chart yet</h3><p>Bookings with a departure date and a booked status show up here.</p></div>';
+    table.innerHTML = '';
+    return;
+  }
+
+  const max = Math.max(...data.byMonth.map((m) => m.gross_cents || 0), 1);
+  // Simple inline bar chart. Keeps the page dependency free.
+  chart.innerHTML = `<div style="display:flex;align-items:flex-end;gap:.5rem;height:190px;overflow-x:auto;padding-top:.5rem;">
+    ${data.byMonth.map((m) => {
+      const h = Math.max(Math.round(((m.gross_cents || 0) / max) * 150), 3);
+      return `<div style="flex:0 0 46px;text-align:center;">
+        <div title="${esc(money(m.gross_cents))} gross, ${esc(money(m.commission_cents))} commission"
+             style="height:${h}px;background:linear-gradient(180deg,var(--navy-600),var(--navy-800));border-radius:5px 5px 0 0;"></div>
+        <div style="font-size:.66rem;color:var(--ink-400);margin-top:.35rem;">${esc(monthLabel(m.month))}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  table.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Month</th><th class="num">Bookings</th><th class="num">Volume</th>
+      <th class="num">Commission</th></tr></thead>
+    <tbody>${data.byMonth.map((m) => `<tr>
+      <td><span class="name">${esc(monthLabel(m.month))}</span></td>
+      <td class="num">${m.bookings}</td>
+      <td class="num">${money(m.gross_cents)}</td>
+      <td class="num">${money(m.commission_cents)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function load() {
+  chart.innerHTML = '<p class="spinner">Loading...</p>';
+  try { render(await api(`/api/reports/production?months=${range.value}`)); }
+  catch (err) { showError(chart, err); }
+}
+range.addEventListener('change', load);
+await load();
+</script>
+</body></html>

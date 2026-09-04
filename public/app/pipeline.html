@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Pipeline</h1><p class="sub">Open opportunities by stage, live from GoHighLevel.</p></div>
+      <div class="toolbar" style="margin:0;">
+        <select id="pipeline-select" aria-label="Pipeline" hidden></select>
+        <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+      </div>
+    </header>
+    <div class="content">
+      <section id="summary" class="stat-grid" hidden></section>
+      <section id="panel"><p class="spinner">Loading pipeline...</p></section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, money, showError } from '/js/app.js';
+await mountShell();
+
+const panel = document.getElementById('panel');
+const summary = document.getElementById('summary');
+const select = document.getElementById('pipeline-select');
+
+function render(data) {
+  if (!data.pipeline) {
+    panel.innerHTML = '<div class="card"><div class="empty"><h3>No pipelines found</h3><p>Create a pipeline in GoHighLevel and it will show up here.</p></div></div>';
+    return;
+  }
+
+  if (data.pipelines.length > 1) {
+    select.hidden = false;
+    select.innerHTML = data.pipelines.map((p) =>
+      `<option value="${esc(p.id)}"${p.id === data.pipeline.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  }
+
+  const openCount = data.stages.reduce((n, s) => n + s.count, 0);
+  const openValue = data.stages.reduce((n, s) => n + s.valueTotal, 0);
+  summary.hidden = false;
+  summary.innerHTML = `
+    <div class="stat"><p class="label">Opportunities</p><p class="value">${openCount}</p>
+      <p class="meta">${esc(data.pipeline.name)}</p></div>
+    <div class="stat"><p class="label">Pipeline value</p><p class="value">${money(openValue * 100)}</p>
+      <p class="meta">Across all stages shown</p></div>
+    <div class="stat"><p class="label">Stages</p><p class="value">${data.stages.length}</p>
+      <p class="meta">In this pipeline</p></div>`;
+
+  panel.innerHTML = `<div class="board">${data.stages.map((s) => `
+    <div class="board-col">
+      <h3>${esc(s.name)}</h3>
+      <p class="col-meta">${s.count} &middot; ${money(s.valueTotal * 100)}</p>
+      ${s.opportunities.map((o) => `
+        <article class="opp">
+          <p class="t">${esc(o.name)}</p>
+          ${o.contactName ? `<p class="c">${esc(o.contactName)}</p>` : ''}
+          ${o.monetaryValue ? `<p class="v">${money(o.monetaryValue * 100)}</p>` : ''}
+        </article>`).join('') || '<p class="muted" style="font-size:.8rem;">Nothing here.</p>'}
+    </div>`).join('')}</div>`;
+}
+
+async function load(pipelineId) {
+  panel.innerHTML = '<p class="spinner">Loading pipeline...</p>';
+  try {
+    render(await api(`/api/opportunities${pipelineId ? `?pipelineId=${encodeURIComponent(pipelineId)}` : ''}`));
+  } catch (err) {
+    summary.hidden = true;
+    showError(panel, err);
+  }
+}
+
+select.addEventListener('change', () => load(select.value));
+document.getElementById('refresh').addEventListener('click', () => load(select.value || undefined));
+await load();
+</script>
+</body></html>

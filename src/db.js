@@ -1,0 +1,346 @@
+// D1 access layer. Everything that touches the database lives here so the
+// route handlers stay readable and the SQL is in one place.
+//
+// Remember what D1 owns: portal accounts, sessions, and bookings. Contacts,
+// opportunities and conversations are read live from GoHighLevel (see ghl.js)
+// and are deliberately not mirrored here.
+
+import { uid, now } from './util.js';
+
+const USER_COLUMNS = `
+  id, email, first_name, last_name, phone, agency_name, role, status,
+  ghl_location_id, ghl_user_id, created_at, updated_at, last_login_at,
+  approved_at, approved_by
+`;
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+export async function getUserById(env, id) {
+  if (!id) return null;
+  return env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).bind(id).first();
+}
+
+/** Includes password_hash. Only for the sign-in path. */
+export async function getUserForLogin(env, email) {
+  if (!email) return null;
+  return env.DB.prepare(
+    `SELECT ${USER_COLUMNS}, password_hash FROM users WHERE email = ?`
+  ).bind(email).first();
+}
+
+export async function emailExists(env, email) {
+  const row = await env.DB.prepare('SELECT 1 AS hit FROM users WHERE email = ?').bind(email).first();
+  return Boolean(row);
+}
+
+export async function createUser(env, fields) {
+  const ts = now();
+  const id = uid();
+  await env.DB.prepare(
+    `INSERT INTO users
+       (id, email, password_hash, first_name, last_name, phone, agency_name,
+        role, status, ghl_location_id, ghl_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id,
+    fields.email,
+    fields.passwordHash,
+    fields.firstName || null,
+    fields.lastName || null,
+    fields.phone || null,
+    fields.agencyName || null,
+    fields.role || 'advisor',
+    fields.status || 'pending',
+    fields.ghlLocationId || null,
+    fields.ghlUserId || null,
+    ts,
+    ts
+  ).run();
+  return getUserById(env, id);
+}
+
+export async function updateUserProfile(env, id, fields) {
+  await env.DB.prepare(
+    `UPDATE users
+        SET first_name = ?, last_name = ?, phone = ?, agency_name = ?, updated_at = ?
+      WHERE id = ?`
+  ).bind(
+    fields.firstName || null,
+    fields.lastName || null,
+    fields.phone || null,
+    fields.agencyName || null,
+    now(),
+    id
+  ).run();
+  return getUserById(env, id);
+}
+
+export async function setUserPassword(env, id, passwordHash) {
+  await env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+    .bind(passwordHash, now(), id).run();
+}
+
+export async function setLastLogin(env, id) {
+  await env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(now(), id).run();
+}
+
+export async function listUsers(env, { status, role } = {}) {
+  const where = [];
+  const binds = [];
+  if (status) { where.push('status = ?'); binds.push(status); }
+  if (role) { where.push('role = ?'); binds.push(role); }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const { results } = await env.DB.prepare(
+    `SELECT ${USER_COLUMNS} FROM users ${clause} ORDER BY created_at DESC LIMIT 500`
+  ).bind(...binds).all();
+  return results || [];
+}
+
+export async function setUserStatus(env, id, status, approvedBy = null) {
+  const ts = now();
+  if (status === 'active') {
+    await env.DB.prepare(
+      'UPDATE users SET status = ?, approved_at = ?, approved_by = ?, updated_at = ? WHERE id = ?'
+    ).bind(status, ts, approvedBy, ts, id).run();
+  } else {
+    await env.DB.prepare('UPDATE users SET status = ?, updated_at = ? WHERE id = ?')
+      .bind(status, ts, id).run();
+  }
+  return getUserById(env, id);
+}
+
+/** Bind an advisor to a GoHighLevel sub-account and user id. Admin only. */
+export async function setUserGhl(env, id, { locationId, ghlUserId }) {
+  await env.DB.prepare(
+    'UPDATE users SET ghl_location_id = ?, ghl_user_id = ?, updated_at = ? WHERE id = ?'
+  ).bind(locationId || null, ghlUserId || null, now(), id).run();
+  return getUserById(env, id);
+}
+
+export async function countUsers(env) {
+  const row = await env.DB.prepare(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+       SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active
+     FROM users WHERE role = 'advisor'`
+  ).first();
+  return { total: row?.total || 0, pending: row?.pending || 0, active: row?.active || 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+export async function createSession(env, userId, tokenHash, ttlSeconds) {
+  const ts = now();
+  await env.DB.prepare(
+    'INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
+  ).bind(tokenHash, userId, ts, ts + ttlSeconds).run();
+}
+
+export async function getSessionUser(env, tokenHash) {
+  if (!tokenHash) return null;
+  return env.DB.prepare(
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.agency_name,
+            u.role, u.status, u.ghl_location_id, u.ghl_user_id, u.last_login_at
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+      WHERE s.id = ? AND s.expires_at > ?`
+  ).bind(tokenHash, now()).first();
+}
+
+export async function deleteSession(env, tokenHash) {
+  if (!tokenHash) return;
+  await env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(tokenHash).run();
+}
+
+export async function deleteUserSessions(env, userId) {
+  await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
+}
+
+export async function purgeExpiredSessions(env) {
+  await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now()).run();
+}
+
+// ---------------------------------------------------------------------------
+// Password resets
+// ---------------------------------------------------------------------------
+export async function createResetToken(env, userId, tokenHash, ttlSeconds) {
+  const ts = now();
+  await env.DB.prepare(
+    'INSERT INTO password_reset_tokens (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
+  ).bind(tokenHash, userId, ts, ts + ttlSeconds).run();
+}
+
+/** Returns the user id if the token is valid and unused, and marks it used. */
+export async function consumeResetToken(env, tokenHash) {
+  const row = await env.DB.prepare(
+    'SELECT user_id FROM password_reset_tokens WHERE id = ? AND used = 0 AND expires_at > ?'
+  ).bind(tokenHash, now()).first();
+  if (!row) return null;
+  await env.DB.prepare('UPDATE password_reset_tokens SET used = 1 WHERE id = ?').bind(tokenHash).run();
+  return row.user_id;
+}
+
+// ---------------------------------------------------------------------------
+// Bookings
+// ---------------------------------------------------------------------------
+const BOOKING_COLUMNS = `
+  id, user_id, ghl_contact_id, ghl_opportunity_id, client_name, supplier,
+  product_type, product_name, destination, confirmation_number, depart_date,
+  return_date, deposit_due, final_payment_due, travellers, gross_cents,
+  commission_cents, commission_status, status, notes, created_at, updated_at
+`;
+
+export async function listBookings(env, userId, { status, search, limit = 200 } = {}) {
+  const where = ['user_id = ?'];
+  const binds = [userId];
+  if (status) { where.push('status = ?'); binds.push(status); }
+  if (search) {
+    where.push('(client_name LIKE ? OR supplier LIKE ? OR product_name LIKE ? OR confirmation_number LIKE ?)');
+    const like = `%${search}%`;
+    binds.push(like, like, like, like);
+  }
+  binds.push(Math.min(Number(limit) || 200, 500));
+  const { results } = await env.DB.prepare(
+    `SELECT ${BOOKING_COLUMNS} FROM bookings
+      WHERE ${where.join(' AND ')}
+      ORDER BY COALESCE(depart_date, '9999-12-31') ASC, created_at DESC
+      LIMIT ?`
+  ).bind(...binds).all();
+  return results || [];
+}
+
+export async function getBooking(env, id, userId) {
+  return env.DB.prepare(
+    `SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = ? AND user_id = ?`
+  ).bind(id, userId).first();
+}
+
+export async function createBooking(env, userId, f) {
+  const ts = now();
+  const id = uid();
+  await env.DB.prepare(
+    `INSERT INTO bookings
+       (id, user_id, ghl_contact_id, ghl_opportunity_id, client_name, supplier,
+        product_type, product_name, destination, confirmation_number,
+        depart_date, return_date, deposit_due, final_payment_due, travellers,
+        gross_cents, commission_cents, commission_status, status, notes,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id, userId, f.ghlContactId || null, f.ghlOpportunityId || null,
+    f.clientName, f.supplier || null, f.productType, f.productName || null,
+    f.destination || null, f.confirmationNumber || null,
+    f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
+    f.travellers, f.grossCents, f.commissionCents, f.commissionStatus,
+    f.status, f.notes || null, ts, ts
+  ).run();
+  return getBooking(env, id, userId);
+}
+
+export async function updateBooking(env, id, userId, f) {
+  const res = await env.DB.prepare(
+    `UPDATE bookings SET
+       ghl_contact_id = ?, ghl_opportunity_id = ?, client_name = ?, supplier = ?,
+       product_type = ?, product_name = ?, destination = ?, confirmation_number = ?,
+       depart_date = ?, return_date = ?, deposit_due = ?, final_payment_due = ?,
+       travellers = ?, gross_cents = ?, commission_cents = ?, commission_status = ?,
+       status = ?, notes = ?, updated_at = ?
+     WHERE id = ? AND user_id = ?`
+  ).bind(
+    f.ghlContactId || null, f.ghlOpportunityId || null, f.clientName, f.supplier || null,
+    f.productType, f.productName || null, f.destination || null, f.confirmationNumber || null,
+    f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
+    f.travellers, f.grossCents, f.commissionCents, f.commissionStatus,
+    f.status, f.notes || null, now(), id, userId
+  ).run();
+  if (!res.meta || res.meta.changes === 0) return null;
+  return getBooking(env, id, userId);
+}
+
+export async function deleteBooking(env, id, userId) {
+  const res = await env.DB.prepare('DELETE FROM bookings WHERE id = ? AND user_id = ?')
+    .bind(id, userId).run();
+  return Boolean(res.meta && res.meta.changes > 0);
+}
+
+/** Headline numbers for the dashboard and the reports page. */
+export async function bookingStats(env, userId) {
+  const row = await env.DB.prepare(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) AS booked,
+       SUM(CASE WHEN status = 'quoted' THEN 1 ELSE 0 END) AS quoted,
+       SUM(CASE WHEN status = 'travelled' THEN 1 ELSE 0 END) AS travelled,
+       SUM(CASE WHEN status IN ('booked','travelled') THEN gross_cents ELSE 0 END) AS gross_cents,
+       SUM(CASE WHEN status IN ('booked','travelled') THEN commission_cents ELSE 0 END) AS commission_cents,
+       SUM(CASE WHEN commission_status = 'paid' THEN commission_cents ELSE 0 END) AS commission_paid_cents
+     FROM bookings WHERE user_id = ?`
+  ).bind(userId).first();
+  return {
+    total: row?.total || 0,
+    booked: row?.booked || 0,
+    quoted: row?.quoted || 0,
+    travelled: row?.travelled || 0,
+    grossCents: row?.gross_cents || 0,
+    commissionCents: row?.commission_cents || 0,
+    commissionPaidCents: row?.commission_paid_cents || 0,
+  };
+}
+
+/** Bookings with a deposit or final payment due on or before `through`. */
+export async function upcomingPayments(env, userId, through) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, client_name, supplier, product_name, deposit_due, final_payment_due,
+            depart_date, gross_cents, status
+       FROM bookings
+      WHERE user_id = ?
+        AND status IN ('quoted','booked')
+        AND (
+          (final_payment_due IS NOT NULL AND final_payment_due <= ?) OR
+          (deposit_due IS NOT NULL AND deposit_due <= ?)
+        )
+      ORDER BY COALESCE(final_payment_due, deposit_due) ASC
+      LIMIT 50`
+  ).bind(userId, through, through).all();
+  return results || [];
+}
+
+/** Gross and commission grouped by departure month, for the reports chart. */
+export async function productionByMonth(env, userId, sinceDate) {
+  const { results } = await env.DB.prepare(
+    `SELECT substr(depart_date, 1, 7) AS month,
+            COUNT(*) AS bookings,
+            SUM(gross_cents) AS gross_cents,
+            SUM(commission_cents) AS commission_cents
+       FROM bookings
+      WHERE user_id = ? AND depart_date IS NOT NULL AND depart_date >= ?
+        AND status IN ('booked','travelled')
+      GROUP BY month ORDER BY month ASC LIMIT 36`
+  ).bind(userId, sinceDate).all();
+  return results || [];
+}
+
+// ---------------------------------------------------------------------------
+// Activity log
+// ---------------------------------------------------------------------------
+export async function logActivity(env, userId, kind, subject, meta = null) {
+  try {
+    await env.DB.prepare(
+      'INSERT INTO activity_log (id, user_id, kind, subject, meta_json, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(uid(), userId, kind, subject || null, meta ? JSON.stringify(meta) : null, now()).run();
+  } catch (e) {
+    // Activity logging must never break the request that triggered it.
+    console.error('logActivity', e);
+  }
+}
+
+export async function recentActivity(env, userId, limit = 15) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, kind, subject, created_at FROM activity_log
+      WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
+  ).bind(userId, Math.min(Number(limit) || 15, 100)).all();
+  return results || [];
+}

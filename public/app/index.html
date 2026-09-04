@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Dashboard</h1><p class="sub" id="greeting">Loading your numbers...</p></div>
+      <a class="btn btn-primary btn-sm" href="/app/bookings?new=1">Add a booking</a>
+    </header>
+    <div class="content">
+      <section id="stats" class="stat-grid"></section>
+      <section id="ghl-state"></section>
+      <section class="split">
+        <div class="card">
+          <div class="card-head"><h2>Payments due in the next 60 days</h2></div>
+          <div id="payments"><p class="spinner">Loading...</p></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Recent activity</h2></div>
+          <div id="activity"><p class="spinner">Loading...</p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, money, dateFmt, timeAgo, esc, daysUntil, showError } from '/js/app.js';
+
+await mountShell();
+
+try {
+  const d = await api('/api/dashboard');
+  document.getElementById('greeting').textContent =
+    `${d.user.name}, here is where things stand.`;
+
+  const s = d.stats;
+  const cards = [
+    { label: 'Active bookings', value: s.booked, meta: `${s.quoted} quoted, ${s.travelled} travelled` },
+    { label: 'Booked volume', value: money(s.grossCents), meta: 'Booked and travelled' },
+    { label: 'Commission', value: money(s.commissionCents), meta: `${money(s.commissionPaidCents)} paid` },
+  ];
+  if (d.pipeline) {
+    cards.push({
+      label: 'Open pipeline',
+      value: money(d.pipeline.openValue * 100),
+      meta: `${d.pipeline.openCount} open in ${esc(d.pipeline.name || 'pipeline')}`,
+    });
+  }
+  document.getElementById('stats').innerHTML = cards.map((c) => `
+    <div class="stat"><p class="label">${esc(c.label)}</p>
+    <p class="value">${esc(String(c.value))}</p><p class="meta">${esc(c.meta)}</p></div>`).join('');
+
+  if (d.ghlStatus === 'not_configured') {
+    showError(document.getElementById('ghl-state'), { code: 'not_configured' });
+  } else if (d.ghlStatus === 'error') {
+    document.getElementById('ghl-state').innerHTML =
+      '<div class="notice notice-error">Could not reach GoHighLevel just now. Booking numbers above are still accurate.</div>';
+  }
+
+  const pay = d.upcomingPayments;
+  document.getElementById('payments').innerHTML = pay.length ? `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Client</th><th>Trip</th><th>Due</th><th class="num">Value</th></tr></thead>
+      <tbody>${pay.map((b) => {
+        const due = b.final_payment_due || b.deposit_due;
+        const kind = b.final_payment_due ? 'Final' : 'Deposit';
+        const left = daysUntil(due);
+        const tone = left === null ? 'badge-navy' : left < 0 ? 'badge-red' : left <= 14 ? 'badge-amber' : 'badge-navy';
+        return `<tr>
+          <td><span class="name">${esc(b.client_name)}</span></td>
+          <td>${esc(b.product_name || b.supplier || '')}<div class="muted">${esc(b.depart_date ? 'Departs ' + dateFmt(b.depart_date) : '')}</div></td>
+          <td>${esc(kind)} ${esc(dateFmt(due))}<div><span class="badge ${tone}">${
+            left === null ? '' : left < 0 ? `${Math.abs(left)}d overdue` : `in ${left}d`}</span></div></td>
+          <td class="num">${money(b.gross_cents)}</td></tr>`;
+      }).join('')}</tbody></table></div>`
+    : '<div class="empty"><h3>Nothing due</h3><p>No deposits or final payments land in the next 60 days.</p></div>';
+
+  const act = d.activity;
+  document.getElementById('activity').innerHTML = act.length
+    ? `<ul style="list-style:none;margin:0;padding:.4rem 0;">${act.map((a) => `
+        <li style="padding:.6rem 1.25rem;border-bottom:1px solid var(--navy-100);">
+          <div style="font-size:.875rem;color:var(--navy-800);">${esc(a.subject || a.kind)}</div>
+          <div class="muted">${esc(timeAgo(a.created_at))}</div></li>`).join('')}</ul>`
+    : '<div class="empty"><p>Nothing yet. Activity shows up here as you work.</p></div>';
+} catch (err) {
+  showError(document.getElementById('ghl-state'), err);
+}
+</script>
+</body></html>

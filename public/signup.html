@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request access | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <aside class="auth-aside">
+    <a class="wordmark on-dark" href="/"><img src="/logo-mark.svg" alt=""><span><b>TripVara</b><small>From first inquiry to welcome home.</small></span></a>
+    <h2 style="margin-top:2.5rem;">Your leads, pipeline and bookings in one place</h2>
+    <p>The Trip Vara advisor portal sits on top of your GoHighLevel sub-account, so the CRM you already
+    use gets an interface built for how travel actually gets sold.</p>
+    <ul>
+      <li>Every lead and contact, live from your CRM</li>
+      <li>Pipeline board with real deal values</li>
+      <li>Bookings with deposits, final payment dates and commission</li>
+      <li>Production numbers that are actually yours</li>
+    </ul>
+  </aside>
+  <main class="auth-main">
+    <div class="auth-card">
+      <a class="wordmark" href="/"><img src="/logo-mark.svg" alt=""><span><b>TripVara</b><small>Advisor portal</small></span></a>
+      <h1>Request access</h1>
+      <p class="lede">Accounts are approved by an administrator before they go live.</p>
+      <div class="notice notice-error" hidden></div>
+      <form id="signup-form" novalidate>
+        <div class="field-row">
+          <div class="field">
+            <label for="firstName">First name</label>
+            <input id="firstName" name="firstName" autocomplete="given-name" required>
+          </div>
+          <div class="field">
+            <label for="lastName">Last name</label>
+            <input id="lastName" name="lastName" autocomplete="family-name" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="email">Work email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="phone">Phone <span style="font-weight:400;color:var(--ink-400);">(optional)</span></label>
+          <input id="phone" name="phone" type="tel" autocomplete="tel">
+        </div>
+        <div class="field">
+          <label for="agencyName">Agency or host <span style="font-weight:400;color:var(--ink-400);">(optional)</span></label>
+          <input id="agencyName" name="agencyName">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="10" required>
+          <p class="field-hint">At least 10 characters.</p>
+        </div>
+        <button class="btn btn-primary" type="submit">Request access</button>
+      </form>
+      <p class="auth-foot">Already have an account? <a href="/login">Sign in</a></p>
+    </div>
+  </main>
+</div>
+<script type="module">
+import { api, onSubmit } from '/js/app.js';
+onSubmit(document.getElementById('signup-form'), async (values) => {
+  await api('/api/auth/signup', { method: 'POST', body: values });
+  location.href = '/pending';
+});
+</script>
+</body></html>

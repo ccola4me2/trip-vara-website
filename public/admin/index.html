@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Advisors | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Advisors</h1><p class="sub">Approve access and bind advisors to a CRM sub-account.</p></div>
+      <select id="filter" aria-label="Filter" style="width:auto;">
+        <option value="">Everyone</option>
+        <option value="pending">Pending approval</option>
+        <option value="active">Active</option>
+        <option value="suspended">Suspended</option>
+      </select>
+    </header>
+    <div class="content">
+      <section id="stats" class="stat-grid"></section>
+      <section class="card" id="panel"><p class="spinner">Loading advisors...</p></section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, timeAgo, showError } from '/js/app.js';
+await mountShell({ admin: true });
+
+const panel = document.getElementById('panel');
+const statsEl = document.getElementById('stats');
+const filter = document.getElementById('filter');
+const TONE = { active: 'badge-green', pending: 'badge-amber', suspended: 'badge-red' };
+
+function render(users, counts) {
+  statsEl.innerHTML = `
+    <div class="stat"><p class="label">Advisors</p><p class="value">${counts.total}</p>
+      <p class="meta">All accounts</p></div>
+    <div class="stat"><p class="label">Awaiting approval</p><p class="value">${counts.pending}</p>
+      <p class="meta">Cannot sign in yet</p></div>
+    <div class="stat"><p class="label">Active</p><p class="value">${counts.active}</p>
+      <p class="meta">Have portal access</p></div>`;
+
+  if (!users.length) {
+    panel.innerHTML = '<div class="empty"><h3>Nobody here</h3><p>No accounts match this filter.</p></div>';
+    return;
+  }
+
+  panel.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>CRM location</th>
+      <th>Last seen</th><th></th></tr></thead>
+    <tbody>${users.map((u) => `<tr>
+      <td><span class="name">${esc(u.name)}</span><div class="muted">${esc(u.email)}</div>
+        ${u.role === 'admin' ? '<span class="badge badge-coral">Admin</span>' : ''}</td>
+      <td>${esc(u.agencyName || '-')}<div class="muted">${esc(u.phone || '')}</div></td>
+      <td><span class="badge ${TONE[u.status] || 'badge-navy'}">${esc(u.status)}</span></td>
+      <td>${u.ghlLocationId
+          ? `<code style="font-size:.75rem;">${esc(u.ghlLocationId)}</code>`
+          : '<span class="muted">Shared default</span>'}
+        <div><button class="btn btn-ghost btn-sm" data-bind="${esc(u.id)}"
+          data-loc="${esc(u.ghlLocationId || '')}" data-usr="${esc(u.ghlUserId || '')}">Bind</button></div></td>
+      <td><span class="muted">${esc(u.lastLoginAt ? timeAgo(u.lastLoginAt) : 'never')}</span></td>
+      <td class="num">
+        ${u.status !== 'active' ? `<button class="btn btn-primary btn-sm" data-set="active" data-id="${esc(u.id)}">Approve</button>` : ''}
+        ${u.status === 'active' ? `<button class="btn btn-danger btn-sm" data-set="suspended" data-id="${esc(u.id)}">Suspend</button>` : ''}
+      </td></tr>`).join('')}</tbody></table></div>`;
+
+  panel.querySelectorAll('[data-set]').forEach((btn) => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      await api(`/api/admin/advisors/${encodeURIComponent(btn.dataset.id)}/status`,
+        { method: 'PUT', body: { status: btn.dataset.set } });
+      await load();
+    } catch (err) { alert(err.message); btn.disabled = false; }
+  }));
+
+  panel.querySelectorAll('[data-bind]').forEach((btn) => btn.addEventListener('click', async () => {
+    const ghlLocationId = prompt('GoHighLevel location id (blank uses the shared default):', btn.dataset.loc);
+    if (ghlLocationId === null) return;
+    const ghlUserId = prompt('GoHighLevel user id for this advisor (optional):', btn.dataset.usr);
+    if (ghlUserId === null) return;
+    try {
+      await api(`/api/admin/advisors/${encodeURIComponent(btn.dataset.bind)}/ghl`,
+        { method: 'PUT', body: { ghlLocationId, ghlUserId } });
+      await load();
+    } catch (err) { alert(err.message); }
+  }));
+}
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading advisors...</p>';
+  try {
+    const q = filter.value ? `?status=${filter.value}` : '';
+    const data = await api(`/api/admin/advisors${q}`);
+    render(data.users, data.counts);
+  } catch (err) { showError(panel, err); }
+}
+filter.addEventListener('change', load);
+await load();
+</script>
+</body></html>

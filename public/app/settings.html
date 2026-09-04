@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Settings</h1><p class="sub">Your details and password.</p></div>
+    </header>
+    <div class="content" style="max-width:620px;">
+      <section class="card">
+        <div class="card-head"><h2>Your details</h2></div>
+        <div class="card-pad">
+          <div class="notice notice-ok" id="profile-ok" hidden>Saved.</div>
+          <div class="notice notice-error" id="profile-err" hidden></div>
+          <form id="profile-form">
+            <div class="field-row">
+              <div class="field"><label for="firstName">First name</label><input id="firstName" name="firstName"></div>
+              <div class="field"><label for="lastName">Last name</label><input id="lastName" name="lastName"></div>
+            </div>
+            <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel"></div>
+            <div class="field"><label for="agencyName">Agency or host</label><input id="agencyName" name="agencyName"></div>
+            <button class="btn btn-primary" type="submit">Save details</button>
+          </form>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Password</h2></div>
+        <div class="card-pad">
+          <div class="notice notice-error" id="pw-err" hidden></div>
+          <p class="field-hint" style="margin-bottom:1rem;">Changing your password signs you out everywhere,
+          including this device.</p>
+          <form id="password-form">
+            <div class="field"><label for="currentPassword">Current password</label>
+              <input id="currentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div>
+            <div class="field"><label for="newPassword">New password</label>
+              <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" minlength="10" required>
+              <p class="field-hint">At least 10 characters.</p></div>
+            <button class="btn btn-secondary" type="submit">Change password</button>
+          </form>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>CRM connection</h2></div>
+        <div class="card-pad">
+          <p id="ghl-info" class="muted">Loading...</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, onSubmit } from '/js/app.js';
+const user = await mountShell();
+
+const pf = document.getElementById('profile-form');
+pf.elements.firstName.value = user.firstName || '';
+pf.elements.lastName.value = user.lastName || '';
+pf.elements.phone.value = user.phone || '';
+pf.elements.agencyName.value = user.agencyName || '';
+
+document.getElementById('ghl-info').innerHTML = user.ghlLocationId
+  ? `Bound to GoHighLevel sub-account <code>${esc(user.ghlLocationId)}</code>.`
+  : 'Using the shared Trip Vara sub-account. An administrator can bind you to your own.';
+
+onSubmit(pf, async (values) => {
+  await api('/api/auth/profile', { method: 'PUT', body: values });
+  const ok = document.getElementById('profile-ok');
+  ok.hidden = false;
+  setTimeout(() => { ok.hidden = true; }, 3000);
+}, { errorBox: document.getElementById('profile-err') });
+
+onSubmit(document.getElementById('password-form'), async (values) => {
+  await api('/api/auth/password', { method: 'POST', body: values });
+  alert('Password changed. Sign in again with your new password.');
+  location.href = '/login';
+}, { errorBox: document.getElementById('pw-err') });
+</script>
+</body></html>

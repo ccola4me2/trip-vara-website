@@ -1,27 +1,15 @@
 {
-  "name": "trip-vara-website",
+  "name": "trip-vara-portal",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": ">=18.18"
-  },
+  "description": "Trip Vara advisor portal: a travel-advisor CRM front end over GoHighLevel, on Cloudflare Workers + D1.",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "next": "15.1.6",
-    "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply trip-vara --remote",
+    "db:migrate:local": "wrangler d1 migrations apply trip-vara --local"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.0.0",
-    "@types/node": "^22.10.7",
-    "@types/react": "^19.0.7",
-    "@types/react-dom": "^19.0.3",
-    "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.3"
+    "wrangler": "^3.90.0"
   }
 }

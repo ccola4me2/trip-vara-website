@@ -1,0 +1,47 @@
+# Trip Vara advisor portal — Cloudflare Worker + static assets + D1.
+#
+# Deploy model: auto-deploys from GitHub `main` via Cloudflare Workers Builds,
+# the same pattern as cruiseshoppers and the phc site. Wrangler runs in
+# Cloudflare's build; nothing needs to be installed locally to ship.
+
+name = "trip-vara"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+# Static portal files (HTML/CSS/JS) served at the edge.
+# run_worker_first = true is REQUIRED: every request goes through the Worker so
+# the auth gate on /app and /admin actually runs. Without it Cloudflare serves
+# those HTML files directly and the gate is bypassed.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+# The Worker owns URL shape: it maps /login -> /login.html itself. Without
+# html_handling = "none" the asset server answers /login.html with a 307 back
+# to /login, which the Worker passes through, and the browser loops forever.
+html_handling = "none"
+not_found_handling = "none"
+
+# D1 (SQLite): advisor accounts, sessions, password resets, and the
+# travel-specific booking records GoHighLevel cannot model cleanly.
+# After `wrangler d1 create trip-vara`, paste the returned id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "trip-vara"
+database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+
+# Non-secret config. Secrets (GHL_API_TOKEN, SESSION_SECRET, RESEND_API_KEY)
+# are set with `wrangler secret put` or in the dashboard — never committed.
+[vars]
+APP_URL = "https://tripvaratravel.com"
+MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
+# Where operator notifications go (new advisor signups awaiting approval).
+NOTIFY_EMAIL = "brentb@cruiseshoppers.com"
+SESSION_TTL_DAYS = "30"
+RESET_TTL_MINUTES = "60"
+
+# GoHighLevel. The agency default sub-account every advisor falls back to when
+# they have no sub-account of their own recorded in D1.
+GHL_DEFAULT_LOCATION_ID = "4Hb35fhCOJSuOmKDA1bY"
+GHL_API_BASE = "https://services.leadconnectorhq.com"
+GHL_API_VERSION = "2021-07-28"

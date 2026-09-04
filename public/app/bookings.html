@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookings | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Bookings</h1><p class="sub">Trips, payment deadlines and commission.</p></div>
+      <button class="btn btn-primary btn-sm" id="add">Add a booking</button>
+    </header>
+    <div class="content">
+      <section id="stats" class="stat-grid"></section>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Client, supplier, confirmation" style="min-width:250px;">
+        <select id="status-filter" aria-label="Status">
+          <option value="">All statuses</option>
+          <option value="quoted">Quoted</option>
+          <option value="booked">Booked</option>
+          <option value="travelled">Travelled</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <section class="card" id="panel"><p class="spinner">Loading bookings...</p></section>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <form id="booking-form" method="dialog">
+    <div class="card-head"><h2 id="dlg-title">Add a booking</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="clientName">Client name</label>
+        <input id="clientName" name="clientName" required></div>
+      <div class="field-row">
+        <div class="field"><label for="productType">Type</label>
+          <select id="productType" name="productType">
+            <option value="cruise">Cruise</option><option value="resort">Resort</option>
+            <option value="package">Package</option><option value="air">Air</option>
+            <option value="other">Other</option>
+          </select></div>
+        <div class="field"><label for="status">Status</label>
+          <select id="status" name="status">
+            <option value="booked">Booked</option><option value="quoted">Quoted</option>
+            <option value="travelled">Travelled</option><option value="cancelled">Cancelled</option>
+          </select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="supplier">Supplier</label>
+          <input id="supplier" name="supplier" placeholder="Margaritaville at Sea"></div>
+        <div class="field"><label for="productName">Ship or property</label>
+          <input id="productName" name="productName"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="destination">Destination</label><input id="destination" name="destination"></div>
+        <div class="field"><label for="confirmationNumber">Confirmation number</label>
+          <input id="confirmationNumber" name="confirmationNumber"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="departDate">Departs</label><input id="departDate" name="departDate" type="date"></div>
+        <div class="field"><label for="returnDate">Returns</label><input id="returnDate" name="returnDate" type="date"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="depositDue">Deposit due</label><input id="depositDue" name="depositDue" type="date"></div>
+        <div class="field"><label for="finalPaymentDue">Final payment due</label>
+          <input id="finalPaymentDue" name="finalPaymentDue" type="date"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="gross">Gross value (USD)</label>
+          <input id="gross" name="gross" inputmode="decimal" placeholder="0.00"></div>
+        <div class="field"><label for="commission">Commission (USD)</label>
+          <input id="commission" name="commission" inputmode="decimal" placeholder="0.00"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="travellers">Travellers</label>
+          <input id="travellers" name="travellers" type="number" min="1" value="1"></div>
+        <div class="field"><label for="commissionStatus">Commission status</label>
+          <select id="commissionStatus" name="commissionStatus">
+            <option value="pending">Pending</option><option value="invoiced">Invoiced</option>
+            <option value="paid">Paid</option>
+          </select></div>
+      </div>
+      <div class="field"><label for="notes">Notes</label><textarea id="notes" name="notes"></textarea></div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-danger" type="button" id="delete" hidden>Delete</button>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Save booking</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const panel = document.getElementById('panel');
+const statsEl = document.getElementById('stats');
+const dlg = document.getElementById('dlg');
+const form = document.getElementById('booking-form');
+const search = document.getElementById('search');
+const statusFilter = document.getElementById('status-filter');
+const deleteBtn = document.getElementById('delete');
+let editingId = null;
+let cache = [];
+
+const STATUS_TONE = { booked: 'badge-green', quoted: 'badge-amber', travelled: 'badge-navy', cancelled: 'badge-red' };
+
+function render(bookings, stats) {
+  cache = bookings;
+  statsEl.innerHTML = `
+    <div class="stat"><p class="label">Bookings</p><p class="value">${stats.total}</p>
+      <p class="meta">${stats.booked} booked, ${stats.quoted} quoted</p></div>
+    <div class="stat"><p class="label">Volume</p><p class="value">${money(stats.grossCents)}</p>
+      <p class="meta">Booked and travelled</p></div>
+    <div class="stat"><p class="label">Commission</p><p class="value">${money(stats.commissionCents)}</p>
+      <p class="meta">${money(stats.commissionPaidCents)} received</p></div>`;
+
+  if (!bookings.length) {
+    panel.innerHTML = '<div class="empty"><h3>No bookings yet</h3><p>Add one to start tracking payment dates and commission.</p></div>';
+    return;
+  }
+
+  panel.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Client</th><th>Trip</th><th>Dates</th><th>Final payment</th>
+      <th class="num">Gross</th><th class="num">Commission</th><th></th></tr></thead>
+    <tbody>${bookings.map((b) => {
+      const left = daysUntil(b.final_payment_due);
+      const tone = left === null ? '' : left < 0 ? 'badge-red' : left <= 21 ? 'badge-amber' : 'badge-navy';
+      return `<tr>
+        <td><span class="name">${esc(b.client_name)}</span>
+          <div><span class="badge ${STATUS_TONE[b.status] || 'badge-navy'}">${esc(b.status)}</span></div></td>
+        <td>${esc(b.product_name || b.supplier || '-')}
+          <div class="muted">${esc([b.supplier && b.product_name ? b.supplier : '', b.destination].filter(Boolean).join(' &middot; '))}</div></td>
+        <td>${b.depart_date ? esc(dateFmt(b.depart_date)) : '<span class="muted">-</span>'}
+          <div class="muted">${b.return_date ? 'to ' + esc(dateFmt(b.return_date)) : ''}</div></td>
+        <td>${b.final_payment_due
+            ? `${esc(dateFmt(b.final_payment_due))}<div><span class="badge ${tone}">${
+                left < 0 ? `${Math.abs(left)}d overdue` : `in ${left}d`}</span></div>`
+            : '<span class="muted">-</span>'}</td>
+        <td class="num">${money(b.gross_cents)}</td>
+        <td class="num">${money(b.commission_cents)}
+          <div class="muted">${esc(b.commission_status)}</div></td>
+        <td class="num"><button class="btn btn-ghost btn-sm" data-edit="${esc(b.id)}">Edit</button></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+
+  panel.querySelectorAll('[data-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => openEdit(btn.dataset.edit));
+  });
+}
+
+function openCreate() {
+  editingId = null;
+  form.reset();
+  document.getElementById('dlg-title').textContent = 'Add a booking';
+  deleteBtn.hidden = true;
+  form.querySelector('.notice-error').hidden = true;
+  dlg.showModal();
+}
+
+function openEdit(id) {
+  const b = cache.find((x) => x.id === id);
+  if (!b) return;
+  editingId = id;
+  document.getElementById('dlg-title').textContent = 'Edit booking';
+  deleteBtn.hidden = false;
+  form.querySelector('.notice-error').hidden = true;
+  const set = (name, value) => { const el = form.elements[name]; if (el) el.value = value ?? ''; };
+  set('clientName', b.client_name); set('supplier', b.supplier);
+  set('productType', b.product_type); set('productName', b.product_name);
+  set('destination', b.destination); set('confirmationNumber', b.confirmation_number);
+  set('departDate', b.depart_date); set('returnDate', b.return_date);
+  set('depositDue', b.deposit_due); set('finalPaymentDue', b.final_payment_due);
+  set('travellers', b.travellers); set('status', b.status);
+  set('commissionStatus', b.commission_status); set('notes', b.notes);
+  set('gross', (b.gross_cents / 100).toFixed(2));
+  set('commission', (b.commission_cents / 100).toFixed(2));
+  dlg.showModal();
+}
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading bookings...</p>';
+  try {
+    const params = new URLSearchParams();
+    if (search.value.trim()) params.set('q', search.value.trim());
+    if (statusFilter.value) params.set('status', statusFilter.value);
+    const data = await api(`/api/bookings${params.toString() ? '?' + params : ''}`);
+    render(data.bookings, data.stats);
+  } catch (err) {
+    showError(panel, err);
+  }
+}
+
+document.getElementById('add').addEventListener('click', openCreate);
+dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+
+let timer;
+search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 350); });
+statusFilter.addEventListener('change', load);
+
+deleteBtn.addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Delete this booking? This cannot be undone.')) return;
+  await api(`/api/bookings/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
+  dlg.close();
+  await load();
+});
+
+onSubmit(form, async (values) => {
+  const path = editingId ? `/api/bookings/${encodeURIComponent(editingId)}` : '/api/bookings';
+  await api(path, { method: editingId ? 'PUT' : 'POST', body: values });
+  dlg.close();
+  await load();
+});
+
+if (new URLSearchParams(location.search).get('new')) openCreate();
+await load();
+</script>
+</body></html>
