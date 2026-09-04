@@ -66,6 +66,27 @@
 
         <div class="stack">
           <section class="card">
+            <div class="card-head"><h2>Automations</h2></div>
+            <div class="card-pad">
+              <div class="notice notice-ok" id="wf-ok" hidden>Added to the workflow.</div>
+              <div class="notice notice-error" id="wf-err" hidden></div>
+              <form id="wf-form">
+                <div class="field">
+                  <label class="sr-only" for="workflowId">Workflow</label>
+                  <select id="workflowId" name="workflowId" required>
+                    <option value="">Loading workflows...</option>
+                  </select>
+                </div>
+                <button class="btn btn-secondary btn-sm" type="submit" id="wf-submit" disabled>
+                  Add to workflow
+                </button>
+              </form>
+              <p class="field-hint" style="margin-top:.7rem;">Drops this contact into an automation
+              in GoHighLevel. Build the automation itself over in the CRM.</p>
+            </div>
+          </section>
+
+          <section class="card">
             <div class="card-head"><h2>Details</h2></div>
             <div class="card-pad">
               <div class="contact-head" style="margin-bottom:1.1rem;">
@@ -192,6 +213,33 @@ async function load() {
     showError(errBox, err);
   }
 }
+
+// --- workflows ------------------------------------------------------------
+const wfSelect = document.getElementById('workflowId');
+const wfSubmit = document.getElementById('wf-submit');
+try {
+  const { workflows } = await api('/api/workflows');
+  const usable = workflows.filter((w) => w.status !== 'draft');
+  wfSelect.innerHTML = usable.length
+    ? '<option value="">Choose a workflow</option>' +
+      usable.map((w) => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('')
+    : '<option value="">No published workflows</option>';
+  wfSubmit.disabled = usable.length === 0;
+} catch {
+  wfSelect.innerHTML = '<option value="">Workflows unavailable</option>';
+}
+
+onSubmit(document.getElementById('wf-form'), async (values) => {
+  if (!values.workflowId) throw new Error('Choose a workflow first.');
+  const name = wfSelect.options[wfSelect.selectedIndex]?.text || '';
+  await api(`/api/leads/${encodeURIComponent(id)}/workflow`, {
+    method: 'POST', body: { workflowId: values.workflowId, workflowName: name },
+  });
+  const ok = document.getElementById('wf-ok');
+  ok.textContent = `Added to ${name}.`;
+  ok.hidden = false;
+  setTimeout(() => { ok.hidden = true; }, 4000);
+}, { errorBox: document.getElementById('wf-err') });
 
 onSubmit(document.getElementById('note-form'), async (values) => {
   await api(`/api/leads/${encodeURIComponent(id)}/notes`, { method: 'POST', body: values });

@@ -618,6 +618,85 @@ export async function listSubscriptions(env, locationId, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Workflows
+//
+// Workflows can be listed and a contact can be pushed into one. Authoring a
+// workflow has no API and stays in GoHighLevel.
+// ---------------------------------------------------------------------------
+export async function listWorkflows(env, locationId) {
+  const data = await request(env, '/workflows/', { query: { locationId } });
+  return (data.workflows || []).map((w) => ({
+    id: pickId(w),
+    name: w.name || 'Workflow',
+    status: w.status || '',
+    createdAt: w.createdAt || null,
+  })).filter((w) => w.id);
+}
+
+export async function addContactToWorkflow(env, contactId, workflowId) {
+  await request(env, `/contacts/${encodeURIComponent(contactId)}/workflow/${encodeURIComponent(workflowId)}`, {
+    method: 'POST',
+    body: { eventStartTime: new Date().toISOString() },
+  });
+  return { contactId, workflowId };
+}
+
+export async function removeContactFromWorkflow(env, contactId, workflowId) {
+  await request(env, `/contacts/${encodeURIComponent(contactId)}/workflow/${encodeURIComponent(workflowId)}`, {
+    method: 'DELETE',
+  });
+  return { contactId, workflowId };
+}
+
+// ---------------------------------------------------------------------------
+// Forms and submissions
+// ---------------------------------------------------------------------------
+export async function listForms(env, locationId, { limit = 50 } = {}) {
+  const data = await request(env, '/forms/', {
+    query: { locationId, limit: Math.min(Number(limit) || 50, 100), skip: 0 },
+  });
+  return (data.forms || []).map((f) => ({
+    id: pickId(f),
+    name: f.name || 'Form',
+    createdAt: f.createdAt || null,
+  })).filter((f) => f.id);
+}
+
+export async function listFormSubmissions(env, locationId, { formId, limit = 50, page = 1, q } = {}) {
+  const data = await request(env, '/forms/submissions', {
+    query: {
+      locationId,
+      formId: formId || undefined,
+      q: q || undefined,
+      limit: Math.min(Number(limit) || 50, 100),
+      page,
+    },
+  });
+  const list = data.submissions || [];
+  return {
+    submissions: list.map((s) => {
+      // Everything beyond the known keys is the answers the person typed.
+      const known = new Set(['id', '_id', 'formId', 'name', 'email', 'phone', 'contactId', 'createdAt', 'formName', 'others', 'pageDetails', 'eventData']);
+      const answers = Object.entries(s)
+        .filter(([k, v]) => !known.has(k) && v !== null && v !== '' && typeof v !== 'object')
+        .map(([k, v]) => ({ label: k, value: String(v) }));
+      return {
+        id: pickId(s),
+        formId: s.formId || null,
+        formName: s.formName || '',
+        name: s.name || '',
+        email: s.email || '',
+        phone: s.phone || '',
+        contactId: s.contactId || null,
+        createdAt: s.createdAt || null,
+        answers,
+      };
+    }),
+    total: Number(data.meta?.total ?? list.length ?? 0),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Scope probe
 //
 // A missing scope on the Private Integration Token surfaces as a 401 or 403,

@@ -45,3 +45,6 @@ RESET_TTL_MINUTES = "60"
 GHL_DEFAULT_LOCATION_ID = "4Hb35fhCOJSuOmKDA1bY"
 GHL_API_BASE = "https://services.leadconnectorhq.com"
 GHL_API_VERSION = "2021-07-28"
+# White-labelled GoHighLevel app, used to deep-link the areas that have no
+# useful API (funnel builder, workflow editor, email builder and so on).
+GHL_APP_BASE = "https://app.concinnity.digital"

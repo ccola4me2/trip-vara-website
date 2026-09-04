@@ -30,6 +30,8 @@ import {
 } from './conversations.js';
 import { handleListCalendar, handleCreateAppointment } from './calendar.js';
 import { handleBilling } from './billing.js';
+import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
+import { handleCrmLinks } from './crm.js';
 import { handleDashboard, handleProduction } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth, handleTestEmail,
@@ -61,6 +63,8 @@ const PAGE_FILES = {
   '/app/inbox': '/app/inbox.html',
   '/app/calendar': '/app/calendar.html',
   '/app/billing': '/app/billing.html',
+  '/app/forms': '/app/forms.html',
+  '/app/crm': '/app/crm.html',
   '/app/pipeline': '/app/pipeline.html',
   '/app/bookings': '/app/bookings.html',
   '/app/reports': '/app/reports.html',
@@ -104,6 +108,7 @@ async function routeApi(request, env, path, method) {
   const leadMatch = path.match(/^\/api\/leads\/([^/]+)(\/notes)?$/);
   const detailMatch = path.match(/^\/api\/leads\/([^/]+)\/detail$/);
   const taskMatch = path.match(/^\/api\/leads\/([^/]+)\/tasks(?:\/([^/]+))?$/);
+  const wfMatch = path.match(/^\/api\/leads\/([^/]+)\/workflow$/);
   const oppMatch = path.match(/^\/api\/opportunities\/([^/]+)$/);
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
@@ -122,6 +127,9 @@ async function routeApi(request, env, path, method) {
   // ---- leads ------------------------------------------------------------
   if (path === '/api/leads' && method === 'GET') return handleListLeads(request, env);
   if (path === '/api/leads' && method === 'POST') return handleCreateLead(request, env);
+  if (wfMatch && method === 'POST') {
+    return handleAddToWorkflow(request, env, decodeURIComponent(wfMatch[1]));
+  }
   if (detailMatch && method === 'GET') {
     return handleContactDetail(request, env, decodeURIComponent(detailMatch[1]));
   }
@@ -169,6 +177,11 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/calendar/appointments' && method === 'POST') {
     return handleCreateAppointment(request, env);
   }
+
+  // ---- forms and workflows ----------------------------------------------
+  if (path === '/api/forms' && method === 'GET') return handleListForms(request, env);
+  if (path === '/api/workflows' && method === 'GET') return handleListWorkflows(request, env);
+  if (path === '/api/crm/links' && method === 'GET') return handleCrmLinks(request, env);
 
   // ---- billing ----------------------------------------------------------
   if (path === '/api/billing' && method === 'GET') return handleBilling(request, env);
