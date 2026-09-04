@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendar | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Calendar</h1><p class="sub">Upcoming appointments across your CRM calendars.</p></div>
+      <div class="toolbar" style="margin:0;">
+        <select id="range" aria-label="Range">
+          <option value="7">Next 7 days</option>
+          <option value="30" selected>Next 30 days</option>
+          <option value="90">Next 90 days</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="book">Book appointment</button>
+      </div>
+    </header>
+    <div class="content">
+      <section id="stats" class="stat-grid"></section>
+      <section class="card" id="panel"><p class="spinner">Loading calendar...</p></section>
+    </div>
+  </div>
+</div>
+
+<dialog id="appt-dialog">
+  <form id="appt-form" method="dialog">
+    <div class="card-head"><h2>Book an appointment</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field">
+        <label for="calendarId">Calendar</label>
+        <select id="calendarId" name="calendarId" required></select>
+      </div>
+      <div class="field picker">
+        <label for="contact-search">Contact</label>
+        <input id="contact-search" autocomplete="off" placeholder="Search a name, email or phone">
+        <input type="hidden" name="contactId" id="contactId">
+        <div class="picker-results" id="picker" hidden></div>
+        <p class="field-hint" id="picked"></p>
+      </div>
+      <div class="field"><label for="title">Title</label>
+        <input id="title" name="title" placeholder="Discovery call"></div>
+      <div class="field-row">
+        <div class="field"><label for="startTime">Starts</label>
+          <input id="startTime" name="startTime" type="datetime-local" required></div>
+        <div class="field"><label for="durationMinutes">Minutes</label>
+          <input id="durationMinutes" name="durationMinutes" type="number" min="5" max="480" value="30"></div>
+      </div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Book it</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, timeAgo, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const panel = document.getElementById('panel');
+const statsEl = document.getElementById('stats');
+const range = document.getElementById('range');
+const dlg = document.getElementById('appt-dialog');
+let calendars = [];
+
+const dayKey = (iso) => new Date(iso).toDateString();
+const dayLabel = (iso) => {
+  const d = new Date(iso);
+  const today = new Date().toDateString();
+  const tomorrow = new Date(Date.now() + 86400000).toDateString();
+  if (d.toDateString() === today) return 'Today';
+  if (d.toDateString() === tomorrow) return 'Tomorrow';
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+};
+const timeLabel = (iso) =>
+  new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+function render(d) {
+  calendars = d.calendars;
+  const upcoming = d.events.filter((e) => Date.parse(e.startTime) >= Date.now());
+
+  statsEl.innerHTML = `
+    <div class="stat"><p class="label">Upcoming</p><p class="value">${upcoming.length}</p>
+      <p class="meta">In the next ${d.days} days</p></div>
+    <div class="stat"><p class="label">Calendars</p><p class="value">${d.calendars.length}</p>
+      <p class="meta">${d.calendars.filter((c) => c.isActive).length} active</p></div>
+    <div class="stat"><p class="label">Next up</p>
+      <p class="value" style="font-size:1.1rem;">${upcoming.length ? esc(timeAgo(upcoming[0].startTime)) : 'Nothing booked'}</p>
+      <p class="meta">${upcoming.length ? esc(upcoming[0].title) : ''}</p></div>`;
+
+  if (!d.events.length) {
+    panel.innerHTML = d.calendars.length
+      ? '<div class="empty"><h3>Nothing scheduled</h3><p>No appointments in this window.</p></div>'
+      : '<div class="empty"><h3>No calendars</h3><p>Create a calendar in GoHighLevel and it will show up here.</p></div>';
+    return;
+  }
+
+  let html = '';
+  let lastDay = null;
+  for (const e of d.events) {
+    const key = dayKey(e.startTime);
+    if (key !== lastDay) {
+      html += `<div class="day-head">${esc(dayLabel(e.startTime))}</div>`;
+      lastDay = key;
+    }
+    html += `<div class="event">
+      <div class="time">${esc(timeLabel(e.startTime))}</div>
+      <div class="what">
+        <div class="title">${esc(e.title)}</div>
+        <div class="muted">${esc(e.calendarName || '')}${e.status ? ' · ' + esc(e.status) : ''}</div>
+        ${e.contactId ? `<a class="muted" href="/app/contact?id=${encodeURIComponent(e.contactId)}">Open contact</a>` : ''}
+      </div></div>`;
+  }
+  panel.innerHTML = html;
+}
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading calendar...</p>';
+  try { render(await api(`/api/calendar?days=${range.value}`)); }
+  catch (err) { statsEl.innerHTML = ''; showError(panel, err); }
+}
+
+document.getElementById('book').addEventListener('click', () => {
+  if (!calendars.length) { alert('No calendars available in the CRM yet.'); return; }
+  const form = document.getElementById('appt-form');
+  form.reset();
+  document.getElementById('contactId').value = '';
+  document.getElementById('picked').textContent = '';
+  form.querySelector('.notice-error').hidden = true;
+  document.getElementById('calendarId').innerHTML = calendars
+    .filter((c) => c.isActive)
+    .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  dlg.showModal();
+});
+dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+
+const contactSearch = document.getElementById('contact-search');
+const picker = document.getElementById('picker');
+let pickTimer;
+contactSearch.addEventListener('input', () => {
+  clearTimeout(pickTimer);
+  const q = contactSearch.value.trim();
+  if (q.length < 2) { picker.hidden = true; return; }
+  pickTimer = setTimeout(async () => {
+    try {
+      const { contacts } = await api(`/api/leads?q=${encodeURIComponent(q)}&limit=8`);
+      picker.innerHTML = contacts.length
+        ? contacts.map((c) => `<button type="button" data-cid="${esc(c.id)}" data-cname="${esc(c.name)}">
+             ${esc(c.name)}<br><span class="muted">${esc(c.email || c.phone || '')}</span></button>`).join('')
+        : '<button type="button" disabled>No matches</button>';
+      picker.hidden = false;
+      picker.querySelectorAll('[data-cid]').forEach((b) => b.addEventListener('click', () => {
+        document.getElementById('contactId').value = b.dataset.cid;
+        document.getElementById('picked').textContent = `Booking for ${b.dataset.cname}`;
+        contactSearch.value = b.dataset.cname;
+        picker.hidden = true;
+      }));
+    } catch { picker.hidden = true; }
+  }, 300);
+});
+
+onSubmit(document.getElementById('appt-form'), async (values) => {
+  if (!values.contactId) throw new Error('Pick a contact for this appointment.');
+  await api('/api/calendar/appointments', { method: 'POST', body: values });
+  dlg.close();
+  await load();
+});
+
+range.addEventListener('change', load);
+await load();
+</script>
+</body></html>

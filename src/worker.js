@@ -28,6 +28,7 @@ import {
 import {
   handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
 } from './conversations.js';
+import { handleListCalendar, handleCreateAppointment } from './calendar.js';
 import { handleDashboard, handleProduction } from './reports.js';
 import { handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth } from './admin.js';
 import { purgeExpiredSessions } from './db.js';
@@ -55,6 +56,7 @@ const PAGE_FILES = {
   '/app/leads': '/app/leads.html',
   '/app/contact': '/app/contact.html',
   '/app/inbox': '/app/inbox.html',
+  '/app/calendar': '/app/calendar.html',
   '/app/pipeline': '/app/pipeline.html',
   '/app/bookings': '/app/bookings.html',
   '/app/reports': '/app/reports.html',
@@ -156,6 +158,12 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/conversations/send' && method === 'POST') return handleSendMessage(request, env);
   if (convoMatch && method === 'GET') {
     return handleConversationMessages(request, env, decodeURIComponent(convoMatch[1]));
+  }
+
+  // ---- calendar ---------------------------------------------------------
+  if (path === '/api/calendar' && method === 'GET') return handleListCalendar(request, env);
+  if (path === '/api/calendar/appointments' && method === 'POST') {
+    return handleCreateAppointment(request, env);
   }
 
   // ---- dashboard and reports -------------------------------------------

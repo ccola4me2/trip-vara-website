@@ -332,3 +332,34 @@ tbody tr[data-href] { cursor: pointer; }
 .composer textarea { min-height: 70px; }
 .composer .row { display: flex; gap: .6rem; align-items: center; margin-top: .6rem; }
 .composer select { width: auto; }
+
+/* Pipeline drag and drop */
+.opp { cursor: grab; }
+.opp:active { cursor: grabbing; }
+.opp.dragging { opacity: .45; }
+.board-col.drop-target { outline: 2px dashed var(--coral-400); outline-offset: -2px; background: var(--coral-50); }
+.opp .move { margin-top: .5rem; }
+.opp .move select { font-size: .75rem; padding: .25rem .4rem; }
+.picker { position: relative; }
+.picker-results {
+  position: absolute; left: 0; right: 0; top: 100%; z-index: 20; background: #fff;
+  border: 1px solid var(--navy-200); border-radius: 0 0 9px 9px; max-height: 190px;
+  overflow-y: auto; box-shadow: var(--shadow-md);
+}
+.picker-results button {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  padding: .5rem .7rem; cursor: pointer; font: inherit; font-size: .85rem;
+  border-bottom: 1px solid var(--navy-100);
+}
+.picker-results button:hover { background: var(--navy-50); }
+
+/* Calendar agenda */
+.day-head {
+  position: sticky; top: 0; background: var(--sand-100); padding: .5rem 1.25rem;
+  font-size: .72rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-500); border-bottom: 1px solid var(--navy-100); z-index: 2;
+}
+.event { display: flex; gap: 1rem; padding: .85rem 1.25rem; border-bottom: 1px solid var(--navy-100); }
+.event .time { flex: 0 0 92px; font-variant-numeric: tabular-nums; font-weight: 650; color: var(--navy-800); font-size: .85rem; }
+.event .what { flex: 1; min-width: 0; }
+.event .what .title { font-weight: 600; color: var(--navy-800); }

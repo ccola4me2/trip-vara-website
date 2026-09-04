@@ -17,6 +17,7 @@
       <div class="toolbar" style="margin:0;">
         <select id="pipeline-select" aria-label="Pipeline" hidden></select>
         <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+        <button class="btn btn-primary btn-sm" id="new-deal">New deal</button>
       </div>
     </header>
     <div class="content">
@@ -25,15 +26,53 @@
     </div>
   </div>
 </div>
+
+<dialog id="deal-dialog">
+  <form id="deal-form" method="dialog">
+    <div class="card-head"><h2>New deal</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field picker">
+        <label for="contact-search">Contact</label>
+        <input id="contact-search" autocomplete="off" placeholder="Search a name, email or phone">
+        <input type="hidden" name="contactId" id="contactId">
+        <div class="picker-results" id="picker" hidden></div>
+        <p class="field-hint" id="picked"></p>
+      </div>
+      <div class="field">
+        <label for="deal-name">Deal name</label>
+        <input id="deal-name" name="name" required placeholder="Bahamas cruise, March 2027">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="stageId">Stage</label>
+          <select id="stageId" name="stageId"></select>
+        </div>
+        <div class="field">
+          <label for="monetaryValue">Value (USD)</label>
+          <input id="monetaryValue" name="monetaryValue" inputmode="decimal" placeholder="0">
+        </div>
+      </div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Create deal</button>
+    </div>
+  </form>
+</dialog>
+
 <script type="module">
-import { api, mountShell, esc, money, showError } from '/js/app.js';
+import { api, mountShell, esc, money, showError, onSubmit } from '/js/app.js';
 await mountShell();
 
 const panel = document.getElementById('panel');
 const summary = document.getElementById('summary');
 const select = document.getElementById('pipeline-select');
+let lastData = null;
 
 function render(data) {
+  lastData = data;
   if (!data.pipeline) {
     panel.innerHTML = '<div class="card"><div class="empty"><h3>No pipelines found</h3><p>Create a pipeline in GoHighLevel and it will show up here.</p></div></div>';
     return;
@@ -57,16 +96,70 @@ function render(data) {
       <p class="meta">In this pipeline</p></div>`;
 
   panel.innerHTML = `<div class="board">${data.stages.map((s) => `
-    <div class="board-col">
+    <div class="board-col"${s.id ? ` data-stage="${esc(s.id)}"` : ''}>
       <h3>${esc(s.name)}</h3>
       <p class="col-meta">${s.count} &middot; ${money(s.valueTotal * 100)}</p>
       ${s.opportunities.map((o) => `
-        <article class="opp">
+        <article class="opp" draggable="true" data-opp="${esc(o.id)}">
           <p class="t">${esc(o.name)}</p>
           ${o.contactName ? `<p class="c">${esc(o.contactName)}</p>` : ''}
           ${o.monetaryValue ? `<p class="v">${money(o.monetaryValue * 100)}</p>` : ''}
+          <div class="move">
+            <label class="sr-only" for="mv-${esc(o.id)}">Move stage</label>
+            <select id="mv-${esc(o.id)}" data-move="${esc(o.id)}">
+              ${data.stages.filter((st) => st.id).map((st) =>
+                `<option value="${esc(st.id)}"${st.id === o.stageId ? ' selected' : ''}>${esc(st.name)}</option>`).join('')}
+            </select>
+          </div>
         </article>`).join('') || '<p class="muted" style="font-size:.8rem;">Nothing here.</p>'}
     </div>`).join('')}</div>`;
+
+  wireBoard();
+}
+
+/** Drag to move, with a per-card select so touch and keyboard also work. */
+function wireBoard() {
+  let draggedId = null;
+
+  panel.querySelectorAll('.opp[data-opp]').forEach((card) => {
+    card.addEventListener('dragstart', (e) => {
+      draggedId = card.dataset.opp;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedId);
+    });
+    card.addEventListener('dragend', () => {
+      draggedId = null;
+      card.classList.remove('dragging');
+    });
+  });
+
+  panel.querySelectorAll('.board-col[data-stage]').forEach((col) => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drop-target'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drop-target'));
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drop-target');
+      const id = draggedId || e.dataTransfer.getData('text/plain');
+      const stageId = col.dataset.stage;
+      if (!id || !stageId) return;
+      await moveOpportunity(id, stageId);
+    });
+  });
+
+  panel.querySelectorAll('[data-move]').forEach((sel) => {
+    sel.addEventListener('change', () => moveOpportunity(sel.dataset.move, sel.value));
+  });
+}
+
+async function moveOpportunity(id, stageId) {
+  try {
+    await api(`/api/opportunities/${encodeURIComponent(id)}`, { method: 'PUT', body: { stageId } });
+    await load(select.value || undefined);
+  } catch (err) {
+    alert(err.message);
+    await load(select.value || undefined);
+  }
 }
 
 async function load(pipelineId) {
@@ -78,6 +171,59 @@ async function load(pipelineId) {
     showError(panel, err);
   }
 }
+
+// --- new deal -------------------------------------------------------------
+const dealDialog = document.getElementById('deal-dialog');
+const dealForm = document.getElementById('deal-form');
+const contactSearch = document.getElementById('contact-search');
+const picker = document.getElementById('picker');
+
+document.getElementById('new-deal').addEventListener('click', () => {
+  if (!lastData || !lastData.pipeline) { alert('No pipeline to add a deal to yet.'); return; }
+  dealForm.reset();
+  document.getElementById('contactId').value = '';
+  document.getElementById('picked').textContent = '';
+  dealForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('stageId').innerHTML = lastData.stages
+    .filter((st) => st.id)
+    .map((st) => `<option value="${esc(st.id)}">${esc(st.name)}</option>`).join('');
+  dealDialog.showModal();
+});
+dealDialog.querySelectorAll('[data-close]').forEach((b) =>
+  b.addEventListener('click', () => dealDialog.close()));
+
+let pickTimer;
+contactSearch.addEventListener('input', () => {
+  clearTimeout(pickTimer);
+  const q = contactSearch.value.trim();
+  if (q.length < 2) { picker.hidden = true; return; }
+  pickTimer = setTimeout(async () => {
+    try {
+      const { contacts } = await api(`/api/leads?q=${encodeURIComponent(q)}&limit=8`);
+      picker.innerHTML = contacts.length
+        ? contacts.map((c) => `<button type="button" data-cid="${esc(c.id)}" data-cname="${esc(c.name)}">
+             ${esc(c.name)}<br><span class="muted">${esc(c.email || c.phone || '')}</span></button>`).join('')
+        : '<button type="button" disabled>No matches</button>';
+      picker.hidden = false;
+      picker.querySelectorAll('[data-cid]').forEach((b) => b.addEventListener('click', () => {
+        document.getElementById('contactId').value = b.dataset.cid;
+        document.getElementById('picked').textContent = `Attached to ${b.dataset.cname}`;
+        contactSearch.value = b.dataset.cname;
+        picker.hidden = true;
+      }));
+    } catch { picker.hidden = true; }
+  }, 300);
+});
+
+onSubmit(dealForm, async (values) => {
+  if (!values.contactId) throw new Error('Pick a contact for this deal.');
+  await api('/api/opportunities', {
+    method: 'POST',
+    body: { ...values, pipelineId: lastData.pipeline.id, status: 'open' },
+  });
+  dealDialog.close();
+  await load(select.value || undefined);
+});
 
 select.addEventListener('change', () => load(select.value));
 document.getElementById('refresh').addEventListener('click', () => load(select.value || undefined));
