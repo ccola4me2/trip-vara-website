@@ -5,7 +5,7 @@ import { json, badRequest, notFound, clean, readJson } from './util.js';
 import * as ghl from './ghl.js';
 import { requireAdmin, publicUser } from './auth.js';
 import * as db from './db.js';
-import { sendAdvisorApprovedEmail, checkResend } from './email.js';
+import { sendAdvisorApprovedEmail, checkResend, sendTestEmail } from './email.js';
 
 const STATUSES = ['pending', 'active', 'suspended'];
 
@@ -128,4 +128,18 @@ export async function handleHealth(request, env) {
     // name or in the build environment instead of the runtime one.
     visibleKeys: Object.keys(env).sort(),
   });
+}
+
+/** Admin only. Sends a real email and returns Resend's actual response. */
+export async function handleTestEmail(request, env) {
+  const { user, response } = await requireAdmin(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const to = clean(body.to, 254) || user.email;
+  if (!to) return badRequest('No address to send to.');
+
+  const result = await sendTestEmail(env, to);
+  await db.logActivity(env, user.id, 'admin.testEmail', `Test email to ${to}`, { ok: result.ok });
+  return json(result, result.ok ? 200 : 502);
 }

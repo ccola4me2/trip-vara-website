@@ -206,3 +206,51 @@ export async function checkResend(env) {
     domains,
   };
 }
+
+/**
+ * Send a real email and return what Resend actually said.
+ *
+ * Every other send here is best effort and swallows failures, which is right
+ * for request paths but means a broken setup is invisible. This one surfaces
+ * the status and body so an admin can see the real reason a message did not
+ * arrive. Admin only, and it sends for real.
+ */
+export async function sendTestEmail(env, to) {
+  if (!env.RESEND_API_KEY) return { ok: false, reason: 'RESEND_API_KEY is not set.' };
+
+  const payload = {
+    from: env.MAIL_FROM || 'Trip Vara <noreply@tripvaratravel.com>',
+    to: [to],
+    subject: 'Trip Vara portal test email',
+    html: layout(env, {
+      heading: 'Email is working',
+      body: '<p style="margin:0;">If you are reading this, the portal can send mail. Nothing else to do.</p>',
+      cta: { label: 'Open the portal', href: `${appUrl(env)}/login` },
+    }),
+  };
+
+  let res;
+  try {
+    res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    return { ok: false, reason: 'Could not reach Resend.', detail: String(e) };
+  }
+
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    from: payload.from,
+    to,
+    // Resend puts the reason for a rejection in the body, and it is the only
+    // place the real cause ever appears.
+    response: body,
+  };
+}
