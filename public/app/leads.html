@@ -66,13 +66,22 @@ function render(contacts, total) {
   }
   panel.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Source</th><th>Added</th></tr></thead>
-    <tbody>${contacts.map((c) => `<tr>
+    <tbody>${contacts.map((c) => `<tr data-href="/app/contact?id=${encodeURIComponent(c.id)}">
       <td><span class="name">${esc(c.name)}</span>${c.tags.length ? `<div>${c.tags.slice(0,3).map((t) => `<span class="badge badge-navy">${esc(t)}</span>`).join(' ')}</div>` : ''}</td>
       <td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '<span class="muted">-</span>'}</td>
       <td>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '<span class="muted">-</span>'}</td>
       <td><span class="muted">${esc(c.source || '-')}</span></td>
       <td><span class="muted">${esc(timeAgo(c.createdAt))}</span></td>
     </tr>`).join('')}</tbody></table></div>`;
+
+  // Whole row opens the contact, but clicks on the mailto and tel links inside
+  // it must still do their own thing.
+  panel.querySelectorAll('tr[data-href]').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;
+      location.href = row.dataset.href;
+    });
+  });
 }
 
 let controller = null;

@@ -15,6 +15,7 @@ import {
 } from './auth.js';
 import {
   handleListLeads, handleGetLead, handleCreateLead, handleUpdateLead, handleCreateLeadNote,
+  handleContactDetail, handleCreateTask, handleToggleTask,
 } from './leads.js';
 import {
   handleListPipelines, handleListOpportunities,
@@ -49,6 +50,7 @@ const PAGE_FILES = {
   '/app': '/app/index.html',
   '/app/': '/app/index.html',
   '/app/leads': '/app/leads.html',
+  '/app/contact': '/app/contact.html',
   '/app/pipeline': '/app/pipeline.html',
   '/app/bookings': '/app/bookings.html',
   '/app/reports': '/app/reports.html',
@@ -90,6 +92,8 @@ async function routeRequest(request, env, ctx) {
 async function routeApi(request, env, path, method) {
   // /api/leads/<id>/notes and /api/leads/<id>
   const leadMatch = path.match(/^\/api\/leads\/([^/]+)(\/notes)?$/);
+  const detailMatch = path.match(/^\/api\/leads\/([^/]+)\/detail$/);
+  const taskMatch = path.match(/^\/api\/leads\/([^/]+)\/tasks(?:\/([^/]+))?$/);
   const oppMatch = path.match(/^\/api\/opportunities\/([^/]+)$/);
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
@@ -107,6 +111,16 @@ async function routeApi(request, env, path, method) {
   // ---- leads ------------------------------------------------------------
   if (path === '/api/leads' && method === 'GET') return handleListLeads(request, env);
   if (path === '/api/leads' && method === 'POST') return handleCreateLead(request, env);
+  if (detailMatch && method === 'GET') {
+    return handleContactDetail(request, env, decodeURIComponent(detailMatch[1]));
+  }
+  if (taskMatch && !taskMatch[2] && method === 'POST') {
+    return handleCreateTask(request, env, decodeURIComponent(taskMatch[1]));
+  }
+  if (taskMatch && taskMatch[2] && method === 'PUT') {
+    return handleToggleTask(request, env,
+      decodeURIComponent(taskMatch[1]), decodeURIComponent(taskMatch[2]));
+  }
   if (leadMatch && leadMatch[2] === '/notes' && method === 'POST') {
     return handleCreateLeadNote(request, env, decodeURIComponent(leadMatch[1]));
   }

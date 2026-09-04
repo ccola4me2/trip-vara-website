@@ -103,3 +103,80 @@ export async function handleCreateLeadNote(request, env, contactId) {
     return ghl.ghlErrorResponse(e);
   }
 }
+
+/**
+ * Everything about one contact on a single page: details, notes, tasks,
+ * appointments and their opportunities.
+ *
+ * Each extra is fetched independently and allowed to fail. Custom fields,
+ * tags and appointments sit behind scopes the token may not carry, and a
+ * missing scope should cost you that one panel, not the whole page.
+ */
+export async function handleContactDetail(request, env, contactId) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const locationId = ghl.locationFor(env, user);
+
+  const [contact, notes, tasks, opportunities] = await Promise.all([
+    ghl.getContact(env, contactId),
+    ghl.listContactNotes(env, contactId).catch(() => null),
+    ghl.listContactTasks(env, contactId).catch(() => null),
+    ghl.searchOpportunities(env, locationId, { limit: 100 })
+      .then((r) => r.opportunities.filter((o) => o.contactId === contactId))
+      .catch(() => null),
+  ]).catch((e) => { throw e; });
+
+  if (!contact) return json({ error: 'Contact not found.' }, 404);
+
+  return json({
+    contact,
+    notes: notes || [],
+    tasks: tasks || [],
+    opportunities: opportunities || [],
+    // Tells the UI to say "unavailable" rather than "none", which are
+    // different things and matter when a scope is missing.
+    unavailable: {
+      notes: notes === null,
+      tasks: tasks === null,
+      opportunities: opportunities === null,
+    },
+  });
+}
+
+export async function handleCreateTask(request, env, contactId) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const title = clean(body.title, 160);
+  if (!title) return badRequest('Give the task a title.');
+
+  try {
+    const task = await ghl.createContactTask(env, contactId, {
+      title,
+      body: clean(body.body, 2000),
+      dueDate: body.dueDate || undefined,
+      assignedTo: user.ghl_user_id || undefined,
+    });
+    await logActivity(env, user.id, 'task.create', `Added task "${title}"`, { contactId });
+    return json({ ok: true, task }, 201);
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
+}
+
+export async function handleToggleTask(request, env, contactId, taskId) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  try {
+    const task = await ghl.setTaskCompleted(env, contactId, taskId, Boolean(body.completed));
+    await logActivity(env, user.id, 'task.update',
+      body.completed ? 'Completed a task' : 'Reopened a task', { contactId, taskId });
+    return json({ ok: true, task });
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
+}
