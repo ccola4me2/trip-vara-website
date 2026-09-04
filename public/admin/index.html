@@ -113,6 +113,7 @@ const syncBody = document.getElementById('sync-body');
 const SYNC_TONE = { complete: 'badge-green', running: 'badge-amber', error: 'badge-red', idle: 'badge-navy' };
 
 function renderSync(d) {
+  const counts = d.counts || { contacts: 0, opportunities: 0, pipelines: 0 };
   const byKind = Object.fromEntries((d.jobs || []).map((j) => [j.kind, j]));
   const row = (kind, label, count) => {
     const j = byKind[kind];
@@ -127,9 +128,9 @@ function renderSync(d) {
   syncBody.innerHTML = `<div class="table-wrap"><table>
       <thead><tr><th>Data</th><th>Status</th><th class="num">Stored</th><th>Last run</th></tr></thead>
       <tbody>
-        ${row('contacts', 'Contacts', d.counts.contacts)}
-        ${row('opportunities', 'Opportunities', d.counts.opportunities)}
-        ${row('pipelines', 'Pipelines', d.counts.pipelines)}
+        ${row('contacts', 'Contacts', counts.contacts)}
+        ${row('opportunities', 'Opportunities', counts.opportunities)}
+        ${row('pipelines', 'Pipelines', counts.pipelines)}
       </tbody></table></div>
     <p class="field-hint" style="margin-top:.9rem;">The portal reads from its own copy, so lists stay fast
     and keep working when the upstream API is slow. A background job refreshes it every five minutes and
@@ -143,18 +144,36 @@ async function loadSync() {
 }
 
 document.getElementById('sync-now').addEventListener('click', async (e) => {
-  e.target.disabled = true;
-  try { renderSync(await api('/api/admin/sync', { method: 'POST', body: {} })); await loadSync(); }
-  catch (err) { alert(err.message); }
-  finally { e.target.disabled = false; }
+  const btn = e.target;
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  try {
+    // POST answers with {ok, result, jobs} and no counts, so re-read the full
+    // status rather than rendering the write response.
+    await api('/api/admin/sync', { method: 'POST', body: {} });
+    await loadSync();
+  } catch (err) {
+    showError(syncBody, err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync now';
+  }
 });
 
 document.getElementById('sync-full').addEventListener('click', async (e) => {
   if (!confirm('Start a full resync? It re-reads everything from the CRM. Existing rows are updated, never deleted.')) return;
-  e.target.disabled = true;
-  try { await api('/api/admin/sync', { method: 'POST', body: { force: true } }); await loadSync(); }
-  catch (err) { alert(err.message); }
-  finally { e.target.disabled = false; }
+  const btn = e.target;
+  btn.disabled = true;
+  btn.textContent = 'Resyncing...';
+  try {
+    await api('/api/admin/sync', { method: 'POST', body: { force: true } });
+    await loadSync();
+  } catch (err) {
+    showError(syncBody, err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Full resync';
+  }
 });
 
 filter.addEventListener('change', load);
