@@ -29,6 +29,7 @@ import {
   handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
 } from './conversations.js';
 import { handleListCalendar, handleCreateAppointment } from './calendar.js';
+import { handleBilling } from './billing.js';
 import { handleDashboard, handleProduction } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth, handleTestEmail,
@@ -59,6 +60,7 @@ const PAGE_FILES = {
   '/app/contact': '/app/contact.html',
   '/app/inbox': '/app/inbox.html',
   '/app/calendar': '/app/calendar.html',
+  '/app/billing': '/app/billing.html',
   '/app/pipeline': '/app/pipeline.html',
   '/app/bookings': '/app/bookings.html',
   '/app/reports': '/app/reports.html',
@@ -167,6 +169,9 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/calendar/appointments' && method === 'POST') {
     return handleCreateAppointment(request, env);
   }
+
+  // ---- billing ----------------------------------------------------------
+  if (path === '/api/billing' && method === 'GET') return handleBilling(request, env);
 
   // ---- dashboard and reports -------------------------------------------
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);

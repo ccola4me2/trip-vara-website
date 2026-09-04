@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billing | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Billing</h1><p class="sub">Invoices and payments from your CRM, against what your bookings expect.</p></div>
+      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="stats" class="stat-grid"></section>
+      <section class="card" id="reconcile" hidden></section>
+      <section class="card">
+        <div class="card-head"><h2>Invoices</h2><span class="muted" id="inv-count"></span></div>
+        <div id="invoices"><p class="spinner">Loading...</p></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Transactions</h2><span class="muted" id="tx-count"></span></div>
+        <div id="transactions"></div>
+      </section>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, money, timeAgo, showError } from '/js/app.js';
+await mountShell();
+
+const panelInv = document.getElementById('invoices');
+const panelTx = document.getElementById('transactions');
+const statsEl = document.getElementById('stats');
+const errBox = document.getElementById('err');
+
+const INV_TONE = {
+  paid: 'badge-green', sent: 'badge-amber', overdue: 'badge-red',
+  draft: 'badge-navy', void: 'badge-red', partially_paid: 'badge-amber',
+  payment_processing: 'badge-amber',
+};
+const TX_TONE = { succeeded: 'badge-green', paid: 'badge-green', failed: 'badge-red', pending: 'badge-amber' };
+
+function render(d) {
+  const s = d.stats;
+  statsEl.innerHTML = `
+    <div class="stat"><p class="label">Invoiced</p><p class="value">${money(s.invoicedCents)}</p>
+      <p class="meta">${s.invoiceCount} invoice${s.invoiceCount === 1 ? '' : 's'}</p></div>
+    <div class="stat"><p class="label">Collected</p><p class="value">${money(s.collectedCents)}</p>
+      <p class="meta">Recorded against invoices</p></div>
+    <div class="stat"><p class="label">Outstanding</p><p class="value">${money(s.outstandingCents)}</p>
+      <p class="meta">Sent but not settled</p></div>
+    <div class="stat"><p class="label">Transactions</p><p class="value">${money(s.settledCents)}</p>
+      <p class="meta">${s.transactionCount} successful payment${s.transactionCount === 1 ? '' : 's'}</p></div>`;
+
+  // The point of this page: what bookings expect against what the CRM has seen.
+  const b = d.bookings;
+  const gap = b.grossCents - s.invoicedCents;
+  document.getElementById('reconcile').hidden = false;
+  document.getElementById('reconcile').innerHTML = `
+    <div class="card-head"><h2>Bookings against billing</h2></div>
+    <div class="card-pad">
+      <dl class="kv" style="grid-template-columns:220px 1fr;">
+        <dt>Booked volume</dt><dd>${money(b.grossCents)} <span class="muted">from your bookings</span></dd>
+        <dt>Invoiced in CRM</dt><dd>${money(s.invoicedCents)}</dd>
+        <dt>Difference</dt><dd style="color:${gap === 0 ? 'var(--green-600)' : 'var(--amber-600)'};font-weight:650;">
+          ${money(Math.abs(gap))} ${gap === 0 ? 'matched' : gap > 0 ? 'booked but not invoiced' : 'invoiced beyond bookings'}</dd>
+        <dt>Commission expected</dt><dd>${money(b.commissionCents)}</dd>
+        <dt>Commission received</dt><dd>${money(b.commissionPaidCents)}</dd>
+      </dl>
+      <p class="field-hint" style="margin-top:.9rem;">Booked volume is what you entered on the Bookings page.
+      Invoiced is what exists in the CRM. A gap usually means an invoice has not been raised yet.</p>
+    </div>`;
+
+  document.getElementById('inv-count').textContent = d.unavailable.invoices ? 'unavailable' : `${d.invoices.length} shown`;
+  panelInv.innerHTML = d.unavailable.invoices
+    ? '<div class="empty"><p>Invoices are not available with the current CRM permissions.</p></div>'
+    : d.invoices.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Invoice</th><th>Client</th><th>Status</th><th>Due</th>
+          <th class="num">Total</th><th class="num">Paid</th></tr></thead>
+        <tbody>${d.invoices.map((i) => `<tr>
+          <td><span class="name">${esc(i.number || i.name || i.id.slice(0, 8))}</span>
+            <div class="muted">${esc(i.name && i.number ? i.name : '')}</div></td>
+          <td>${i.contactId
+              ? `<a href="/app/contact?id=${encodeURIComponent(i.contactId)}">${esc(i.contactName || 'Contact')}</a>`
+              : esc(i.contactName || '-')}
+            <div class="muted">${esc(i.contactEmail || '')}</div></td>
+          <td><span class="badge ${INV_TONE[i.status] || 'badge-navy'}">${esc(i.status.replace(/_/g, ' ') || 'unknown')}</span></td>
+          <td>${i.dueDate ? esc(timeAgo(i.dueDate)) : '<span class="muted">-</span>'}</td>
+          <td class="num">${money(i.totalCents)}</td>
+          <td class="num">${money(i.paidCents)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty"><h3>No invoices yet</h3><p>Invoices raised in GoHighLevel appear here.</p></div>';
+
+  document.getElementById('tx-count').textContent = d.unavailable.transactions ? 'unavailable' : `${d.transactions.length} shown`;
+  panelTx.innerHTML = d.unavailable.transactions
+    ? '<div class="empty"><p>Transactions are not available with the current CRM permissions.</p></div>'
+    : d.transactions.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Status</th><th>Source</th><th>When</th><th class="num">Amount</th></tr></thead>
+        <tbody>${d.transactions.map((t) => `<tr>
+          <td>${t.contactId
+              ? `<a href="/app/contact?id=${encodeURIComponent(t.contactId)}">${esc(t.contactName || 'Contact')}</a>`
+              : esc(t.contactName || '-')}</td>
+          <td><span class="badge ${TX_TONE[t.status] || 'badge-navy'}">${esc(t.status || 'unknown')}</span></td>
+          <td><span class="muted">${esc(t.paymentProvider || t.entityType || '-')}</span></td>
+          <td><span class="muted">${esc(t.createdAt ? timeAgo(t.createdAt) : '-')}</span></td>
+          <td class="num">${money(t.amountCents)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty"><h3>No transactions yet</h3><p>Payments taken through the CRM appear here.</p></div>';
+}
+
+async function load() {
+  panelInv.innerHTML = '<p class="spinner">Loading...</p>';
+  try { render(await api('/api/billing')); }
+  catch (err) { statsEl.innerHTML = ''; showError(errBox, err); panelInv.innerHTML = ''; }
+}
+document.getElementById('refresh').addEventListener('click', load);
+await load();
+</script>
+</body></html>

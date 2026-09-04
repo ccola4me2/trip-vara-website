@@ -507,6 +507,117 @@ export async function createAppointment(env, locationId, f) {
 }
 
 // ---------------------------------------------------------------------------
+// Invoices and payments
+//
+// These endpoints scope by altId/altType rather than locationId, and reject a
+// request that omits offset, so the shared helper below fills both in.
+//
+// Money: GHL returns amounts in whole currency units here, unlike the portal's
+// own bookings which store integer cents. Everything is converted to cents on
+// the way in so one formatter works across the whole UI.
+// ---------------------------------------------------------------------------
+function altQuery(locationId, { limit = 50, offset = 0, ...rest } = {}) {
+  return {
+    altId: locationId,
+    altType: 'location',
+    limit: Math.min(Number(limit) || 50, 100),
+    offset: String(offset ?? 0),
+    ...rest,
+  };
+}
+
+const toCentsFromUnits = (n) => Math.round(Number(n || 0) * 100);
+
+export function normalizeInvoice(i) {
+  if (!i) return null;
+  const contact = i.contactDetails || i.contact || {};
+  return {
+    id: pickId(i),
+    number: i.invoiceNumber || i.number || '',
+    name: i.name || i.title || '',
+    // draft | sent | payment_processing | paid | void | partially_paid
+    status: (i.status || '').toLowerCase(),
+    currency: i.currency || 'USD',
+    totalCents: toCentsFromUnits(i.total ?? i.amount),
+    paidCents: toCentsFromUnits(i.amountPaid ?? i.paidAmount ?? 0),
+    dueCents: toCentsFromUnits(i.amountDue ?? i.dueAmount ?? 0),
+    issueDate: i.issueDate || i.createdAt || null,
+    dueDate: i.dueDate || null,
+    contactId: i.contactId || pickId(contact) || null,
+    contactName:
+      contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(' ') || '',
+    contactEmail: contact.email || '',
+  };
+}
+
+export function normalizeTransaction(t) {
+  if (!t) return null;
+  const contact = t.contactSnapshot || t.contact || {};
+  return {
+    id: pickId(t),
+    status: (t.status || '').toLowerCase(),
+    amountCents: toCentsFromUnits(t.amount),
+    currency: t.currency || 'USD',
+    entityType: t.entityType || t.entitySourceType || '',
+    createdAt: t.createdAt || t.dateAdded || null,
+    contactId: t.contactId || pickId(contact) || null,
+    contactName:
+      contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(' ') || '',
+    paymentProvider: t.paymentProviderType || t.paymentProvider || '',
+  };
+}
+
+export async function listInvoices(env, locationId, opts = {}) {
+  const data = await request(env, '/invoices/', { query: altQuery(locationId, opts) });
+  const list = data.invoices || data.data || [];
+  return {
+    invoices: (Array.isArray(list) ? list : []).map(normalizeInvoice).filter(Boolean),
+    total: Number(data.total ?? list.length ?? 0),
+  };
+}
+
+export async function listTransactions(env, locationId, opts = {}) {
+  const data = await request(env, '/payments/transactions', { query: altQuery(locationId, opts) });
+  const list = data.data || data.transactions || [];
+  return {
+    transactions: (Array.isArray(list) ? list : []).map(normalizeTransaction).filter(Boolean),
+    total: Number(data.totalCount ?? data.total ?? list.length ?? 0),
+  };
+}
+
+export async function listOrders(env, locationId, opts = {}) {
+  const data = await request(env, '/payments/orders', { query: altQuery(locationId, opts) });
+  const list = data.data || data.orders || [];
+  return {
+    orders: (Array.isArray(list) ? list : []).map((o) => ({
+      id: pickId(o),
+      status: (o.status || '').toLowerCase(),
+      amountCents: toCentsFromUnits(o.amount),
+      currency: o.currency || 'USD',
+      createdAt: o.createdAt || null,
+      contactId: o.contactId || null,
+      contactName: o.contactSnapshot?.name || '',
+      source: o.sourceType || o.source || '',
+    })).filter(Boolean),
+    total: Number(data.totalCount ?? data.total ?? list.length ?? 0),
+  };
+}
+
+export async function listSubscriptions(env, locationId, opts = {}) {
+  const data = await request(env, '/payments/subscriptions', { query: altQuery(locationId, opts) });
+  const list = data.data || data.subscriptions || [];
+  return (Array.isArray(list) ? list : []).map((sub) => ({
+    id: pickId(sub),
+    status: (sub.status || '').toLowerCase(),
+    amountCents: toCentsFromUnits(sub.amount),
+    currency: sub.currency || 'USD',
+    contactId: sub.contactId || null,
+    contactName: sub.contactSnapshot?.name || '',
+    createdAt: sub.createdAt || null,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Scope probe
 //
 // A missing scope on the Private Integration Token surfaces as a 401 or 403,
