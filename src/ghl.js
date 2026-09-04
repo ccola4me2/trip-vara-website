@@ -40,6 +40,20 @@ function apiBase(env) {
   return (env.GHL_API_BASE || 'https://services.leadconnectorhq.com').replace(/\/$/, '');
 }
 
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One call to GoHighLevel.
+ *
+ * Retries rate limits and transient upstream errors with backoff. GHL returns
+ * these often enough under normal use that a single failure was surfacing to
+ * advisors as "check your scopes", which sent them looking for a configuration problem
+ * that did not exist. Auth and validation failures are never retried, since
+ * repeating them cannot change the answer.
+ */
 async function request(env, path, { method = 'GET', query, body } = {}) {
   if (!ghlConfigured(env)) {
     throw new GhlError('GoHighLevel is not connected yet.', 503, { code: 'not_configured' });
@@ -50,34 +64,67 @@ async function request(env, path, { method = 'GET', query, body } = {}) {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
   }
 
-  let res;
-  try {
-    res = await fetch(url.toString(), {
-      method,
-      headers: {
-        Authorization: `Bearer ${env.GHL_API_TOKEN}`,
-        Version: env.GHL_API_VERSION || '2021-07-28',
-        Accept: 'application/json',
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-  } catch (e) {
-    throw new GhlError('Could not reach GoHighLevel.', 502, String(e));
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res;
+    try {
+      res = await fetch(url.toString(), {
+        method,
+        headers: {
+          Authorization: `Bearer ${env.GHL_API_TOKEN}`,
+          Version: env.GHL_API_VERSION || '2021-07-28',
+          Accept: 'application/json',
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (e) {
+      lastError = new GhlError('Could not reach GoHighLevel.', 502, String(e));
+      if (attempt < MAX_ATTEMPTS) { await sleep(attempt * 400); continue; }
+      throw lastError;
+    }
+
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+    if (res.ok) return data || {};
+
+    if (RETRY_STATUSES.has(res.status) && attempt < MAX_ATTEMPTS) {
+      // Honour Retry-After when GHL sends one, otherwise back off linearly.
+      const retryAfter = Number(res.headers.get('Retry-After'));
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 4000)
+        : attempt * 500);
+      continue;
+    }
+
+    throw new GhlError(messageFor(res.status, data), statusFor(res.status), data);
   }
 
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  throw lastError || new GhlError('GoHighLevel did not respond.', 502);
+}
 
-  if (!res.ok) {
-    const message =
-      res.status === 401 || res.status === 403
-        ? 'GoHighLevel rejected the request. Check the API token and its scopes.'
-        : (data && (data.message || data.error)) || `GoHighLevel returned ${res.status}.`;
-    throw new GhlError(message, res.status === 429 ? 429 : 502, data);
+/** Plain language for the failures an advisor can actually act on. */
+function messageFor(status, data) {
+  if (status === 401) {
+    return 'GoHighLevel rejected the API token. It may have been revoked or replaced.';
   }
-  return data || {};
+  if (status === 403) {
+    return 'The API token is missing the permission for this. Check its scopes in GoHighLevel.';
+  }
+  if (status === 429) {
+    return 'GoHighLevel is rate limiting us. Give it a moment and try again.';
+  }
+  if (status === 404) return 'GoHighLevel could not find that record.';
+  return (data && (data.message || data.error)) || `GoHighLevel returned ${status}.`;
+}
+
+function statusFor(status) {
+  if (status === 429) return 429;
+  if (status === 401 || status === 403) return status;
+  return 502;
 }
 
 // ---------------------------------------------------------------------------
@@ -481,7 +528,9 @@ export async function probeScopes(env, locationId) {
         return [name, {
           ok: false,
           status,
-          reason: status === 502 && /reject/i.test(e.message) ? 'scope or permission denied' : e.message,
+          reason: status === 403 ? 'scope or permission denied'
+            : status === 401 ? 'token rejected'
+            : e.message,
         }];
       }
     })
