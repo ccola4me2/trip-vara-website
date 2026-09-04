@@ -105,6 +105,18 @@ If you do have Node locally, the same steps are available as
 `npx wrangler d1 create trip-vara`, `npx wrangler d1 migrations apply trip-vara --remote`,
 and `npx wrangler secret put GHL_API_TOKEN`.
 
+### A secret set in the dashboard needs a deploy
+
+This Worker is deployed by Workers Builds from git, so adding or changing a
+secret in the dashboard does **not** reach the running Worker on its own. The
+Variables and Secrets page has no Deploy button, because deployment comes from
+`main`. Push any commit, or hit Retry build on the latest deployment, and the
+new secret takes effect with it.
+
+`GET /api/admin/health` lists every binding and variable the Worker can
+actually see, which is the quickest way to tell "not deployed yet" apart from
+"saved in the wrong place".
+
 ### Secrets
 
 | Secret | Required | Purpose |
