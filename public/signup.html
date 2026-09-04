@@ -56,6 +56,10 @@
           <input id="password" name="password" type="password" autocomplete="new-password" minlength="10" required>
           <p class="field-hint">At least 10 characters.</p>
         </div>
+        <div class="field">
+          <label for="confirmPassword">Confirm password</label>
+          <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="10" required>
+        </div>
         <button class="btn btn-primary" type="submit">Request access</button>
       </form>
       <p class="auth-foot">Already have an account? <a href="/login">Sign in</a></p>
@@ -65,6 +69,9 @@
 <script type="module">
 import { api, onSubmit } from '/js/app.js';
 onSubmit(document.getElementById('signup-form'), async (values) => {
+  if (values.password !== values.confirmPassword) {
+    throw new Error('The two passwords do not match.');
+  }
   await api('/api/auth/signup', { method: 'POST', body: values });
   location.href = '/pending';
 });

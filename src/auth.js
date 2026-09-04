@@ -196,10 +196,22 @@ export async function handleChangePassword(request, env) {
   }
 
   await db.setUserPassword(env, user.id, await hashPassword(next));
-  // Signing out everywhere is the safe default after a password change.
+
+  // Drop every existing session, then immediately issue a fresh one for the
+  // device that made the change. Anyone signed in elsewhere is logged out,
+  // which is the point, but the person who just changed their own password
+  // does not get thrown out of the app they are standing in. Signing them out
+  // too adds no security and turns a mistyped password into a lockout.
   await db.deleteUserSessions(env, user.id);
+  const token = randomToken(32);
+  await db.createSession(env, user.id, await sha256Hex(token), sessionTtlSeconds(env));
+
   await db.logActivity(env, user.id, 'account.password', 'Changed password');
-  return json({ ok: true }, 200, { 'Set-Cookie': clearCookieHeader(SESSION_COOKIE) });
+  return json(
+    { ok: true },
+    200,
+    { 'Set-Cookie': cookieHeader(SESSION_COOKIE, token, { maxAge: sessionTtlSeconds(env) }) }
+  );
 }
 
 // ---------------------------------------------------------------------------
