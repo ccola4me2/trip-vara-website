@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Calendar</h1><p class="sub">Upcoming appointments across your CRM calendars.</p></div>
+      <div><h1>Calendar</h1><p class="sub">Upcoming appointments across your Trip Vara Tools calendars.</p></div>
       <div class="toolbar" style="margin:0;">
         <select id="range" aria-label="Range">
           <option value="7">Next 7 days</option>
@@ -101,7 +101,7 @@ function render(d) {
   if (!d.events.length) {
     panel.innerHTML = d.calendars.length
       ? '<div class="empty"><h3>Nothing scheduled</h3><p>No appointments in this window.</p></div>'
-      : '<div class="empty"><h3>No calendars</h3><p>Create a calendar in your CRM and it will show up here.</p></div>';
+      : '<div class="empty"><h3>No calendars</h3><p>Create a calendar in Trip Vara Tools and it will show up here.</p></div>';
     return;
   }
 
@@ -131,7 +131,7 @@ async function load() {
 }
 
 document.getElementById('book').addEventListener('click', () => {
-  if (!calendars.length) { alert('No calendars available in the CRM yet.'); return; }
+  if (!calendars.length) { alert('No calendars available in Trip Vara Tools yet.'); return; }
   const form = document.getElementById('appt-form');
   form.reset();
   document.getElementById('contactId').value = '';

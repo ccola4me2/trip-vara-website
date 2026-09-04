@@ -19,7 +19,7 @@
         <p class="sub" id="sub"></p>
       </div>
       <div class="toolbar" style="margin:0;">
-        <a class="btn btn-ghost btn-sm" id="ghl-link" target="_blank" rel="noopener" hidden>Open in CRM</a>
+        <a class="btn btn-ghost btn-sm" id="ghl-link" target="_blank" rel="noopener" hidden>Open in Trip Vara Tools</a>
         <a class="btn btn-primary btn-sm" id="new-booking" href="/app/bookings?new=1">Add a booking</a>
       </div>
     </header>
@@ -82,7 +82,7 @@
                 </button>
               </form>
               <p class="field-hint" style="margin-top:.7rem;">Drops this contact into an automation
-              in your CRM. Build the automation itself there.</p>
+              in Trip Vara Tools. Build the automation itself there.</p>
             </div>
           </section>
 
@@ -122,7 +122,7 @@ const initials = (n) => (n || '?').split(/\s+/).filter(Boolean).slice(0, 2)
 function renderNotes(notes, unavailable) {
   const el = document.getElementById('notes');
   if (unavailable) {
-    el.innerHTML = '<li class="muted" style="padding:1rem 1.25rem;">Notes are not available with the current CRM permissions.</li>';
+    el.innerHTML = '<li class="muted" style="padding:1rem 1.25rem;">Notes are not available with the current Trip Vara Tools permissions.</li>';
     return;
   }
   el.innerHTML = notes.length
@@ -133,7 +133,7 @@ function renderNotes(notes, unavailable) {
 function renderTasks(tasks, unavailable) {
   const el = document.getElementById('tasks');
   if (unavailable) {
-    el.innerHTML = '<li class="muted" style="padding:1rem 1.25rem;">Tasks are not available with the current CRM permissions.</li>';
+    el.innerHTML = '<li class="muted" style="padding:1rem 1.25rem;">Tasks are not available with the current Trip Vara Tools permissions.</li>';
     return;
   }
   if (!tasks.length) {
@@ -164,7 +164,7 @@ function renderTasks(tasks, unavailable) {
 function renderOpps(opps, unavailable) {
   const el = document.getElementById('opps');
   if (unavailable) {
-    el.innerHTML = '<div class="empty"><p>Opportunities are not available with the current CRM permissions.</p></div>';
+    el.innerHTML = '<div class="empty"><p>Opportunities are not available with the current Trip Vara Tools permissions.</p></div>';
     return;
   }
   el.innerHTML = opps.length

@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Advisors</h1><p class="sub">Approve access and bind advisors to a CRM sub-account.</p></div>
+      <div><h1>Advisors</h1><p class="sub">Approve access and bind advisors to a Trip Vara Tools account.</p></div>
       <select id="filter" aria-label="Filter" style="width:auto;">
         <option value="">Everyone</option>
         <option value="pending">Pending approval</option>
@@ -51,7 +51,7 @@ function render(users, counts) {
   }
 
   panel.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>CRM location</th>
+    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>Tools account</th>
       <th>Last seen</th><th></th></tr></thead>
     <tbody>${users.map((u) => `<tr>
       <td><span class="name">${esc(u.name)}</span><div class="muted">${esc(u.email)}</div>
@@ -79,9 +79,9 @@ function render(users, counts) {
   }));
 
   panel.querySelectorAll('[data-bind]').forEach((btn) => btn.addEventListener('click', async () => {
-    const ghlLocationId = prompt('CRM location id (blank uses the shared default):', btn.dataset.loc);
+    const ghlLocationId = prompt('Trip Vara Tools location id (blank uses the shared default):', btn.dataset.loc);
     if (ghlLocationId === null) return;
-    const ghlUserId = prompt('CRM user id for this advisor (optional):', btn.dataset.usr);
+    const ghlUserId = prompt('Trip Vara Tools user id for this advisor (optional):', btn.dataset.usr);
     if (ghlUserId === null) return;
     try {
       await api(`/api/admin/advisors/${encodeURIComponent(btn.dataset.bind)}/ghl`,

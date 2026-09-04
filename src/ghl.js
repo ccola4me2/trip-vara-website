@@ -63,7 +63,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 async function request(env, path, { method = 'GET', query, body } = {}) {
   if (!ghlConfigured(env)) {
-    throw new GhlError('The CRM is not connected yet.', 503, { code: 'not_configured' });
+    throw new GhlError('Trip Vara Tools is not connected yet.', 503, { code: 'not_configured' });
   }
 
   const url = new URL(apiBase(env) + path);
@@ -87,7 +87,7 @@ async function request(env, path, { method = 'GET', query, body } = {}) {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     } catch (e) {
-      lastError = new GhlError('Could not reach the CRM.', 502, String(e));
+      lastError = new GhlError('Could not reach Trip Vara Tools.', 502, String(e));
       if (attempt < MAX_ATTEMPTS) { await sleep(attempt * 400); continue; }
       throw lastError;
     }
@@ -110,22 +110,22 @@ async function request(env, path, { method = 'GET', query, body } = {}) {
     throw new GhlError(messageFor(res.status, data), statusFor(res.status), data, res.status);
   }
 
-  throw lastError || new GhlError('The CRM did not respond.', 502);
+  throw lastError || new GhlError('Trip Vara Tools did not respond.', 502);
 }
 
 /** Plain language for the failures an advisor can actually act on. */
 function messageFor(status, data) {
   if (status === 401) {
-    return 'The CRM rejected the API token. It may have been revoked or replaced.';
+    return 'Trip Vara Tools rejected the API token. It may have been revoked or replaced.';
   }
   if (status === 403) {
-    return 'The API token is missing the permission for this. Check its scopes in the CRM.';
+    return 'The API token is missing the permission for this. Check its scopes in Trip Vara Tools.';
   }
   if (status === 429) {
-    return 'The CRM is rate limiting us. Give it a moment and try again.';
+    return 'Trip Vara Tools is rate limiting us. Give it a moment and try again.';
   }
-  if (status === 404) return 'The CRM could not find that record.';
-  return (data && (data.message || data.error)) || `The CRM returned ${status}.`;
+  if (status === 404) return 'Trip Vara Tools could not find that record.';
+  return (data && (data.message || data.error)) || `Trip Vara Tools returned ${status}.`;
 }
 
 function statusFor(status) {
@@ -823,7 +823,7 @@ export function ghlErrorResponse(e) {
   const notConfigured = e instanceof GhlError && e.detail && e.detail.code === 'not_configured';
   const status = e instanceof GhlError ? e.status : 502;
   const body = {
-    error: e instanceof GhlError ? e.message : 'Unexpected error talking to the CRM.',
+    error: e instanceof GhlError ? e.message : 'Unexpected error talking to Trip Vara Tools.',
     ...(notConfigured ? { code: 'not_configured' } : {}),
   };
   if (!(e instanceof GhlError)) console.error('ghl unexpected', e);

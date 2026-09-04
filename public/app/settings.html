@@ -55,7 +55,7 @@
         </div>
       </section>
       <section class="card">
-        <div class="card-head"><h2>CRM connection</h2></div>
+        <div class="card-head"><h2>Trip Vara Tools connection</h2></div>
         <div class="card-pad">
           <p id="ghl-info" class="muted">Loading...</p>
         </div>
@@ -74,8 +74,8 @@ pf.elements.phone.value = user.phone || '';
 pf.elements.agencyName.value = user.agencyName || '';
 
 document.getElementById('ghl-info').innerHTML = user.ghlLocationId
-  ? `Bound to CRM sub-account <code>${esc(user.ghlLocationId)}</code>.`
-  : 'Using the shared Trip Vara sub-account. An administrator can bind you to your own.';
+  ? `Bound to Trip Vara Tools account <code>${esc(user.ghlLocationId)}</code>.`
+  : 'Using the shared Trip Vara Tools account. An administrator can bind you to your own.';
 
 onSubmit(pf, async (values) => {
   await api('/api/auth/profile', { method: 'PUT', body: values });

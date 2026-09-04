@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Billing</h1><p class="sub">Invoices and payments from your CRM, against what your bookings expect.</p></div>
+      <div><h1>Billing</h1><p class="sub">Invoices and payments from Trip Vara Tools, against what your bookings expect.</p></div>
       <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
     </header>
     <div class="content">
@@ -68,19 +68,19 @@ function render(d) {
     <div class="card-pad">
       <dl class="kv" style="grid-template-columns:220px 1fr;">
         <dt>Booked volume</dt><dd>${money(b.grossCents)} <span class="muted">from your bookings</span></dd>
-        <dt>Invoiced in CRM</dt><dd>${money(s.invoicedCents)}</dd>
+        <dt>Invoiced in Trip Vara Tools</dt><dd>${money(s.invoicedCents)}</dd>
         <dt>Difference</dt><dd style="color:${gap === 0 ? 'var(--green-600)' : 'var(--amber-600)'};font-weight:650;">
           ${money(Math.abs(gap))} ${gap === 0 ? 'matched' : gap > 0 ? 'booked but not invoiced' : 'invoiced beyond bookings'}</dd>
         <dt>Commission expected</dt><dd>${money(b.commissionCents)}</dd>
         <dt>Commission received</dt><dd>${money(b.commissionPaidCents)}</dd>
       </dl>
       <p class="field-hint" style="margin-top:.9rem;">Booked volume is what you entered on the Bookings page.
-      Invoiced is what exists in the CRM. A gap usually means an invoice has not been raised yet.</p>
+      Invoiced is what exists in Trip Vara Tools. A gap usually means an invoice has not been raised yet.</p>
     </div>`;
 
   document.getElementById('inv-count').textContent = d.unavailable.invoices ? 'unavailable' : `${d.invoices.length} shown`;
   panelInv.innerHTML = d.unavailable.invoices
-    ? '<div class="empty"><p>Invoices are not available with the current CRM permissions.</p></div>'
+    ? '<div class="empty"><p>Invoices are not available with the current Trip Vara Tools permissions.</p></div>'
     : d.invoices.length
     ? `<div class="table-wrap"><table>
         <thead><tr><th>Invoice</th><th>Client</th><th>Status</th><th>Due</th>
@@ -96,11 +96,11 @@ function render(d) {
           <td>${i.dueDate ? esc(timeAgo(i.dueDate)) : '<span class="muted">-</span>'}</td>
           <td class="num">${money(i.totalCents)}</td>
           <td class="num">${money(i.paidCents)}</td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="empty"><h3>No invoices yet</h3><p>Invoices raised in your CRM appear here.</p></div>';
+    : '<div class="empty"><h3>No invoices yet</h3><p>Invoices raised in Trip Vara Tools appear here.</p></div>';
 
   document.getElementById('tx-count').textContent = d.unavailable.transactions ? 'unavailable' : `${d.transactions.length} shown`;
   panelTx.innerHTML = d.unavailable.transactions
-    ? '<div class="empty"><p>Transactions are not available with the current CRM permissions.</p></div>'
+    ? '<div class="empty"><p>Transactions are not available with the current Trip Vara Tools permissions.</p></div>'
     : d.transactions.length
     ? `<div class="table-wrap"><table>
         <thead><tr><th>Client</th><th>Status</th><th>Source</th><th>When</th><th class="num">Amount</th></tr></thead>
@@ -112,7 +112,7 @@ function render(d) {
           <td><span class="muted">${esc(t.paymentProvider || t.entityType || '-')}</span></td>
           <td><span class="muted">${esc(t.createdAt ? timeAgo(t.createdAt) : '-')}</span></td>
           <td class="num">${money(t.amountCents)}</td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="empty"><h3>No transactions yet</h3><p>Payments taken through the CRM appear here.</p></div>';
+    : '<div class="empty"><h3>No transactions yet</h3><p>Payments taken through Trip Vara Tools appear here.</p></div>';
 }
 
 async function load() {
