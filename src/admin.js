@@ -5,7 +5,7 @@ import { json, badRequest, notFound, clean, readJson } from './util.js';
 import * as ghl from './ghl.js';
 import { requireAdmin, publicUser } from './auth.js';
 import * as db from './db.js';
-import { sendAdvisorApprovedEmail } from './email.js';
+import { sendAdvisorApprovedEmail, checkResend } from './email.js';
 
 const STATUSES = ['pending', 'active', 'suspended'];
 
@@ -82,6 +82,7 @@ export async function handleHealth(request, env) {
   const probe = url.searchParams.get('probe');
   const wantScopes = probe === '1';
   const wantFull = probe === 'full';
+  const wantEmail = probe === 'email' || wantFull;
 
   let dbOk = false;
   let userCount = 0;
@@ -95,6 +96,7 @@ export async function handleHealth(request, env) {
 
   let scopes = null;
   let capabilities = null;
+  const resend = wantEmail ? await checkResend(env) : null;
   if (ghl.ghlConfigured(env)) {
     const loc = env.GHL_DEFAULT_LOCATION_ID || '';
     if (wantScopes) scopes = await ghl.probeScopes(env, loc);
@@ -113,6 +115,7 @@ export async function handleHealth(request, env) {
       resendKeyPresent: Boolean(env.RESEND_API_KEY),
       mailFrom: env.MAIL_FROM || null,
       notifyEmail: env.NOTIFY_EMAIL || null,
+      resend,
     },
     db: { ok: dbOk, users: userCount },
     appUrl: env.APP_URL || null,

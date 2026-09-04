@@ -155,3 +155,54 @@ export function sendPasswordResetEmail(env, user, token) {
     }),
   });
 }
+
+/**
+ * Ask Resend about the account behind RESEND_API_KEY.
+ *
+ * The send path is deliberately best effort and the password-reset endpoint
+ * always answers the same way so it cannot be used to enumerate addresses.
+ * That means neither can tell you whether mail actually goes out. This does:
+ * it reports whether the key is accepted and whether the domain in MAIL_FROM
+ * is verified, which is the usual reason a send silently fails.
+ */
+export async function checkResend(env) {
+  if (!env.RESEND_API_KEY) return { configured: false };
+
+  let res;
+  try {
+    res = await fetch('https://api.resend.com/domains', {
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` },
+    });
+  } catch (e) {
+    return { configured: true, reachable: false, error: String(e) };
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    return { configured: true, keyValid: false, error: 'Resend rejected the API key.' };
+  }
+  if (!res.ok) {
+    return { configured: true, keyValid: true, error: `Resend returned ${res.status}.` };
+  }
+
+  const body = await res.json().catch(() => ({}));
+  const domains = (body.data || []).map((d) => ({
+    name: d.name,
+    status: d.status,
+    region: d.region,
+  }));
+
+  // The domain we actually send from, pulled out of MAIL_FROM.
+  const from = String(env.MAIL_FROM || '');
+  const match = from.match(/@([^>\s]+)/);
+  const sendDomain = match ? match[1].toLowerCase() : null;
+  const entry = domains.find((d) => (d.name || '').toLowerCase() === sendDomain) || null;
+
+  return {
+    configured: true,
+    keyValid: true,
+    sendDomain,
+    sendDomainStatus: entry ? entry.status : 'not added to Resend',
+    canSend: Boolean(entry && entry.status === 'verified'),
+    domains,
+  };
+}
