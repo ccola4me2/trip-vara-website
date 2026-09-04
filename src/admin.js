@@ -79,7 +79,9 @@ export async function handleHealth(request, env) {
   if (response) return response;
 
   const url = new URL(request.url);
-  const wantScopes = url.searchParams.get('probe') === '1';
+  const probe = url.searchParams.get('probe');
+  const wantScopes = probe === '1';
+  const wantFull = probe === 'full';
 
   let dbOk = false;
   let userCount = 0;
@@ -92,8 +94,11 @@ export async function handleHealth(request, env) {
   }
 
   let scopes = null;
-  if (wantScopes && ghl.ghlConfigured(env)) {
-    scopes = await ghl.probeScopes(env, env.GHL_DEFAULT_LOCATION_ID || '');
+  let capabilities = null;
+  if (ghl.ghlConfigured(env)) {
+    const loc = env.GHL_DEFAULT_LOCATION_ID || '';
+    if (wantScopes) scopes = await ghl.probeScopes(env, loc);
+    if (wantFull) capabilities = await ghl.probeCapabilities(env, loc);
   }
 
   return json({
@@ -114,6 +119,7 @@ export async function handleHealth(request, env) {
     // Which GHL areas this token can actually reach. Skipped unless asked for,
     // since it costs one API call per area.
     scopes,
+    capabilities,
     // Names of every binding and var the Worker can actually see. Values are
     // never included; this is here to catch a secret saved under the wrong
     // name or in the build environment instead of the runtime one.

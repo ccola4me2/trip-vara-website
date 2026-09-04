@@ -19,10 +19,17 @@
 // advisor, without changing this file.
 
 export class GhlError extends Error {
-  constructor(message, status = 502, detail = null) {
+  constructor(message, status = 502, detail = null, httpStatus = null) {
     super(message);
     this.name = 'GhlError';
+    // Status we hand back to our own client, which is not always the upstream
+    // one: most GHL failures become a 502 so the portal reads as "upstream
+    // problem" rather than leaking GHL's status into our API.
     this.status = status;
+    // The status GoHighLevel actually returned. Kept because the capability
+    // probe has to tell 403 (scope missing) from 404 (endpoint not available),
+    // and remapping both to 502 would make that impossible.
+    this.httpStatus = httpStatus;
     this.detail = detail;
   }
 }
@@ -100,7 +107,7 @@ async function request(env, path, { method = 'GET', query, body } = {}) {
       continue;
     }
 
-    throw new GhlError(messageFor(res.status, data), statusFor(res.status), data);
+    throw new GhlError(messageFor(res.status, data), statusFor(res.status), data, res.status);
   }
 
   throw lastError || new GhlError('GoHighLevel did not respond.', 502);
@@ -536,6 +543,79 @@ export async function probeScopes(env, locationId) {
     })
   );
   return Object.fromEntries(entries);
+}
+
+/**
+ * Wide capability probe.
+ *
+ * Walks a cheap read for every GoHighLevel v2 area worth knowing about and
+ * reports what this token can actually reach. Distinguishes:
+ *   available    200, usable today
+ *   noScope      403, the token lacks that permission
+ *   noEndpoint   404, not exposed on this plan or path not available
+ *   rejected     401, token problem
+ *
+ * Runs in small batches so a wide sweep does not trip GHL's burst limit.
+ */
+export async function probeCapabilities(env, locationId) {
+  const loc = encodeURIComponent(locationId);
+  const alt = { altId: locationId, altType: 'location', limit: 1 };
+
+  const areas = [
+    ['contacts', 'Contacts', () => request(env, '/contacts/', { query: { locationId, limit: 1 } })],
+    ['conversations', 'Conversations', () => request(env, '/conversations/search', { query: { locationId, limit: 1 } })],
+    ['opportunities', 'Opportunities and pipelines', () => request(env, '/opportunities/pipelines', { query: { locationId } })],
+    ['calendars', 'Calendars', () => request(env, '/calendars/', { query: { locationId } })],
+    ['users', 'Users', () => request(env, '/users/', { query: { locationId } })],
+    ['customFields', 'Custom fields', () => request(env, `/locations/${loc}/customFields`)],
+    ['customValues', 'Custom values', () => request(env, `/locations/${loc}/customValues`)],
+    ['tags', 'Tags', () => request(env, `/locations/${loc}/tags`)],
+    ['location', 'Location settings', () => request(env, `/locations/${loc}`)],
+    ['forms', 'Forms', () => request(env, '/forms/', { query: { locationId, limit: 1 } })],
+    ['formSubmissions', 'Form submissions', () => request(env, '/forms/submissions', { query: { locationId, limit: 1 } })],
+    ['surveys', 'Surveys', () => request(env, '/surveys/', { query: { locationId, limit: 1 } })],
+    ['surveySubmissions', 'Survey submissions', () => request(env, '/surveys/submissions', { query: { locationId, limit: 1 } })],
+    ['workflows', 'Workflows', () => request(env, '/workflows/', { query: { locationId } })],
+    ['campaigns', 'Campaigns', () => request(env, '/campaigns/', { query: { locationId } })],
+    ['triggerLinks', 'Trigger links', () => request(env, '/links/', { query: { locationId } })],
+    ['businesses', 'Businesses', () => request(env, '/businesses/', { query: { locationId } })],
+    ['invoices', 'Invoices', () => request(env, '/invoices/', { query: alt })],
+    ['invoiceTemplates', 'Invoice templates', () => request(env, '/invoices/template', { query: alt })],
+    ['orders', 'Payment orders', () => request(env, '/payments/orders', { query: alt })],
+    ['transactions', 'Transactions', () => request(env, '/payments/transactions', { query: alt })],
+    ['subscriptions', 'Subscriptions', () => request(env, '/payments/subscriptions', { query: alt })],
+    ['products', 'Products', () => request(env, '/products/', { query: { locationId, limit: 1 } })],
+    ['media', 'Media library', () => request(env, '/medias/files', { query: { ...alt, sortBy: 'createdAt', sortOrder: 'desc' } })],
+    ['blogs', 'Blogs', () => request(env, '/blogs/site/all', { query: { locationId, limit: 1, skip: 0 } })],
+    ['funnels', 'Funnels', () => request(env, '/funnels/funnel/list', { query: { locationId } })],
+    ['social', 'Social planner', () => request(env, `/social-media-posting/${loc}/accounts`)],
+    ['emailTemplates', 'Email templates', () => request(env, '/emails/builder', { query: { locationId, limit: 1 } })],
+    ['objects', 'Custom objects', () => request(env, '/objects/', { query: { locationId } })],
+    ['courses', 'Courses and memberships', () => request(env, `/courses/courses`, { query: { locationId } })],
+  ];
+
+  const out = {};
+  const BATCH = 5;
+  for (let i = 0; i < areas.length; i += BATCH) {
+    const slice = areas.slice(i, i + BATCH);
+    const settled = await Promise.all(slice.map(async ([key, label, run]) => {
+      try {
+        await run();
+        return [key, { label, state: 'available' }];
+      } catch (e) {
+        const http = e instanceof GhlError ? e.httpStatus : null;
+        const state =
+          http === 403 ? 'noScope'
+          : http === 404 ? 'noEndpoint'
+          : http === 401 ? 'rejected'
+          : 'error';
+        return [key, { label, state, httpStatus: http, message: e.message }];
+      }
+    }));
+    for (const [k, v] of settled) out[k] = v;
+    if (i + BATCH < areas.length) await sleep(350);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
