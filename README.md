@@ -72,27 +72,39 @@ every other account is approved from `/admin/`.
 
 ## Deploying
 
-1. Create the database once and paste the returned id into `wrangler.toml`:
-   ```bash
-   npx wrangler d1 create trip-vara
+No Node or CLI required. Everything below is done in the Cloudflare dashboard,
+the same way the other Worker sites are run.
+
+1. **Create the database.** Storage & Databases > D1 > Create database, named
+   `trip-vara`. Its id is already in `wrangler.toml`.
+2. **Create the tables.** Open the database, go to the **Console** tab, paste
+   the whole of `migrations/0001_init.sql`, and run it. Every later migration in
+   that folder is applied the same way, in filename order.
+3. **Connect the Worker.** Workers & Pages > Create > Import a repository, and
+   pick this repo. Workers Builds reads `wrangler.toml` and wires up the D1
+   binding and static assets automatically. Pushes to `main` redeploy.
+4. **Add the secrets** under the Worker's Settings > Variables and Secrets. See
+   the table below.
+5. **Make the first admin.** Visit `/signup` on the deployed URL and sign up.
+   That creates a `pending` account which cannot sign in. Then run this in the
+   D1 Console tab:
+
+   ```sql
+   UPDATE users SET role='admin', status='active' WHERE email='you@example.com';
    ```
-2. Apply migrations against production:
-   ```bash
-   npx wrangler d1 migrations apply trip-vara --remote
-   ```
-3. Set the secrets:
-   ```bash
-   npx wrangler secret put GHL_API_TOKEN
-   npx wrangler secret put RESEND_API_KEY
-   ```
-4. Push to `main`. Cloudflare Workers Builds deploys it.
-5. Point `tripvaratravel.com` at the Worker and promote your admin account.
+
+   Every account after that is approved from `/admin/` with a button.
+6. **Point the domain** at the Worker under Settings > Domains & Routes.
+
+If you do have Node locally, the same steps are available as
+`npx wrangler d1 create trip-vara`, `npx wrangler d1 migrations apply trip-vara --remote`,
+and `npx wrangler secret put GHL_API_TOKEN`.
 
 ### Secrets
 
 | Secret | Required | Purpose |
 | --- | --- | --- |
-| `GHL_API_TOKEN` | For leads and pipeline | GoHighLevel Private Integration Token. Without it those two pages show a setup notice; everything else works. |
+| `GHL_API_TOKEN` | For leads and pipeline | GoHighLevel Private Integration Token. Create it at Settings > Private Integrations on the Trip Vara sub-account, with contacts read/write, opportunities read/write and calendars read. Without it those two pages show a setup notice; everything else works. |
 | `RESEND_API_KEY` | For email | Approval, welcome and password-reset emails. Without it sends are skipped and logged, and nothing fails. |
 
 Non-secret config lives in `[vars]` in `wrangler.toml`, including

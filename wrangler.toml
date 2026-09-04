@@ -24,14 +24,14 @@ not_found_handling = "none"
 
 # D1 (SQLite): advisor accounts, sessions, password resets, and the
 # travel-specific booking records GoHighLevel cannot model cleanly.
-# After `wrangler d1 create trip-vara`, paste the returned id below.
+# Created in the Cloudflare dashboard (Storage & Databases > D1).
 [[d1_databases]]
 binding = "DB"
 database_name = "trip-vara"
-database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+database_id = "f7a1657b-4129-484c-9841-200416f8da8a"
 
-# Non-secret config. Secrets (GHL_API_TOKEN, SESSION_SECRET, RESEND_API_KEY)
-# are set with `wrangler secret put` or in the dashboard — never committed.
+# Non-secret config. Secrets (GHL_API_TOKEN, RESEND_API_KEY) are set in the
+# dashboard under Settings > Variables and Secrets. Never committed.
 [vars]
 APP_URL = "https://tripvaratravel.com"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
