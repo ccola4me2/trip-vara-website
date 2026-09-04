@@ -87,6 +87,7 @@ export function daysUntil(iso) {
 // --------------------------------------------------------------- shell ---
 const NAV = [
   { href: '/app/', label: 'Dashboard', icon: 'M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5' },
+  { href: '/app/inbox', label: 'Inbox', icon: 'M3 8l9 6 9-6M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z' },
   { href: '/app/leads', label: 'Leads', icon: 'M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M9.5 9.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 11h2m-1-1v2' },
   { href: '/app/pipeline', label: 'Pipeline', icon: 'M4 5h16M4 12h10M4 19h6' },
   { href: '/app/bookings', label: 'Bookings', icon: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm4-4v4m8-4v4M4 10h16' },

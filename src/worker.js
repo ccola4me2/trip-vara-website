@@ -25,6 +25,9 @@ import {
   handleListBookings, handleGetBooking, handleCreateBooking,
   handleUpdateBooking, handleDeleteBooking,
 } from './bookings.js';
+import {
+  handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
+} from './conversations.js';
 import { handleDashboard, handleProduction } from './reports.js';
 import { handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth } from './admin.js';
 import { purgeExpiredSessions } from './db.js';
@@ -51,6 +54,7 @@ const PAGE_FILES = {
   '/app/': '/app/index.html',
   '/app/leads': '/app/leads.html',
   '/app/contact': '/app/contact.html',
+  '/app/inbox': '/app/inbox.html',
   '/app/pipeline': '/app/pipeline.html',
   '/app/bookings': '/app/bookings.html',
   '/app/reports': '/app/reports.html',
@@ -96,6 +100,7 @@ async function routeApi(request, env, path, method) {
   const taskMatch = path.match(/^\/api\/leads\/([^/]+)\/tasks(?:\/([^/]+))?$/);
   const oppMatch = path.match(/^\/api\/opportunities\/([^/]+)$/);
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
+  const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
 
   // ---- auth -------------------------------------------------------------
@@ -145,6 +150,13 @@ async function routeApi(request, env, path, method) {
   if (bookingMatch && method === 'GET') return handleGetBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'PUT') return handleUpdateBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'DELETE') return handleDeleteBooking(request, env, bookingMatch[1]);
+
+  // ---- conversations ----------------------------------------------------
+  if (path === '/api/conversations' && method === 'GET') return handleListConversations(request, env);
+  if (path === '/api/conversations/send' && method === 'POST') return handleSendMessage(request, env);
+  if (convoMatch && method === 'GET') {
+    return handleConversationMessages(request, env, decodeURIComponent(convoMatch[1]));
+  }
 
   // ---- dashboard and reports -------------------------------------------
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);

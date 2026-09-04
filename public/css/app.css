@@ -304,3 +304,31 @@ dialog form { margin: 0; }
 .back-link { font-size: .82rem; color: var(--ink-500); text-decoration: none; display: inline-block; margin-bottom: .4rem; }
 .back-link:hover { color: var(--coral-500); }
 tbody tr[data-href] { cursor: pointer; }
+
+/* Inbox: thread list beside a message pane */
+.inbox { display: grid; grid-template-columns: 320px 1fr; gap: 1rem; align-items: start; }
+@media (max-width: 900px) { .inbox { grid-template-columns: 1fr; } .inbox.viewing .threads { display: none; } }
+.threads { max-height: calc(100vh - 190px); overflow-y: auto; }
+.thread {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  border-bottom: 1px solid var(--navy-100); padding: .85rem 1rem; cursor: pointer; font: inherit;
+}
+.thread:hover { background: var(--navy-50); }
+.thread[aria-current="true"] { background: var(--navy-50); box-shadow: inset 3px 0 0 var(--coral-400); }
+.thread .who { font-weight: 650; color: var(--navy-800); font-size: .875rem; }
+.thread .snip {
+  color: var(--ink-500); font-size: .8rem; margin-top: .2rem;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.thread .meta { color: var(--ink-400); font-size: .72rem; margin-top: .25rem; }
+.unread { background: var(--coral-400); color: #fff; border-radius: 999px; padding: 0 .4rem; font-size: .68rem; font-weight: 650; }
+
+.messages { padding: 1.1rem; max-height: calc(100vh - 340px); overflow-y: auto; display: flex; flex-direction: column; gap: .7rem; }
+.msg { max-width: 76%; padding: .6rem .85rem; border-radius: 13px; font-size: .875rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.msg.in { align-self: flex-start; background: var(--navy-50); color: var(--ink-800); border-bottom-left-radius: 4px; }
+.msg.out { align-self: flex-end; background: var(--navy-800); color: #fff; border-bottom-right-radius: 4px; }
+.msg .stamp { display: block; font-size: .68rem; opacity: .7; margin-top: .3rem; }
+.composer { border-top: 1px solid var(--navy-100); padding: 1rem; }
+.composer textarea { min-height: 70px; }
+.composer .row { display: flex; gap: .6rem; align-items: center; margin-top: .6rem; }
+.composer select { width: auto; }
