@@ -176,7 +176,11 @@ export function onSubmit(form, handler, { errorBox } = {}) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const button = form.querySelector('button[type="submit"]');
-    const box = errorBox || form.querySelector('.notice-error');
+    // The notice sits inside the form on dialogs, but is a sibling of it on
+    // the auth pages. Look in both before falling back to an alert.
+    const box = errorBox
+      || form.querySelector('.notice-error')
+      || (form.parentElement && form.parentElement.querySelector('.notice-error'));
     if (box) { box.hidden = true; box.textContent = ''; }
     if (button) button.disabled = true;
     try {
