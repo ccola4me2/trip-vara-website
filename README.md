@@ -21,6 +21,7 @@ Cloudflare Worker + static assets + D1, no build step, deployed from GitHub
 | Pipeline and opportunities | GoHighLevel | Board grouped by the pipeline's own stages, drag to move |
 | Calendar and appointments | GoHighLevel | Agenda across all active calendars, booking included |
 | Bookings and trips | D1 | Supplier, confirmation, dates, payments, commission |
+| Invoices and payments | GoHighLevel | Reconciled against what bookings expect |
 | Dashboard and reports | Both | Booking numbers from D1, live pipeline value from GHL |
 | Advisor accounts | D1 | Email and password, admin approves before access |
 
@@ -43,6 +44,7 @@ tracking has value on its own.
 | `/app/pipeline` | Advisor | Opportunity board, drag between stages, create deals |
 | `/app/calendar` | Advisor | Upcoming appointments, book new ones |
 | `/app/bookings` | Advisor | Booking CRUD, deadlines, commission |
+| `/app/billing` | Advisor | Invoices, transactions, reconciliation |
 | `/app/reports` | Advisor | Production by departure month |
 | `/app/settings` | Advisor | Profile, password, CRM binding |
 | `/admin/` | Admin | Approve, suspend and bind advisors |
@@ -153,7 +155,17 @@ otherwise surfacing to advisors as a scope problem.
 and reports which the token can reach. A Private Integration Token has a fixed
 scope set chosen at creation, and a missing scope returns 403 rather than an
 empty result, so this is the fastest way to tell a permissions problem from an
-empty CRM. It reports presence only, never values.
+empty CRM. It reports presence only, never values. `?probe=email` asks Resend whether the
+key is accepted and the sending domain verified, and `POST /api/admin/test-email`
+sends for real and returns Resend's actual response.
+
+### Email deliverability
+
+Sending needs more than a verified domain. Yahoo and Gmail both require a DMARC
+record, and a domain with SPF and DKIM but no DMARC gets silently dropped rather
+than bounced, which looks identical to a broken app. `_dmarc.tripvaratravel.com`
+carries `v=DMARC1; p=none; rua=...`. If mail stops arriving, check that record
+before suspecting the portal.
 
 The portal needs contacts, opportunities, conversations, conversation messages,
 calendars, custom fields, tags and users.
@@ -171,6 +183,7 @@ src/
   leads.js      Contacts, notes, tasks, the full record
   conversations.js  Threads, messages, sending
   calendar.js   Calendars and appointments
+  billing.js    Invoices, transactions, reconciliation
   pipeline.js   Pipelines and opportunities
   bookings.js   Booking CRUD and validation
   reports.js    Dashboard and production numbers
