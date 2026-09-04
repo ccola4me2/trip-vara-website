@@ -16,8 +16,10 @@ Cloudflare Worker + static assets + D1, no build step, deployed from GitHub
 
 | Area | Source of truth | Notes |
 | --- | --- | --- |
-| Leads and contacts | GoHighLevel | Live read and write, with notes |
-| Pipeline and opportunities | GoHighLevel | Board grouped by the pipeline's own stages |
+| Leads and contacts | GoHighLevel | Live read and write, with a full record page |
+| Conversations | GoHighLevel | SMS and email threads, send and reply from the portal |
+| Pipeline and opportunities | GoHighLevel | Board grouped by the pipeline's own stages, drag to move |
+| Calendar and appointments | GoHighLevel | Agenda across all active calendars, booking included |
 | Bookings and trips | D1 | Supplier, confirmation, dates, payments, commission |
 | Dashboard and reports | Both | Booking numbers from D1, live pipeline value from GHL |
 | Advisor accounts | D1 | Email and password, admin approves before access |
@@ -35,8 +37,11 @@ tracking has value on its own.
 | `/forgot-password`, `/reset-password` | Public | Password reset |
 | `/pending` | Public | Shown while an account awaits approval |
 | `/app/` | Advisor | Dashboard: numbers, payments due, activity |
+| `/app/inbox` | Advisor | SMS and email threads, with a composer |
 | `/app/leads` | Advisor | Contacts from GHL, add a lead |
-| `/app/pipeline` | Advisor | Opportunity board by stage |
+| `/app/contact` | Advisor | One contact: details, notes, tasks, deals |
+| `/app/pipeline` | Advisor | Opportunity board, drag between stages, create deals |
+| `/app/calendar` | Advisor | Upcoming appointments, book new ones |
 | `/app/bookings` | Advisor | Booking CRUD, deadlines, commission |
 | `/app/reports` | Advisor | Production by departure month |
 | `/app/settings` | Advisor | Profile, password, CRM binding |
@@ -104,7 +109,7 @@ and `npx wrangler secret put GHL_API_TOKEN`.
 
 | Secret | Required | Purpose |
 | --- | --- | --- |
-| `GHL_API_TOKEN` | For leads and pipeline | GoHighLevel Private Integration Token. Create it at Settings > Private Integrations on the Trip Vara sub-account, with contacts read/write, opportunities read/write and calendars read. Without it those two pages show a setup notice; everything else works. |
+| `GHL_API_TOKEN` | For everything CRM | GoHighLevel Private Integration Token. Create it at Settings > Private Integrations on the Trip Vara sub-account, with contacts read/write, opportunities read/write and calendars read. Without it those two pages show a setup notice; everything else works. |
 | `RESEND_API_KEY` | For email | Approval, welcome and password-reset emails. Without it sends are skipped and logged, and nothing fails. |
 
 Non-secret config lives in `[vars]` in `wrangler.toml`, including
@@ -126,7 +131,20 @@ code change.
   `/admin/`. This needs an agency-level token that can reach all of them.
 
 `src/ghl.js` is the only file that talks to GoHighLevel, and it normalizes every
-response, so the rest of the portal never depends on GHL's field naming.
+response, so the rest of the portal never depends on GHL's field naming. It also
+retries rate limits and 5xx with backoff, because a single transient failure was
+otherwise surfacing to advisors as a scope problem.
+
+### Checking the token
+
+`GET /api/admin/health?probe=1` (admin only) pings one cheap read per GHL area
+and reports which the token can reach. A Private Integration Token has a fixed
+scope set chosen at creation, and a missing scope returns 403 rather than an
+empty result, so this is the fastest way to tell a permissions problem from an
+empty CRM. It reports presence only, never values.
+
+The portal needs contacts, opportunities, conversations, conversation messages,
+calendars, custom fields, tags and users.
 
 ---
 
@@ -138,7 +156,9 @@ src/
   auth.js       Signup, sign in, sessions, password reset, requireUser/requireAdmin
   db.js         Every D1 query
   ghl.js        GoHighLevel client and response normalizers
-  leads.js      Contacts and notes
+  leads.js      Contacts, notes, tasks, the full record
+  conversations.js  Threads, messages, sending
+  calendar.js   Calendars and appointments
   pipeline.js   Pipelines and opportunities
   bookings.js   Booking CRUD and validation
   reports.js    Dashboard and production numbers
