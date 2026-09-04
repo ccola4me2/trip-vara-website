@@ -36,7 +36,7 @@ database_id = "f7a1657b-4129-484c-9841-200416f8da8a"
 APP_URL = "https://tripvaratravel.com"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
 # Where operator notifications go (new advisor signups awaiting approval).
-NOTIFY_EMAIL = "brentb@cruiseshoppers.com"
+NOTIFY_EMAIL = "brentb@cruisestoursandtravel.com"
 SESSION_TTL_DAYS = "30"
 RESET_TTL_MINUTES = "60"
 
