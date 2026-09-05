@@ -1293,6 +1293,20 @@ async function main() {
     'and the three money figures account for the whole trip',
     `${m.paidCents} + ${m.scheduledCents} + ${m.unscheduledCents} vs ${rec.data.booking.gross_cents}`);
 
+  // Every activity line has been written with the id of the thing it happened
+  // to, and the feed could never take you there. Made fresh so it is the
+  // newest entry: the feed is capped, and an older one may have scrolled off.
+  const feedTrip = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Feed ${stamp}`, supplier: 'Ponant', status: 'quoted', departDate: isoDay(210),
+  });
+  if (feedTrip.data?.booking?.id) cleanup('the feed reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${feedTrip.data.booking.id}`));
+
+  const feed = await call(advisor, 'GET', '/api/dashboard');
+  check((feed.data?.activity || []).some((a) => a.booking_id === feedTrip.data?.booking?.id),
+    'an activity line carries the reservation it happened to',
+    JSON.stringify((feed.data?.activity || [])[0]));
+
   const recTask = await call(advisor, 'POST', '/api/tasks',
     { title: `From the record ${stamp}`, bookingId });
   if (recTask.data?.task?.id) cleanup('the record task', () =>

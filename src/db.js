@@ -1081,12 +1081,30 @@ export async function logActivity(env, userId, kind, subject, meta = null) {
 export async function recentActivity(env, scope, limit = 15) {
   const scoped = scopeWhere(scope);
   const { results } = await env.DB.prepare(
-    `SELECT a.id, a.kind, a.subject, a.created_at, ${ADVISOR_NAME}
+    `SELECT a.id, a.kind, a.subject, a.meta_json, a.created_at, ${ADVISOR_NAME}
        FROM activity_log a LEFT JOIN users u ON u.id = a.user_id
       WHERE ${scopeWhere(scope, 'a.user_id').sql}
       ORDER BY a.created_at DESC LIMIT ?`
   ).bind(...scoped.binds, Math.min(Number(limit) || 15, 100)).all();
-  return results || [];
+
+  // Every activity line has been written with the id of the thing it happened
+  // to, and the feed has never been able to take you there. Unpacked here
+  // rather than handed to the page as JSON, so a malformed row costs one
+  // missing link instead of a thrown render.
+  // Two shapes in the history, because the booking handlers logged { id } and
+  // everything else logged { bookingId }. Both are read rather than one of
+  // them corrected: the rows already written cannot be changed, and a reader
+  // that only understands today's shape would silently drop every link older
+  // than the fix.
+  return (results || []).map((a) => {
+    let bookingId = null;
+    try {
+      const meta = JSON.parse(a.meta_json || '{}');
+      bookingId = meta.bookingId || (String(a.kind || '').startsWith('booking.') ? meta.id : null) || null;
+    } catch { bookingId = null; }
+    return { id: a.id, kind: a.kind, subject: a.subject, created_at: a.created_at,
+      advisor_name: a.advisor_name, booking_id: bookingId };
+  });
 }
 
 // ---------------------------------------------------------------------------

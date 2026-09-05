@@ -471,7 +471,9 @@ const PANELS = {
   activity: () => widget('Activity', null, [
     { key: 'all', label: 'All', render: () => d.activity.length
       ? `<ul class="rows">${d.activity.map((a) => `<li>
-          <div class="t" style="font-size:.82rem;">${esc(a.subject || a.kind)}</div>
+          <div class="t" style="font-size:.82rem;">${a.booking_id
+            ? `<a href="/app/reservation?id=${esc(a.booking_id)}">${esc(a.subject || a.kind)}</a>`
+            : esc(a.subject || a.kind)}</div>
           <div class="m">${esc(timeAgo(a.created_at))}${a.advisor_name && everyoneNow()
             ? ' · ' + esc(a.advisor_name) : ''}</div></li>`).join('')}</ul>`
       : '' },

@@ -49,6 +49,9 @@ function publicUser(u) {
       ? null : Number(u.default_split_pct),
     agencyAddress: u.agency_address,
     sellerOfTravel: u.seller_of_travel,
+    // Written when an admin approves the account and read by nobody until
+    // now, which made it a fact the database kept to itself.
+    approvedAt: u.approved_at,
     lastLoginAt: u.last_login_at,
   };
 }

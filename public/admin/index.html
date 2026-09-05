@@ -77,7 +77,9 @@ function render(users, counts) {
           : '<span class="muted">Shared default</span>'}
         <div><button class="btn btn-ghost btn-sm" data-bind="${esc(u.id)}"
           data-loc="${esc(u.ghlLocationId || '')}" data-usr="${esc(u.ghlUserId || '')}">Bind</button></div></td>
-      <td><span class="muted">${esc(u.lastLoginAt ? timeAgo(u.lastLoginAt) : 'never')}</span></td>
+      <td><span class="muted">${esc(u.lastLoginAt ? timeAgo(u.lastLoginAt) : 'never')}</span>
+        ${u.approvedAt ? `<div class="muted" style="font-size:.72rem;">approved ${
+          esc(timeAgo(u.approvedAt))}</div>` : ''}</td>
       <td class="num">
         ${u.status !== 'active' ? `<button class="btn btn-primary btn-sm" data-set="active" data-id="${esc(u.id)}">Approve</button>` : ''}
         ${u.status === 'active' ? `<button class="btn btn-danger btn-sm" data-set="suspended" data-id="${esc(u.id)}">Suspend</button>` : ''}
