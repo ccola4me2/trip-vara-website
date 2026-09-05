@@ -543,6 +543,53 @@ async function main() {
   check(!(callList.data?.rebook || []).some((r) => r.client_name === `Lapsed Traveller ${stamp}`),
     'and booking them again takes them off the list');
 
+  // ------------------------------------------------- year on year -----------
+  step('This year against the same days last year');
+
+  // Two reservations a year apart to the day, so the comparison has something
+  // real on both sides rather than a zero and a shrug.
+  const thisYear = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `YoY Now ${stamp}`, departDate: isoDay(-10), gross: '5000',
+    commission: '500', status: 'travelled',
+  });
+  const lastYear = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `YoY Then ${stamp}`, departDate: isoDay(-375), gross: '2500',
+    commission: '250', status: 'travelled',
+  });
+  for (const r of [thisYear, lastYear]) {
+    if (r.data?.booking?.id) cleanup('a year on year reservation', () =>
+      call(advisor, 'DELETE', `/api/bookings/${r.data.booking.id}`));
+  }
+
+  const prod = await call(advisor, 'GET', '/api/reports/production?months=12');
+  const dep = prod.data?.comparison?.departure?.ytd;
+  check(dep && dep.now.grossCents >= 500000 && dep.prev.grossCents >= 250000,
+    'both years have figures on the departure basis',
+    dep && `${dep.now.grossCents} vs ${dep.prev.grossCents}`);
+  check(dep && dep.prevFrom.slice(4) === dep.from.slice(4) && dep.prevTo.slice(4) === dep.to.slice(4),
+    'compared over the same days, not the same length of year',
+    dep && `${dep.from}..${dep.to} vs ${dep.prevFrom}..${dep.prevTo}`);
+  // Checked against the totals rather than a fixed number: the database this
+  // runs on has other reservations in both years, and an assertion that only
+  // holds on an empty database is an assertion that will be deleted later.
+  const expected = dep && dep.prev.grossCents
+    ? Math.round(((dep.now.grossCents - dep.prev.grossCents) / dep.prev.grossCents) * 1000) / 10
+    : null;
+  check(dep && dep.change.gross === expected,
+    'and the percentage change follows from the two totals',
+    dep && `${dep.change.gross} vs ${expected}`);
+
+  // created_at is unix seconds. Comparing it to an ISO date matches nothing at
+  // all and looks like a quiet year rather than a broken query.
+  const pur = prod.data?.comparison?.purchase?.ytd;
+  check(pur && pur.now.bookings > 0,
+    'the purchase basis counts reservations taken this year', pur && pur.now.bookings);
+
+  const zero = prod.data?.comparison?.departure?.mtd;
+  check(zero && (zero.prev.grossCents > 0 || zero.change.gross === null),
+    'and a period with nothing to compare against says so rather than showing 0%',
+    zero && JSON.stringify(zero.change));
+
   // ----------------------------------------------------------- calendar -----
   step('A month of everything with a date on it');
 

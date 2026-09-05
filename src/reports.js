@@ -169,8 +169,15 @@ export async function handleProduction(request, env) {
     ? Math.round((payStats.postedCents / dueSoFar) * 1000) / 10
     : null;
 
+  const today = isoDay(0);
+  const [comparison, mix] = await Promise.all([
+    db.salesComparison(env, scope, today),
+    db.salesMix(env, scope, { from: `${today.slice(0, 4)}-01-01`, to: today }),
+  ]);
+
   return json({
     months, since, byMonth, stats, cashflow, payments: payStats, collectionRate,
+    comparison, mix, today,
     byAdvisor,
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),

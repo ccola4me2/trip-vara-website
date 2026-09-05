@@ -618,6 +618,19 @@ tbody tr[data-href] { cursor: pointer; }
 .pin:hover { color: var(--navy-700); }
 .pin.on { color: var(--coral-500); }
 
+/* Year on year comparison */
+.cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+@media (max-width: 900px) { .cmp-grid { grid-template-columns: 1fr; } }
+.cmp-title {
+  font-size: .74rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--navy-800); margin: 0 0 .4rem; display: flex; gap: .5rem; align-items: baseline;
+}
+.cmp-title .muted { letter-spacing: 0; text-transform: none; font-weight: 400; font-size: .72rem; }
+.cmp table { width: 100%; }
+.cmp td, .cmp th { padding: .35rem .4rem; font-size: .82rem; }
+.cmp .up { color: var(--green-600); font-weight: 650; }
+.cmp .down { color: var(--red-600); font-weight: 650; }
+
 /* Dashboard calendar */
 .cal { padding: .5rem .8rem .8rem; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; padding: .2rem 0 .6rem; }

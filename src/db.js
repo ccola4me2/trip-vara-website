@@ -629,6 +629,135 @@ export async function calendarMonth(env, scope, { from, to }) {
   return out;
 }
 
+// Two ways to count a year, and they answer different questions.
+//
+//   By departure is when the travel happens, which is when commission is
+//   earned and when the money actually arrives.
+//   By purchase is when the booking was taken, which is what this month's
+//   selling actually produced.
+//
+// An agency needs both. A quiet selling month with a busy departure month
+// looks healthy on one and alarming on the other, and only the pair tells you
+// which. created_at is unix seconds, so the purchase basis converts it rather
+// than comparing an integer to an ISO date, which silently matches nothing.
+const BASIS_COLUMN = {
+  departure: 'depart_date',
+  purchase: "date(created_at, 'unixepoch')",
+};
+
+async function periodTotals(env, scope, basis, from, to) {
+  const scoped = scopeWhere(scope);
+  const col = BASIS_COLUMN[basis] || BASIS_COLUMN.departure;
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS bookings,
+            COALESCE(SUM(gross_cents), 0) AS gross_cents,
+            COALESCE(SUM(commission_cents), 0) AS commission_cents
+       FROM bookings
+      WHERE ${scoped.sql} AND status IN ('booked','travelled')
+        AND ${col} IS NOT NULL AND ${col} BETWEEN ? AND ?`
+  ).bind(...scoped.binds, from, to).first();
+  return {
+    bookings: row?.bookings || 0,
+    grossCents: row?.gross_cents || 0,
+    commissionCents: row?.commission_cents || 0,
+  };
+}
+
+/** A percentage change, or null when there is no base to compare against. */
+function change(now, prev) {
+  if (!prev) return null;
+  return Math.round(((now - prev) / prev) * 1000) / 10;
+}
+
+/**
+ * This year against the same days last year, on both bases.
+ *
+ * Deliberately the same days rather than the whole of last year: comparing
+ * eight months against twelve makes every year look like a collapse.
+ */
+export async function salesComparison(env, scope, today) {
+  const [y, m, dd] = today.split('-').map(Number);
+  const ranges = {
+    mtd: [`${today.slice(0, 7)}-01`, today],
+    ytd: [`${y}-01-01`, today],
+  };
+  const lastYear = ([from, to]) => [
+    `${Number(from.slice(0, 4)) - 1}${from.slice(4)}`,
+    `${y - 1}${to.slice(4)}`,
+  ];
+
+  const out = {};
+  for (const basis of ['departure', 'purchase']) {
+    out[basis] = {};
+    for (const [key, range] of Object.entries(ranges)) {
+      const prevRange = lastYear(range);
+      const [now, prev] = await Promise.all([
+        periodTotals(env, scope, basis, range[0], range[1]),
+        periodTotals(env, scope, basis, prevRange[0], prevRange[1]),
+      ]);
+      out[basis][key] = {
+        from: range[0], to: range[1], prevFrom: prevRange[0], prevTo: prevRange[1],
+        now, prev,
+        change: {
+          gross: change(now.grossCents, prev.grossCents),
+          commission: change(now.commissionCents, prev.commissionCents),
+          bookings: change(now.bookings, prev.bookings),
+        },
+      };
+    }
+  }
+  return out;
+}
+
+/**
+ * The three numbers behind whether the selling is any good, as opposed to
+ * merely busy. Each is defined here rather than left to the reader, because a
+ * rate nobody can define is a rate nobody should act on.
+ */
+export async function salesMix(env, scope, { from, to }) {
+  const scoped = scopeWhere(scope);
+  const row = await env.DB.prepare(
+    `SELECT COUNT(DISTINCT client_name) AS clients,
+            COUNT(*) AS bookings,
+            COALESCE(SUM(gross_cents), 0) AS gross_cents,
+            -- A client counts as insured if any of their reservations in the
+            -- window is an insurance line, since insurance is sold as its own
+            -- booking rather than as a field on the trip.
+            COUNT(DISTINCT CASE WHEN product_type = 'insurance' THEN client_name END) AS insured,
+            COUNT(DISTINCT CASE WHEN product_type != 'insurance' THEN client_name END) AS travellers
+       FROM bookings
+      WHERE ${scoped.sql} AND status IN ('booked','travelled')
+        AND depart_date IS NOT NULL AND depart_date BETWEEN ? AND ?`
+  ).bind(...scoped.binds, from, to).first();
+
+  const repeat = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM (
+       SELECT client_name FROM bookings
+        WHERE ${scoped.sql} AND status IN ('booked','travelled')
+        GROUP BY client_name HAVING COUNT(*) > 1)`
+  ).bind(...scoped.binds).first();
+
+  const allClients = await env.DB.prepare(
+    `SELECT COUNT(DISTINCT client_name) AS n FROM bookings
+      WHERE ${scoped.sql} AND status IN ('booked','travelled')`
+  ).bind(...scoped.binds).first();
+
+  const travellers = row?.travellers || 0;
+  const clients = allClients?.n || 0;
+  return {
+    clients: row?.clients || 0,
+    bookings: row?.bookings || 0,
+    // Per client rather than per booking: one client buying a cruise, a
+    // transfer and insurance is one customer worth three lines, not three
+    // customers worth one.
+    avgSpendCents: row?.clients ? Math.round((row.gross_cents || 0) / row.clients) : 0,
+    insuranceAttach: travellers ? Math.round(((row.insured || 0) / travellers) * 1000) / 10 : null,
+    repeatRate: clients ? Math.round(((repeat?.n || 0) / clients) * 1000) / 10 : null,
+    repeatClients: repeat?.n || 0,
+    totalClients: clients,
+  };
+}
+
 export async function logActivity(env, userId, kind, subject, meta = null) {
   try {
     await env.DB.prepare(

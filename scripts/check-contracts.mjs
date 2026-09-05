@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 
 // Which endpoint feeds which page.
 const PAGES = [
-  ['public/app/index.html', ['/api/dashboard']],
+  ['public/app/index.html', ['/api/dashboard', '/api/month']],
   ['public/app/payments.html', ['/api/payments?state=all']],
   ['public/app/reservations.html', ['/api/bookings', '/api/groups?status=open']],
   ['public/app/groups.html', ['/api/groups']],
@@ -64,6 +64,7 @@ isInteger parse stringify
 writeText clipboard currentTarget preventDefault stopPropagation replaceChildren
 replaceState pushState scrollIntoView setSelectionRange getSetCookie closest
 dataTransfer effectAllowed setData getData draggable insertBefore appendChild
+getUTCDay getUTCDate getUTCMonth getUTCFullYear queueMicrotask
 setTimeout clearTimeout requestSubmit
 gridTemplateColumns cssText selectedOptions
 data detail error code redirect
