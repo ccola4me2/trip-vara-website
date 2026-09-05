@@ -5,7 +5,7 @@
 // commission. It lives in D1, optionally linked back to the GHL contact and
 // opportunity it came from.
 
-import { json, badRequest, notFound, clean, cleanDate, toCents, oneOf, readJson } from './util.js';
+import { json, badRequest, notFound, clean, cleanDate, toCents, oneOf, readJson, now } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 import * as ghl from './ghl.js';
@@ -410,6 +410,38 @@ export async function handleUpdateBooking(request, env, id) {
   await db.logActivity(env, user.id, 'booking.update',
     `Updated booking for ${booking.client_name}`, { id });
   return json({ ok: true, booking });
+}
+
+/**
+ * Records that somebody rang them after the trip.
+ *
+ * A date, not a tick, because "have they been rung" and "when" are different
+ * questions and only the second one tells you whether it is worth ringing
+ * again. Sent as false to undo, which is what happens when the wrong row was
+ * clicked, and that is more common than a client un-travelling.
+ */
+export async function handleWelcomed(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const booking = await db.getBooking(env, id, user.id);
+  if (!booking) return notFound('Reservation not found.');
+
+  const body = await readJson(request);
+  // Seconds, like every other timestamp in this database. A Date.now() here
+  // would read as fifty thousand years from now to anything that compared it,
+  // and the page would say the client was rung some time in the year 57000.
+  const done = body.welcomed === false ? null : now();
+
+  await env.DB.prepare(
+    'UPDATE bookings SET welcomed_at = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+  ).bind(done, now(), id, user.id).run();
+
+  await db.logActivity(env, user.id, 'booking.welcomed',
+    done ? `Rang ${booking.client_name} after their trip`
+         : `Cleared the welcome home note for ${booking.client_name}`,
+    { bookingId: id });
+  return json({ ok: true, welcomedAt: done });
 }
 
 export async function handleDeleteBooking(request, env, id) {

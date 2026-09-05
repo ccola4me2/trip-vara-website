@@ -311,6 +311,24 @@ const PANELS = {
         </tr>`).join('')}</tbody></table></div>`;
     } },
 
+    // The one contact in the whole arc where nothing goes wrong if you skip
+    // it: no vendor cancels anything, no deadline passes, the client simply
+    // drifts and books with somebody else next year.
+    { key: 'welcome', label: 'Just back', render: () => {
+      const rows = d.welcome || [];
+      if (!rows.length) return '<p class="wempty">Everyone who is back has been rung.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Trip</th><th>Home</th><th></th></tr></thead>
+        <tbody>${rows.map((b) => `<tr>
+          <td><a class="name" href="/app/reservation?id=${esc(b.id)}">${esc(b.client_name)}</a>
+            <div class="muted">${esc(b.supplier || '')}</div></td>
+          <td>${esc(b.product_name || '-')}</td>
+          <td>${esc(fmtShort(b.return_date || b.depart_date))}
+            <div class="muted">${b.back_days === 0 ? 'today' : `${b.back_days}d ago`}</div></td>
+          <td class="num"><button class="btn btn-ghost btn-sm" data-welcomed="${esc(b.id)}">Rang them</button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+    } },
+
     { key: 'birthdays', label: 'Birthdays', render: () => {
       const rows = d.birthdays || [];
       if (!rows.length) return '<p class="wempty">No birthdays in the next month, or none recorded.</p>';
@@ -639,6 +657,29 @@ function drawPanels() {
       }
     });
   });
+  // Delegated for the same reason: the panel redraws whenever a tab is clicked.
+  widgetsEl.querySelectorAll('[data-panel="rebook"]').forEach((panel) => {
+    panel.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-welcomed]');
+      if (!btn) return;
+      btn.disabled = true;
+      try {
+        await api(`/api/bookings/${encodeURIComponent(btn.dataset.welcomed)}/welcomed`,
+          { method: 'POST', body: {} });
+        d.welcome = (d.welcome || []).filter((b) => b.id !== btn.dataset.welcomed);
+        // The row is removed rather than the dashboard redrawn. Redrawing
+        // rebuilds every panel from its default tab, so recording a call would
+        // throw you back to a different tab of the panel you were working in.
+        const row = btn.closest('tr');
+        const wrap = row && row.closest('.table-wrap');
+        if (row) row.remove();
+        if (wrap && !wrap.querySelector('tbody tr')) {
+          wrap.outerHTML = '<p class="wempty">Everyone who is back has been rung.</p>';
+        }
+      } catch { btn.disabled = false; }
+    });
+  });
+
   if (!visible.length) {
     widgetsEl.innerHTML = `<div class="empty" style="grid-column:1/-1;">
       <h3>Every panel is switched off</h3><p>Open Customise to put some back.</p></div>`;

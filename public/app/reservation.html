@@ -593,10 +593,14 @@ function render() {
 
   // A quote and a booked trip get different documents, so the button says
   // which one it will send. Nothing goes out about a cancelled trip.
+  // Offered once they are home and once, because the point is remembering
+  // whether the call happened, not counting how many times.
+  const backHome = b.status === 'travelled' && !b.welcomed_at;
   const outgoing = b.status === 'cancelled' ? null
     : (b.status === 'booked' || b.status === 'travelled') ? 'Send statement' : 'Send quote';
   document.getElementById('actions').innerHTML = d.editable
-    ? `<button class="btn btn-ghost btn-sm" id="split-btn">Commission split</button>
+    ? `${backHome ? '<button class="btn btn-secondary btn-sm" id="welcomed-btn">Rang them</button>' : ''}
+       <button class="btn btn-ghost btn-sm" id="split-btn">Commission split</button>
        ${outgoing ? `<button class="btn btn-ghost btn-sm" id="send-statement">${esc(outgoing)}</button>` : ''}
        <a class="btn btn-ghost btn-sm" href="/app/reservations?focus=${esc(b.id)}">Edit reservation</a>`
     : '<span class="muted">Another advisor\'s reservation</span>';
@@ -604,6 +608,13 @@ function render() {
   if (sb) sb.addEventListener('click', statement);
   const spb = document.getElementById('split-btn');
   if (spb) spb.addEventListener('click', openSplit);
+  const wb = document.getElementById('welcomed-btn');
+  if (wb) wb.addEventListener('click', async () => {
+    wb.disabled = true;
+    try { await api(`/api/bookings/${encodeURIComponent(id)}/welcomed`, { method: 'POST', body: {} });
+      await load(); }
+    catch (e) { showError(err, e); wb.disabled = false; }
+  });
 
   const left = daysUntil(b.final_payment_due);
   document.getElementById('money').innerHTML = `
@@ -695,6 +706,7 @@ function render() {
     <dt>Insurance</dt><dd>${INSURANCE[b.insurance_status] || esc(b.insurance_status || '-')}</dd>
     <dt>Booked by</dt><dd>${esc(b.booking_method || '-')}</dd>
     <dt>Commission</dt><dd>${money(b.commission_cents)} <span class="muted">${esc(b.commission_status)}</span></dd>
+    ${b.welcomed_at ? `<dt>Rang them after</dt><dd>${esc(timeAgo(b.welcomed_at))}</dd>` : ''}
     ${b.quote_sent_at ? `<dt>Quote sent</dt><dd>${esc(timeAgo(b.quote_sent_at))}${
       b.quote_sent_count > 1 ? ` &middot; ${b.quote_sent_count} times` : ''}</dd>` : ''}
     ${b.statement_sent_at ? `<dt>Statement sent</dt><dd>${esc(timeAgo(b.statement_sent_at))}</dd>` : ''}

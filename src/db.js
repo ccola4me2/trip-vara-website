@@ -297,7 +297,7 @@ const BOOKING_COLUMNS = `
   return_date, deposit_due, final_payment_due, travellers, gross_cents, deposit_cents,
   commission_cents, commission_status, status, notes, group_id, client_id, vendor_id,
   cabin, cabin_category, itinerary, booking_method, insurance_status, advisor_split_pct,
-  quote_sent_at, quote_sent_count, statement_sent_at,
+  quote_sent_at, quote_sent_count, statement_sent_at, welcomed_at,
   created_at, updated_at
 `;
 
@@ -312,7 +312,7 @@ const BOOKING_COLUMNS_B = `
   b.deposit_cents, b.commission_cents, b.commission_status, b.status, b.notes,
   b.group_id, b.client_id, b.vendor_id, b.cabin, b.cabin_category, b.itinerary,
   b.booking_method, b.insurance_status, b.advisor_split_pct,
-  b.quote_sent_at, b.quote_sent_count, b.statement_sent_at,
+  b.quote_sent_at, b.quote_sent_count, b.statement_sent_at, b.welcomed_at,
   b.created_at, b.updated_at
 `;
 
@@ -559,6 +559,44 @@ export async function productionBreakdown(env, scope, sinceDate, by = 'type') {
       GROUP BY label ORDER BY gross_cents DESC LIMIT 20`
   ).bind(...scoped.binds, sinceDate).all();
   return results || [];
+}
+
+/**
+ * Clients who are back and have not been rung.
+ *
+ * The call after a trip is where reviews, referrals and the next booking come
+ * from. It is also the easiest one to skip, because nothing goes wrong when
+ * you do: no vendor cancels anything, no deadline passes, the client simply
+ * drifts and books with somebody else next year.
+ *
+ * A window rather than everybody who has ever travelled. Ringing about a
+ * holiday somebody had eight months ago is a different conversation, and it
+ * belongs on the rebooking list rather than this one.
+ */
+export async function welcomeHomeCandidates(env, scope, { today, days = 30, limit = 20 } = {}) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+  const from = new Date(Date.parse(`${today}T00:00:00Z`) - days * 86400000)
+    .toISOString().slice(0, 10);
+
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.supplier, b.product_name, b.return_date, b.depart_date,
+            b.gross_cents, ${ADVISOR_NAME}
+       FROM bookings b LEFT JOIN users u ON u.id = b.user_id
+      WHERE ${scoped.sql}
+        AND b.status = 'travelled'
+        AND b.welcomed_at IS NULL
+        AND COALESCE(b.return_date, b.depart_date) IS NOT NULL
+        AND COALESCE(b.return_date, b.depart_date) <= ?
+        AND COALESCE(b.return_date, b.depart_date) >= ?
+      ORDER BY COALESCE(b.return_date, b.depart_date) DESC
+      LIMIT ?`
+  ).bind(...scoped.binds, today, from, Math.min(Number(limit) || 20, 100)).all();
+
+  const nowMs = Date.parse(`${today}T00:00:00Z`);
+  return (results || []).map((b) => ({
+    ...b,
+    back_days: Math.round((nowMs - Date.parse(`${b.return_date || b.depart_date}T00:00:00Z`)) / 86400000),
+  }));
 }
 
 /**

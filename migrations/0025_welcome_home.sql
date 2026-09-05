@@ -1,0 +1,12 @@
+-- Whether anybody rang them when they got back.
+--
+-- The call after a trip is where reviews, referrals and the next booking come
+-- from, and it is the one contact in the whole arc that nothing here tracked.
+-- "From first inquiry to welcome home" was on every page and the welcome home
+-- part existed nowhere in the software.
+--
+-- A date rather than a task. An advisor who cannot tell whether a client has
+-- already been rung this week either rings twice or not at all, which is the
+-- same reason booking_payments records reminded_at. Injecting a task into
+-- somebody's list instead would be the software deciding how they work.
+ALTER TABLE bookings ADD COLUMN welcomed_at INTEGER;

@@ -1969,6 +1969,34 @@ async function main() {
     'and a second pass has nothing left to do, rather than churning the same rows',
     JSON.stringify(again.data));
 
+  // Home, and nobody has rung them. The one contact where nothing goes wrong
+  // if you skip it, which is exactly why it gets skipped.
+  const dash = await call(advisor, 'GET', '/api/dashboard');
+  const waiting = (dash.data?.welcome || []).find((b) => b.id === beenId);
+  check(waiting, 'a client who is back and unrung is on the list',
+    JSON.stringify((dash.data?.welcome || []).map((b) => b.client_name)));
+  check(waiting?.back_days >= 29 && waiting?.back_days <= 31,
+    'with how long they have been home', waiting?.back_days);
+
+  const rang = await call(advisor, 'POST', `/api/bookings/${beenId}/welcomed`, {});
+  check(rang.status === 200 && rang.data?.welcomedAt, 'the call can be recorded');
+  // Seconds, like every other timestamp here. Milliseconds would put the call
+  // fifty thousand years in the future and read that way on the page.
+  check(rang.data.welcomedAt < 4102444800,
+    'as a second count, not a millisecond one', rang.data?.welcomedAt);
+
+  const dash2 = await call(advisor, 'GET', '/api/dashboard');
+  check(!(dash2.data?.welcome || []).some((b) => b.id === beenId),
+    'and they drop off the list rather than being asked about again');
+
+  const rec2 = await call(advisor, 'GET', `/api/bookings/${beenId}/record`);
+  check(rec2.data?.booking?.welcomed_at, 'the reservation remembers it too');
+
+  await call(advisor, 'POST', `/api/bookings/${beenId}/welcomed`, { welcomed: false });
+  const dash3 = await call(advisor, 'GET', '/api/dashboard');
+  check((dash3.data?.welcome || []).some((b) => b.id === beenId),
+    'clicking the wrong row can be undone');
+
   const notAdmin = await call(advisor, 'POST', '/api/admin/lifecycle', {});
   check(notAdmin.status === 403 || notAdmin.status === 404,
     'an advisor cannot run agency wide maintenance', `status ${notAdmin.status}`);

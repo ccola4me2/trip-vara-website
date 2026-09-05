@@ -120,6 +120,9 @@ export async function handleDashboard(request, env) {
     // A date of birth collected on every traveller and shown nowhere is a
     // field an advisor fills in for nothing.
     birthdays: await upcomingBirthdays(env, scope, { today }).catch(() => []),
+    // Back from a trip and not yet rung. The one contact in the whole arc that
+    // nothing goes wrong when you skip, which is why it gets skipped.
+    welcome: await db.welcomeHomeCandidates(env, scope, { today }).catch(() => []),
     pinned: await db.listClients(env, scope, { pinnedOnly: true, limit: 12 }).catch(() => []),
     // Always the reader's own target, whatever scope the rest of the screen
     // is showing. A target you did not set is not your target.

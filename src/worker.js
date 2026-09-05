@@ -23,7 +23,7 @@ import {
 } from './pipeline.js';
 import {
   handleListBookings, handleGetBooking, handleBookingRecord, handleCreateBooking,
-  handleUpdateBooking, handleQuickUpdate, handleDeleteBooking,
+  handleUpdateBooking, handleQuickUpdate, handleDeleteBooking, handleWelcomed,
 } from './bookings.js';
 import { markReturnedTripsTravelled } from './db.js';
 import { handleStatement } from './statement.js';
@@ -224,6 +224,7 @@ async function routeApi(request, env, path, method) {
   const recordMatch = path.match(/^\/api\/bookings\/([^/]+)\/record$/);
   const quickMatch = path.match(/^\/api\/bookings\/([^/]+)\/quick$/);
   const statementMatch = path.match(/^\/api\/bookings\/([^/]+)\/statement$/);
+  const welcomedMatch = path.match(/^\/api\/bookings\/([^/]+)\/welcomed$/);
   const travellersMatch = path.match(/^\/api\/bookings\/([^/]+)\/travellers$/);
   const amenitiesMatch = path.match(/^\/api\/bookings\/([^/]+)\/amenities$/);
   const travellerMatch = path.match(/^\/api\/travellers\/([^/]+)$/);
@@ -305,6 +306,7 @@ async function routeApi(request, env, path, method) {
   if (quickMatch && method === 'POST') return handleQuickUpdate(request, env, quickMatch[1]);
   // What the client is told, which is a narrow subset of what the record holds.
   if (statementMatch && method === 'POST') return handleStatement(request, env, statementMatch[1]);
+  if (welcomedMatch && method === 'POST') return handleWelcomed(request, env, welcomedMatch[1]);
 
   // The two or three choices a quote offers, and which one the client took.
   if (optionsMatch && method === 'POST') return handleAddOption(request, env, optionsMatch[1]);
