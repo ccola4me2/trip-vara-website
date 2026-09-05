@@ -115,7 +115,7 @@ export function fill(template, context) {
  * Starts every active automation matching a trigger. Never throws: a broken
  * automation must not break the thing that fired it.
  */
-export async function fireTrigger(env, locationId, triggerType, context = {}) {
+export async function fireTrigger(env, locationId, triggerType, context = {}, { key = null } = {}) {
   try {
     const { results } = await env.DB.prepare(
       `SELECT * FROM automations
@@ -130,14 +130,22 @@ export async function fireTrigger(env, locationId, triggerType, context = {}) {
       if (a.triggerConfig.formId && a.triggerConfig.formId !== context.formId) continue;
 
       const ts = now();
-      await env.DB.prepare(
-        `INSERT INTO automation_runs
-           (id, automation_id, location_id, contact_id, contact_email, contact_name,
-            context_json, step_index, status, next_run_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?)`
-      ).bind(uid(), a.id, locationId, context.contactId || null,
-             context.email || null, context.name || null,
-             JSON.stringify(context), ts, ts, ts).run();
+      try {
+        // A repeat insert for the same key hits the partial unique index and
+        // throws, which is exactly what should happen: the event already
+        // started a run and must not start another.
+        await env.DB.prepare(
+          `INSERT INTO automation_runs
+             (id, automation_id, location_id, contact_id, contact_email, contact_name,
+              context_json, step_index, status, next_run_at, trigger_key, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?, ?)`
+        ).bind(uid(), a.id, locationId, context.contactId || null,
+               context.email || null, context.name || null,
+               JSON.stringify(context), ts, key, ts, ts).run();
+      } catch (e) {
+        if (key && /UNIQUE|constraint/i.test(String(e.message || e))) continue;
+        throw e;
+      }
 
       await env.DB.prepare('UPDATE automations SET runs_started = runs_started + 1 WHERE id = ?')
         .bind(a.id).run();
@@ -289,6 +297,48 @@ async function advanceRun(env, run) {
   return 'continuing';
 }
 
+/**
+ * Time based triggers.
+ *
+ * Everything else fires from a user action. This is the one that has to be
+ * looked for, so the cron sweeps unpaid payments falling due inside the
+ * window and fires one run per payment, keyed on the payment id so a week of
+ * passes produces exactly one reminder.
+ */
+export async function scanTimeTriggers(env, locationId, { withinDays = 7 } = {}) {
+  const through = new Date(Date.now() + withinDays * 86400000).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { results } = await env.DB.prepare(
+    `SELECT p.id, p.kind, p.amount_cents, p.due_date,
+            b.client_name, b.supplier, b.product_name, b.depart_date, b.ghl_contact_id
+       FROM booking_payments p
+       JOIN bookings b ON b.id = p.booking_id
+      WHERE p.paid_date IS NULL
+        AND p.due_date IS NOT NULL
+        AND p.due_date >= ? AND p.due_date <= ?
+        AND b.status IN ('quoted','booked')
+      LIMIT 200`
+  ).bind(today, through).all();
+
+  let fired = 0;
+  for (const row of results || []) {
+    await fireTrigger(env, locationId, 'booking.final_payment_due', {
+      paymentId: row.id,
+      kind: row.kind,
+      amount: (row.amount_cents / 100).toFixed(2),
+      due_date: row.due_date,
+      contactId: row.ghl_contact_id || null,
+      name: row.client_name,
+      supplier: row.supplier || '',
+      product: row.product_name || '',
+      depart_date: row.depart_date || '',
+    }, { key: row.id });
+    fired += 1;
+  }
+  return { candidates: (results || []).length, fired };
+}
+
 /** One scheduled pass over everything that is due. */
 export async function processDueRuns(env) {
   const { results } = await env.DB.prepare(
@@ -423,6 +473,7 @@ export async function handleDeleteAutomation(request, env, id) {
 export async function handleRunAutomations(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
+  await scanTimeTriggers(env, ghl.locationFor(env, user)).catch(() => null);
   const result = await processDueRuns(env);
   await db.logActivity(env, user.id, 'automation.run', 'Ran a pass', result);
   return json({ ok: true, result });

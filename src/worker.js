@@ -42,7 +42,7 @@ import {
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
-  handleDeleteAutomation, handleRunAutomations, processDueRuns,
+  handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers,
 } from './automations.js';
 import {
   handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
@@ -115,8 +115,15 @@ export default {
     ctx.waitUntil(
       runSync(env, locationFor(env, null)).catch((e) => console.error('sync', e))
     );
-    // Advance any automation runs that are due.
-    ctx.waitUntil(processDueRuns(env).catch((e) => console.error('automations', e)));
+    // Look for time based triggers, then advance whatever is due. Order
+    // matters: scanning first means a payment that just came into range is
+    // acted on in the same pass rather than waiting five more minutes.
+    ctx.waitUntil(
+      scanTimeTriggers(env, locationFor(env, null))
+        .catch((e) => console.error('time triggers', e))
+        .then(() => processDueRuns(env))
+        .catch((e) => console.error('automations', e))
+    );
   },
 };
 
