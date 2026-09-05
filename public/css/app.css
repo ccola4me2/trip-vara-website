@@ -562,6 +562,62 @@ tbody tr[data-href] { cursor: pointer; }
 }
 .stat-note strong { color: var(--navy-800); font-weight: 650; }
 
+/* The To do button in the sidebar, and the drawer it opens */
+.nav-todo {
+  display: flex; align-items: center; gap: .6rem; width: 100%; margin-bottom: .6rem;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14);
+  color: #fff; border-radius: 9px; padding: .48rem .7rem; cursor: pointer;
+  font: inherit; font-size: .84rem; font-weight: 550; text-align: left;
+}
+.nav-todo:hover { background: rgba(255,255,255,.13); }
+.nav-todo svg { width: 16px; height: 16px; flex: none; }
+.nav-todo span:nth-child(2) { flex: 1; }
+.todo-count {
+  min-width: 20px; text-align: center; border-radius: 999px; font-size: .7rem;
+  font-weight: 700; padding: .05rem .35rem; background: var(--navy-600); color: #fff;
+}
+.todo-count.late { background: var(--coral-500); }
+
+.drawer {
+  position: fixed; inset: 0; z-index: 60; background: rgba(10,26,48,.45);
+  display: none;
+}
+.drawer.open { display: block; }
+.drawer-panel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 100%);
+  background: var(--shell); display: flex; flex-direction: column;
+  box-shadow: -14px 0 40px rgba(15,28,43,.28);
+}
+.drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 1rem 1.1rem; background: #fff; border-bottom: 1px solid var(--navy-100);
+}
+.drawer-head h2 { font-size: 1.05rem; margin: 0; }
+.drawer-add {
+  display: grid; grid-template-columns: 1fr auto auto; gap: .4rem;
+  padding: .8rem 1.1rem; background: #fff; border-bottom: 1px solid var(--navy-100);
+}
+.drawer-add input[type="date"] { width: auto; }
+.drawer-body { flex: 1; overflow-y: auto; padding: .4rem 1.1rem 1.6rem; }
+.drawer-group {
+  font-size: .64rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-400); margin: 1.1rem 0 .4rem; display: flex; gap: .4rem; align-items: center;
+}
+.drawer-group span {
+  background: var(--navy-100); color: var(--navy-700); border-radius: 999px;
+  padding: 0 .35rem; letter-spacing: 0; font-size: .68rem;
+}
+.drawer-body .rows li { display: flex; align-items: flex-start; gap: .5rem; background: #fff;
+  border: 1px solid var(--navy-100); border-radius: 9px; padding: .5rem .6rem; margin-bottom: .35rem; }
+.drawer-body .rows li .task-tick { flex: 1; }
+.drawer-body .wempty { padding: .5rem .2rem; text-align: left; }
+.pin {
+  background: none; border: 0; cursor: pointer; color: var(--ink-400); padding: .1rem;
+  flex: none; line-height: 1;
+}
+.pin:hover { color: var(--navy-700); }
+.pin.on { color: var(--coral-500); }
+
 /* Dashboard calendar */
 .cal { padding: .5rem .8rem .8rem; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; padding: .2rem 0 .6rem; }
@@ -611,6 +667,27 @@ tbody tr[data-href] { cursor: pointer; }
 .task-rows li.done .task-tick { cursor: pointer; }
 
 /* The customiser */
+.customise-split { display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.4rem; align-items: start; }
+@media (max-width: 860px) { .customise-split { grid-template-columns: 1fr; } }
+.preview-label {
+  font-size: .64rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-400); margin: 0 0 .5rem;
+}
+.layout-preview { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
+.preview-cell {
+  display: flex; align-items: center; gap: .4rem; background: var(--navy-50);
+  border: 1px dashed var(--navy-200); border-radius: 7px; padding: .5rem .55rem;
+  font-size: .74rem; color: var(--navy-700); min-height: 2.6rem;
+}
+.preview-cell b {
+  background: var(--navy-800); color: #fff; border-radius: 5px; font-size: .64rem;
+  padding: .05rem .3rem; flex: none;
+}
+.panel-list .pos {
+  min-width: 1.3rem; text-align: right; font-size: .74rem; color: var(--ink-400);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+
 .panel-list { list-style: none; margin: 0; padding: 0; }
 .panel-list li {
   display: flex; align-items: center; gap: .6rem; background: #fff;

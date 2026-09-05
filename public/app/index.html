@@ -33,7 +33,13 @@
         <div class="card-pad">
           <p class="field-hint" style="margin:0 0 .9rem;">Drag a panel to move it. Untick one to take it off
             your dashboard. Changes save as you make them, and follow you to any device you sign in on.</p>
-          <ul class="panel-list" id="panel-list"></ul>
+          <div class="customise-split">
+            <ul class="panel-list" id="panel-list"></ul>
+            <div>
+              <p class="preview-label">Where they will sit</p>
+              <div class="layout-preview" id="layout-preview"></div>
+            </div>
+          </div>
           <div id="links-editor"></div>
         </div>
       </section>
@@ -519,6 +525,7 @@ function drawCustomiser() {
   list.innerHTML = layout.widgets.map((w, i) => {
     const meta = byId[w.id] || { title: w.id, hint: '' };
     return `<li draggable="true" data-id="${esc(w.id)}" data-index="${i}">
+      <span class="pos" aria-hidden="true">${i + 1}</span>
       <span class="grip" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
           <circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/>
@@ -590,7 +597,27 @@ function drawCustomiser() {
     });
   });
 
+  drawPreview();
   drawLinksEditor();
+}
+
+/**
+ * A picture of the two column grid, because the list on the left is one
+ * column and the dashboard is two. Without this you have to work out in your
+ * head that moving something to position three puts it on the left of the
+ * second row, which nobody should have to do.
+ */
+function drawPreview() {
+  const host = document.getElementById('layout-preview');
+  if (!host) return;
+  const byId = Object.fromEntries((d.panels || []).map((p) => [p.id, p]));
+  const shown = layout.widgets.filter((w) => !w.hidden);
+  if (!shown.length) {
+    host.innerHTML = '<p class="wempty">Nothing to show.</p>';
+    return;
+  }
+  host.innerHTML = shown.map((w, i) => `<span class="preview-cell">
+    <b>${i + 1}</b>${esc((byId[w.id] || {}).title || w.id)}</span>`).join('');
 }
 
 function drawLinksEditor() {

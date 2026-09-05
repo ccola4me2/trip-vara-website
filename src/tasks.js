@@ -19,7 +19,7 @@ const PRIORITIES = ['normal', 'high', 'low'];
 
 const COLUMNS = `
   t.id, t.user_id, t.title, t.notes, t.due_date, t.priority,
-  t.booking_id, t.contact_id, t.done_at, t.created_at, t.updated_at
+  t.booking_id, t.contact_id, t.done_at, t.pinned_at, t.created_at, t.updated_at
 `;
 
 function parse(body) {
@@ -49,9 +49,12 @@ export async function listTasks(env, scope, { state = 'open', limit = 200 } = {}
   if (state === 'open') where.push('t.done_at IS NULL');
   if (state === 'done') where.push('t.done_at IS NOT NULL');
 
+  // Pinned first, then by date. A pin means "this is what I am on now", which
+  // outranks any date, and it is the whole reason for pinning.
   const order = state === 'done'
     ? 't.done_at DESC'
-    : "COALESCE(t.due_date, '9999-12-31') ASC, CASE t.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END ASC";
+    : "t.pinned_at IS NULL ASC, t.pinned_at ASC, COALESCE(t.due_date, '9999-12-31') ASC, "
+      + "CASE t.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END ASC";
 
   const { results } = await env.DB.prepare(
     `SELECT ${COLUMNS},
@@ -83,11 +86,19 @@ export async function handleListTasks(request, env) {
       overdue: tasks.filter((t) => !t.done_at && t.due_date && t.due_date < today).length,
       today: tasks.filter((t) => !t.done_at && t.due_date === today).length,
       open: tasks.filter((t) => !t.done_at).length,
+      pinned: tasks.filter((t) => !t.done_at && t.pinned_at).length,
+      thisWeek: tasks.filter((t) => !t.done_at && t.due_date
+        && t.due_date > today && t.due_date <= weekFrom(today)).length,
     },
     today,
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),
   });
+}
+
+/** The end of the seventh day from today, so "this week" means the week ahead. */
+function weekFrom(today) {
+  return new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
 }
 
 export async function handleCreateTask(request, env) {
@@ -129,6 +140,16 @@ export async function handleUpdateTask(request, env, id) {
   if (response) return response;
 
   const body = await readJson(request);
+
+  // Pinning is its own request shape for the same reason as ticking off: it
+  // happens constantly and should not need the whole record sent back.
+  if (Object.prototype.hasOwnProperty.call(body, 'pinned')) {
+    const res = await env.DB.prepare(
+      'UPDATE tasks SET pinned_at = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+    ).bind(body.pinned ? now() : null, now(), id, user.id).run();
+    if (!res.meta || res.meta.changes === 0) return notFound('Task not found.');
+    return json({ ok: true, task: await getTask(env, id, user.id) });
+  }
 
   // Ticking a task off is its own request shape, because it is the thing
   // people do most and should not require sending the whole record back.

@@ -445,6 +445,19 @@ async function main() {
   const done = await call(advisor, 'GET', '/api/tasks?state=done');
   check((done.data?.tasks || []).some((t) => t.id === taskId), 'but is still on the done list');
 
+  // Pinning is not priority. Priority says how important a task is; a pin says
+  // this is the one being worked on now, and it outranks any date.
+  const pinned = await call(advisor, 'PUT', `/api/tasks/${t2.data.task.id}`, { pinned: true });
+  check(pinned.data?.task?.pinned_at, 'a task can be pinned', pinned.data?.task?.pinned_at);
+  const pinnedList = await call(advisor, 'GET', '/api/tasks?state=open');
+  check(pinnedList.data?.tasks?.[0]?.id === t2.data.task.id,
+    'and a pinned task sorts above a nearer due date',
+    pinnedList.data?.tasks?.[0]?.title);
+  check(pinnedList.data?.counts?.pinned === 1, 'and is counted', pinnedList.data?.counts?.pinned);
+
+  const unpinned = await call(advisor, 'PUT', `/api/tasks/${t2.data.task.id}`, { pinned: false });
+  check(unpinned.data?.task?.pinned_at === null, 'and unpinned again', unpinned.data?.task?.pinned_at);
+
   const notMine = await call(admin, 'PUT', `/api/tasks/${taskId}`, { done: false });
   check(notMine.status === 404, 'an owner cannot tick off an associate\'s task', `status ${notMine.status}`);
   const ownerSees = await call(admin, 'GET', '/api/tasks?state=all');

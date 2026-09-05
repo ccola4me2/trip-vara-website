@@ -280,6 +280,199 @@ function mountSearch(sidebar) {
 }
 
 /**
+ * The task drawer: add or tick off a task from any screen.
+ *
+ * A working list you have to navigate to is a working list nobody updates. The
+ * cost of walking to another page to record that you rang somebody is exactly
+ * the cost that stops it being recorded, so the drawer opens over whatever you
+ * are doing and closes again.
+ *
+ * Sections are the ones that describe an actual working day: what you pinned,
+ * what is late, what is due today, what is coming this week.
+ */
+function mountTodo(sidebar) {
+  const button = sidebar.querySelector('#open-todo');
+  const badge = sidebar.querySelector('#todo-count');
+  if (!button) return;
+
+  let drawer = null;
+  let tasks = [];
+  let today = new Date().toISOString().slice(0, 10);
+
+  function counts() {
+    const open = tasks.filter((t) => !t.done_at);
+    const week = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
+    // Pinned tasks are lifted out of the date sections rather than repeated in
+    // them. A pin means "this is the one I am on", and seeing it twice in one
+    // scrolling list is noise, not emphasis.
+    const rest = open.filter((t) => !t.pinned_at);
+    return {
+      pinned: open.filter((t) => t.pinned_at),
+      late: rest.filter((t) => t.due_date && t.due_date < today),
+      today: rest.filter((t) => t.due_date === today),
+      week: rest.filter((t) => t.due_date && t.due_date > today && t.due_date <= week),
+      open,
+    };
+  }
+
+  function setBadge() {
+    const open = tasks.filter((t) => !t.done_at);
+    // Counted from every open task, pinned included: the badge answers "how
+    // much needs me today", and pinning something does not deal with it.
+    const late = open.filter((t) => t.due_date && t.due_date < today);
+    const n = late.length + open.filter((t) => t.due_date === today).length;
+    const c = { late };
+    badge.textContent = String(n);
+    badge.hidden = n === 0;
+    badge.classList.toggle('late', c.late.length > 0);
+  }
+
+  async function refresh() {
+    try {
+      const d = await api('/api/tasks?state=open');
+      tasks = d.tasks || [];
+      today = d.today || today;
+      setBadge();
+    } catch { /* the badge is a nicety, not a feature */ }
+  }
+
+  function row(t) {
+    const late = t.due_date && t.due_date < today;
+    return `<li>
+      <label class="task-tick">
+        <input type="checkbox" data-tick="${esc(t.id)}">
+        <span>
+          <span class="t">${esc(t.title)}</span>
+          <span class="m">${[
+            t.due_date ? `<span class="${late ? 'late' : ''}">${esc(t.due_date)}</span>` : 'no date',
+            t.priority === 'high' ? '<span class="badge badge-coral">high</span>' : '',
+            t.booking_client ? esc(t.booking_client) : '',
+          ].filter(Boolean).join(' &middot; ')}</span>
+        </span>
+      </label>
+      <button type="button" class="pin${t.pinned_at ? ' on' : ''}" data-pin="${esc(t.id)}"
+        aria-pressed="${Boolean(t.pinned_at)}" aria-label="${t.pinned_at ? 'Unpin' : 'Pin'} ${esc(t.title)}">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="${t.pinned_at ? 'currentColor' : 'none'}"
+             stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 3h6l-1 6 4 3v2H6v-2l4-3-1-6Zm3 11v7"/></svg>
+      </button>
+    </li>`;
+  }
+
+  function section(title, list, empty) {
+    if (!list.length) return `<p class="drawer-group">${esc(title)}</p><p class="wempty">${esc(empty)}</p>`;
+    return `<p class="drawer-group">${esc(title)} <span>${list.length}</span></p>
+      <ul class="rows task-rows">${list.map(row).join('')}</ul>`;
+  }
+
+  function draw() {
+    const c = counts();
+    drawer.querySelector('.drawer-body').innerHTML =
+      section('Pinned', c.pinned, 'Nothing pinned.') +
+      section('Past due', c.late, 'Nothing late.') +
+      section('Due today', c.today, 'Nothing due today.') +
+      section('This week', c.week, 'Nothing due in the next seven days.');
+
+    drawer.querySelectorAll('[data-tick]').forEach((box) => {
+      box.addEventListener('change', async () => {
+        box.disabled = true;
+        try {
+          await api(`/api/tasks/${encodeURIComponent(box.dataset.tick)}`,
+            { method: 'PUT', body: { done: box.checked } });
+          await refresh();
+          draw();
+        } catch { box.checked = !box.checked; box.disabled = false; }
+      });
+    });
+
+    drawer.querySelectorAll('[data-pin]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const t = tasks.find((x) => x.id === btn.dataset.pin);
+        try {
+          await api(`/api/tasks/${encodeURIComponent(btn.dataset.pin)}`,
+            { method: 'PUT', body: { pinned: !(t && t.pinned_at) } });
+          await refresh();
+          draw();
+        } catch { /* leave it as it was */ }
+      });
+    });
+  }
+
+  function build() {
+    drawer = document.createElement('div');
+    drawer.className = 'drawer';
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-label', 'To do');
+    drawer.innerHTML = `
+      <div class="drawer-panel">
+        <header class="drawer-head">
+          <h2>To do</h2>
+          <div>
+            <a class="btn btn-ghost btn-sm" href="/app/tasks">All tasks</a>
+            <button class="btn btn-ghost btn-sm" type="button" data-close>Close</button>
+          </div>
+        </header>
+        <form class="drawer-add" id="drawer-add">
+          <input name="title" maxlength="200" required placeholder="Add a task and press enter">
+          <input name="dueDate" type="date" aria-label="Due date">
+          <button class="btn btn-primary btn-sm" type="submit">Add</button>
+        </form>
+        <div class="drawer-body"></div>
+      </div>`;
+    document.body.appendChild(drawer);
+
+    drawer.addEventListener('click', (e) => {
+      // Clicking the dimmed area behind the panel closes it.
+      if (e.target === drawer || e.target.closest('[data-close]')) close();
+    });
+
+    drawer.querySelector('#drawer-add').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const title = form.elements.title.value.trim();
+      if (!title) return;
+      const button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        await api('/api/tasks', {
+          method: 'POST',
+          body: { title, dueDate: form.elements.dueDate.value || undefined },
+        });
+        form.reset();
+        await refresh();
+        draw();
+        form.elements.title.focus();
+      } finally { button.disabled = false; }
+    });
+  }
+
+  function close() {
+    if (!drawer) return;
+    drawer.classList.remove('open');
+    button.focus();
+  }
+
+  async function open() {
+    if (!drawer) build();
+    await refresh();
+    draw();
+    drawer.classList.add('open');
+    drawer.querySelector('input[name="title"]').focus();
+  }
+
+  button.addEventListener('click', () => {
+    if (drawer && drawer.classList.contains('open')) close(); else open();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && drawer && drawer.classList.contains('open')) close();
+  });
+
+  // The badge is worth having before the drawer is opened, so one light query
+  // runs in the background once the shell is up.
+  refresh();
+}
+
+/**
  * Fills #sidebar, wires sign out and the mobile menu, and returns the signed
  * in user. Every portal page calls this first.
  */
@@ -311,7 +504,13 @@ export async function mountShell({ admin = false } = {}) {
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
            stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
     </button>
-    ${admin ? '' : `<div class="nav-search">
+    ${admin ? '' : `<button type="button" class="nav-todo" id="open-todo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>
+      <span>To do</span><span class="todo-count" id="todo-count" hidden></span>
+    </button>
+    <div class="nav-search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
            stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="global-search" type="search" placeholder="Search anything" autocomplete="off"
@@ -334,7 +533,7 @@ export async function mountShell({ admin = false } = {}) {
     window.location.href = '/login';
   });
 
-  if (!admin) mountSearch(sidebar);
+  if (!admin) { mountSearch(sidebar); mountTodo(sidebar); }
 
   sidebar.querySelectorAll('.hub-toggle').forEach((button) => {
     button.addEventListener('click', () => {
