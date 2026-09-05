@@ -77,6 +77,24 @@ every other account is approved from `/admin/`.
 
 ---
 
+## Checking page contracts
+
+This is plain JavaScript with no build step, so nothing catches a page reading
+a field the API stopped returning. That is not hypothetical: a rename moved
+`collectedCents` to `postedCents`, the follow-up edit to the page silently
+failed to apply, and two figures on Payments rendered as zero. Nothing threw.
+
+```bash
+npx wrangler dev --local          # in one terminal
+npm run check:contracts           # in another
+```
+
+It signs in, fetches the endpoint behind each page, and compares every field
+the page reads against what actually came back. A page whose response has no
+rows is reported as unverifiable rather than passed or failed, because an empty
+table and a misspelled field look identical and guessing is what makes a
+checker not worth running.
+
 ## Deploying
 
 No Node or CLI required. Everything below is done in the Cloudflare dashboard,

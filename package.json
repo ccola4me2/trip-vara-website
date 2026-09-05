@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply trip-vara --remote",
-    "db:migrate:local": "wrangler d1 migrations apply trip-vara --local"
+    "db:migrate:local": "wrangler d1 migrations apply trip-vara --local",
+    "check:contracts": "node scripts/check-contracts.mjs"
   },
   "devDependencies": {
     "wrangler": "^3.90.0"
