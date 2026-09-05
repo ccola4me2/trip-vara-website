@@ -1029,7 +1029,8 @@ export async function crmCounts(env, locationId) {
 const PAYMENT_COLUMNS = `
   p.id, p.booking_id, p.user_id, p.kind, p.payment_class, p.amount_cents,
   p.due_date, p.paid_date, p.method, p.reference, p.notes, p.created_at, p.updated_at,
-  p.reminded_at, p.reminder_count
+  p.reminded_at, p.reminder_count,
+  p.payment_type, p.paid_by, p.credit_id, p.card_last4
 `;
 
 export async function listPayments(env, scope, { bookingId, state, paymentClass, limit = 300 } = {}) {
@@ -1067,11 +1068,13 @@ export async function createPayment(env, userId, f) {
   await env.DB.prepare(
     `INSERT INTO booking_payments
        (id, booking_id, user_id, kind, payment_class, amount_cents, due_date,
-        paid_date, method, reference, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        paid_date, method, reference, notes, payment_type, paid_by, credit_id,
+        card_last4, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, f.bookingId, userId, f.kind, f.paymentClass || 'hard', f.amountCents,
          f.dueDate, f.paidDate, f.method || null, f.reference || null,
-         f.notes || null, ts, ts).run();
+         f.notes || null, f.paymentType || null, f.paidBy || null, f.creditId || null,
+         f.cardLast4 || null, ts, ts).run();
   return getPayment(env, id, userId);
 }
 
@@ -1079,10 +1082,13 @@ export async function updatePayment(env, id, userId, f) {
   const res = await env.DB.prepare(
     `UPDATE booking_payments
         SET kind = ?, payment_class = ?, amount_cents = ?, due_date = ?, paid_date = ?,
-            method = ?, reference = ?, notes = ?, updated_at = ?
+            method = ?, reference = ?, notes = ?, payment_type = ?, paid_by = ?,
+            credit_id = ?, card_last4 = ?, updated_at = ?
       WHERE id = ? AND user_id = ?`
   ).bind(f.kind, f.paymentClass || 'hard', f.amountCents, f.dueDate, f.paidDate,
-         f.method || null, f.reference || null, f.notes || null, now(), id, userId).run();
+         f.method || null, f.reference || null, f.notes || null,
+         f.paymentType || null, f.paidBy || null, f.creditId || null, f.cardLast4 || null,
+         now(), id, userId).run();
   if (!res.meta || res.meta.changes === 0) return null;
   return getPayment(env, id, userId);
 }

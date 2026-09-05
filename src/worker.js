@@ -73,6 +73,9 @@ import {
   handleAddAmenity, handleUpdateAmenity, handleDeleteAmenity,
 } from './travellers.js';
 import {
+  handleAddPriceLine, handleUpdatePriceLine, handleDeletePriceLine,
+} from './pricing.js';
+import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
 } from './automations.js';
@@ -207,6 +210,8 @@ async function routeApi(request, env, path, method) {
   const amenitiesMatch = path.match(/^\/api\/bookings\/([^/]+)\/amenities$/);
   const travellerMatch = path.match(/^\/api\/travellers\/([^/]+)$/);
   const amenityMatch = path.match(/^\/api\/amenities\/([^/]+)$/);
+  const pricingMatch = path.match(/^\/api\/bookings\/([^/]+)\/pricing$/);
+  const priceLineMatch = path.match(/^\/api\/pricing\/([^/]+)$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
@@ -283,6 +288,11 @@ async function routeApi(request, env, path, method) {
   if (amenitiesMatch && method === 'POST') return handleAddAmenity(request, env, amenitiesMatch[1]);
   if (amenityMatch && method === 'PUT') return handleUpdateAmenity(request, env, amenityMatch[1]);
   if (amenityMatch && method === 'DELETE') return handleDeleteAmenity(request, env, amenityMatch[1]);
+
+  // What the client pays, in parts, and which parts earn commission.
+  if (pricingMatch && method === 'POST') return handleAddPriceLine(request, env, pricingMatch[1]);
+  if (priceLineMatch && method === 'PUT') return handleUpdatePriceLine(request, env, priceLineMatch[1]);
+  if (priceLineMatch && method === 'DELETE') return handleDeletePriceLine(request, env, priceLineMatch[1]);
   if (bookingMatch && method === 'GET') return handleGetBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'PUT') return handleUpdateBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'DELETE') return handleDeleteBooking(request, env, bookingMatch[1]);

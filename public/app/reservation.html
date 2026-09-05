@@ -26,6 +26,11 @@
       <div class="split" style="margin-top:1.5rem;">
         <div>
           <section class="card" style="margin-bottom:1.5rem;">
+            <div class="card-head"><h2>Pricing</h2>
+              <span id="pricing-actions"></span></div>
+            <div id="pricing"></div>
+          </section>
+          <section class="card" style="margin-bottom:1.5rem;">
             <div class="card-head"><h2>Travellers</h2>
               <span id="traveller-actions"></span></div>
             <div id="travellers"></div>
@@ -71,6 +76,34 @@
     </div>
   </div>
 </div>
+
+<dialog id="price-dlg">
+  <form id="price-form" method="dialog">
+    <div class="card-head"><h2>Price line</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-price>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="p-kind">What is it</label>
+        <select id="p-kind" name="kind"></select></div>
+      <div class="field"><label for="p-label">Description</label>
+        <input id="p-label" name="label" maxlength="120" placeholder="Cruise fare, two passengers"></div>
+      <div class="field-row">
+        <div class="field"><label for="p-amount">Amount (USD)</label>
+          <input id="p-amount" name="amount" inputmode="decimal" placeholder="1400.00">
+          <p class="field-hint">A discount goes in as a positive number and is subtracted.</p></div>
+        <div class="field"><label for="p-commission">Commission on it (USD)</label>
+          <input id="p-commission" name="commission" inputmode="decimal" placeholder="224.00"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;">
+        <input type="checkbox" id="p-commissionable" style="width:auto;">
+        The vendor pays commission on this</label>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="p-delete" hidden>Remove</button>
+      <button class="btn btn-primary" type="submit">Save line</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="traveller-dlg">
   <form id="traveller-form" method="dialog">
@@ -171,6 +204,72 @@ const INSURANCE = {
   purchased_outside: '<span class="badge badge-navy">bought elsewhere</span>',
 };
 const AMENITY_TONE = { requested: 'badge-amber', confirmed: 'badge-navy', applied: 'badge-green', declined: 'badge-red' };
+const KIND_LABEL = {
+  fare: 'Fare', air: 'Air', insurance: 'Travel insurance', gratuities: 'Gratuities',
+  transfers: 'Transfers', extra: 'Package or extra', ncf: 'Non-commissionable fare',
+  taxes: 'Taxes and port fees', discount: 'Discount or credit',
+};
+
+/**
+ * What the client pays, in parts, and which parts earn commission.
+ *
+ * The two rates are shown side by side on purpose. Commission against what the
+ * client paid is the number people quote and it is always disappointing,
+ * because its denominator includes taxes and non-commissionable fare that no
+ * vendor has ever paid on. Commission against the commissionable part is the
+ * one that can be checked against the vendor's own rate.
+ */
+function drawPricing() {
+  document.getElementById('pricing-actions').innerHTML = d.editable
+    ? '<button class="btn btn-ghost btn-sm" id="add-price">Add a line</button>' : '';
+  const add = document.getElementById('add-price');
+  if (add) add.addEventListener('click', () => openPrice(null));
+
+  const box = document.getElementById('pricing');
+  if (!d.pricing.length) {
+    box.innerHTML = `<div class="empty"><h3>No breakdown yet</h3>
+      <p>Without one, commission looks like a share of everything the client paid,
+      including taxes nobody pays commission on.</p></div>`;
+    return;
+  }
+
+  const s = d.priceSummary;
+  const variance = s.varianceCents;
+  box.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>What</th><th>Earns commission</th><th class="num">Amount</th>
+        <th class="num">Commission</th><th></th></tr></thead>
+      <tbody>${d.pricing.map((l) => `<tr>
+        <td><span class="name">${esc(l.label || KIND_LABEL[l.kind] || l.kind)}</span>
+          <div class="muted">${esc(KIND_LABEL[l.kind] || l.kind)}</div></td>
+        <td>${l.commissionable
+          ? '<span class="badge badge-green">yes</span>'
+          : '<span class="badge badge-navy">no</span>'}</td>
+        <td class="num">${l.kind === 'discount' ? '-' : ''}${money(l.amount_cents)}</td>
+        <td class="num">${l.commission_cents ? money(l.commission_cents) : '<span class="muted">-</span>'}</td>
+        <td class="num">${d.editable
+          ? `<button class="btn btn-ghost btn-sm" data-price="${esc(l.id)}">Edit</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>
+    <div class="card-pad" style="border-top:1px solid var(--navy-100);">
+      <dl class="pairs">
+        <dt>Client pays</dt><dd><strong>${money(s.clientTotalCents)}</strong></dd>
+        <dt>Commissionable</dt><dd>${money(s.commissionableCents)}
+          <span class="muted">the part a vendor pays on</span></dd>
+        <dt>Commission</dt><dd>${money(s.commissionCents)}</dd>
+        <dt>Rate</dt><dd>${s.truePct === null ? '-' : s.truePct + '%'}
+          <span class="muted">of the commissionable part${
+            s.effectivePct === null ? '' : `, ${s.effectivePct}% of everything`}</span></dd>
+        ${s.expectedCents === null ? '' : `<dt>Vendor's rate</dt><dd>${money(s.expectedCents)} expected at ${
+          esc(String(d.vendorRate))}%
+          ${variance === 0 ? '<span class="badge badge-green">matches</span>'
+            : variance > 0 ? `<span class="badge badge-green">${money(variance)} above</span>`
+            : `<span class="badge badge-red">${money(Math.abs(variance))} short</span>`}</dd>`}
+      </dl>
+    </div>`;
+
+  document.querySelectorAll('[data-price]').forEach((btn) => {
+    btn.addEventListener('click', () => openPrice(d.pricing.find((l) => l.id === btn.dataset.price)));
+  });
+}
 
 /**
  * The people on the trip.
@@ -337,6 +436,7 @@ function render() {
     ${b.notes ? `<dt>Notes</dt><dd>${esc(b.notes)}</dd>` : ''}
   </dl>`;
 
+  drawPricing();
   drawTravellers();
   drawAmenities();
 
@@ -459,6 +559,53 @@ onSubmit(document.getElementById('task-form'), async (values) => {
 
 document.getElementById('chase-close').addEventListener('click',
   () => document.getElementById('chase').close());
+
+const priceDlg = document.getElementById('price-dlg');
+const priceForm = document.getElementById('price-form');
+let editingPrice = null;
+
+function openPrice(l) {
+  editingPrice = l ? l.id : null;
+  priceForm.reset();
+  priceForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('p-delete').hidden = !l;
+  document.getElementById('p-kind').innerHTML = (d.priceKinds || [])
+    .map((k) => `<option value="${esc(k.kind)}">${esc(k.label)}</option>`).join('');
+  if (l) {
+    priceForm.elements.kind.value = l.kind;
+    priceForm.elements.label.value = l.label || '';
+    priceForm.elements.amount.value = (l.amount_cents / 100).toFixed(2);
+    priceForm.elements.commission.value = l.commission_cents ? (l.commission_cents / 100).toFixed(2) : '';
+    document.getElementById('p-commissionable').checked = Boolean(l.commissionable);
+  } else {
+    // Default the tick to what that kind usually is, so the common case is
+    // one fewer decision and the unusual one is still a single click.
+    const k = (d.priceKinds || [])[0];
+    document.getElementById('p-commissionable').checked = Boolean(k && k.commissionable);
+  }
+  priceDlg.showModal();
+}
+
+document.getElementById('p-kind').addEventListener('change', (e) => {
+  const k = (d.priceKinds || []).find((x) => x.kind === e.target.value);
+  if (k && !editingPrice) document.getElementById('p-commissionable').checked = Boolean(k.commissionable);
+});
+document.querySelector('[data-close-price]').addEventListener('click', () => priceDlg.close());
+document.getElementById('p-delete').addEventListener('click', async () => {
+  if (!editingPrice || !confirm('Remove this line?')) return;
+  await api(`/api/pricing/${encodeURIComponent(editingPrice)}`, { method: 'DELETE' });
+  priceDlg.close();
+  await load();
+});
+onSubmit(priceForm, async (values) => {
+  values.commissionable = document.getElementById('p-commissionable').checked;
+  const path = editingPrice
+    ? `/api/pricing/${encodeURIComponent(editingPrice)}`
+    : `/api/bookings/${encodeURIComponent(id)}/pricing`;
+  await api(path, { method: editingPrice ? 'PUT' : 'POST', body: values });
+  priceDlg.close();
+  await load();
+});
 
 const travellerDlg = document.getElementById('traveller-dlg');
 const travellerForm = document.getElementById('traveller-form');

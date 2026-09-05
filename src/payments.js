@@ -20,6 +20,13 @@ const CLASSES = ['hard', 'soft'];
 // 'other' leads because it is the fallback: recording a payment as being on a
 // card when nobody said so is inventing a detail, not choosing a default.
 const METHODS = ['other', 'card', 'ach', 'check', 'cash', 'transfer'];
+// How the client settled it. Future cruise credits and deposits are here
+// because a client paying with one is the commonest reason a balance drops
+// without money moving, and it links the payment to the credit being spent.
+const PAYMENT_TYPES = [
+  'to_vendor', 'to_agency', 'card', 'check', 'cash', 'ach',
+  'future_cruise_credit', 'future_cruise_deposit', 'other',
+];
 
 const isoDay = (offsetDays = 0) =>
   new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
@@ -83,6 +90,13 @@ function parsePayment(body) {
       dueDate,
       paidDate,
       method: paidDate ? oneOf(body.method, METHODS) : null,
+      paymentType: oneOf(body.paymentType, PAYMENT_TYPES),
+      paidBy: clean(body.paidBy, 64) || null,
+      creditId: clean(body.creditId, 64) || null,
+      // The last four digits and nothing more. Storing a card number would
+      // put this Worker and its database inside PCI scope, which is a serious
+      // undertaking for a small tool and answers no question an advisor asks.
+      cardLast4: (clean(body.cardLast4, 4) || '').replace(/\D/g, '').slice(-4) || null,
       reference: clean(body.reference, 80),
       notes: clean(body.notes, 500),
     },

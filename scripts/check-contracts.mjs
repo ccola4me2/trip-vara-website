@@ -57,6 +57,12 @@ const PAGES = [
 
 // Property names that belong to the DOM, JS builtins or local objects rather
 // than to an API response. Without this the signal drowns in noise.
+//
+// keptName and reservationsMoved are the exception worth naming: they are real
+// fields, from the vendor merge, which the checker cannot probe because
+// running it would fold two of the user's vendors together. Listed here
+// deliberately rather than left to look like a mismatch, and the smoke test
+// covers that response instead.
 const IGNORE = new Set(`
 length map filter reduce forEach join slice split replace trim toFixed push pop
 includes some every find findIndex sort concat indexOf toLowerCase toUpperCase
@@ -78,6 +84,7 @@ getUTCDay getUTCDate getUTCMonth getUTCFullYear queueMicrotask
 setTimeout clearTimeout requestSubmit
 gridTemplateColumns cssText selectedOptions
 data detail error code redirect
+keptName reservationsMoved
 `.trim().split(/\s+/));
 
 /** Every key appearing anywhere in a response, at any depth. */

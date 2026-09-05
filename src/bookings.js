@@ -12,6 +12,7 @@ import * as ghl from './ghl.js';
 import { fireTrigger } from './automations.js';
 import { resolveVendor } from './vendors.js';
 import { listTravellers, listAmenities, passportProblem } from './travellers.js';
+import { listPricing, summarise, PRICE_KINDS } from './pricing.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
 // tell a transfer from a tour from travel insurance, which meant "travel by
@@ -150,10 +151,11 @@ export async function handleBookingRecord(request, env, id) {
   const taskScope = db.scopeWhere(scope, 't.user_id');
   const creditScope = db.scopeWhere(scope, 'c.user_id');
 
-  const [payments, tasks, credits, group, people, extras] = await Promise.all([
+  const [payments, tasks, credits, group, people, extras, priceLines] = await Promise.all([
     env.DB.prepare(
       `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date, p.paid_date,
-              p.method, p.reference, p.notes, p.reminded_at, p.reminder_count
+              p.method, p.reference, p.notes, p.reminded_at, p.reminder_count,
+              p.payment_type, p.paid_by, p.credit_id, p.card_last4
          FROM booking_payments p
         WHERE p.booking_id = ? AND ${payScope.sql}
         ORDER BY COALESCE(p.due_date, '9999-12-31') ASC`
@@ -177,7 +179,15 @@ export async function handleBookingRecord(request, env, id) {
       : Promise.resolve(null),
     listTravellers(env, id, scope),
     listAmenities(env, id, scope),
+    listPricing(env, id, scope),
   ]);
+
+  // The vendor's own rate, so an expected commission can be worked out and
+  // compared with what actually arrived.
+  const vendor = booking.vendor_id
+    ? await env.DB.prepare('SELECT name, commission_pct FROM vendors WHERE id = ?')
+        .bind(booking.vendor_id).first().catch(() => null)
+    : null;
 
   // Hard rows only. A soft row is a reminder to chase the same balance a week
   // before its vendor deadline, not a second amount owed, so totalling both
@@ -195,6 +205,13 @@ export async function handleBookingRecord(request, env, id) {
 
   return json({
     booking,
+    pricing: priceLines,
+    priceKinds: PRICE_KINDS,
+    // Null when there is no breakdown: an empty summary reads as zero, and
+    // zero is a claim rather than an absence.
+    priceSummary: priceLines.length
+      ? summarise(priceLines, vendor && vendor.commission_pct) : null,
+    vendorRate: vendor ? vendor.commission_pct : null,
     travellers,
     amenities: extras || [],
     payments: payments.results || [],

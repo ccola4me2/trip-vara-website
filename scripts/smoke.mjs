@@ -599,6 +599,84 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // ------------------------------------------------------------- pricing ----
+  {
+  step('What the client pays, and what earns commission');
+
+  const priced = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Priced ${stamp}`, supplier: `Petrel Line ${stamp}`,
+    departDate: isoDay(250), status: 'booked',
+  });
+  const pricedId = priced.data?.booking?.id;
+  if (pricedId) cleanup('the priced reservation', () =>
+    call(advisor, 'DELETE', `/api/bookings/${pricedId}`));
+
+  const vl = await call(advisor, 'GET', '/api/vendors');
+  const kestrel = (vl.data?.vendors || []).find((v) => v.name === `Petrel Line ${stamp}`);
+  await call(advisor, 'PUT', `/api/vendors/${kestrel.id}`,
+    { name: kestrel.name, commissionPct: 16 });
+
+  // A real cruise price: fare earns, non-commissionable fare and taxes do not.
+  await call(advisor, 'POST', `/api/bookings/${pricedId}/pricing`,
+    { kind: 'fare', label: 'Cruise fare', amount: '1400.00', commissionable: true, commission: '224.00' });
+  await call(advisor, 'POST', `/api/bookings/${pricedId}/pricing`,
+    { kind: 'ncf', label: 'NCF', amount: '298.00' });
+  await call(advisor, 'POST', `/api/bookings/${pricedId}/pricing`,
+    { kind: 'taxes', label: 'Port taxes', amount: '298.00' });
+
+  const rec = await call(advisor, 'GET', `/api/bookings/${pricedId}/record`);
+  const sum = rec.data?.priceSummary;
+  check(sum.clientTotalCents === 199600, 'the client total is every line added up', sum.clientTotalCents);
+  check(sum.commissionableCents === 140000,
+    'and the commissionable part excludes taxes and NCF', sum.commissionableCents);
+
+  // The whole reason for the split. The rate against everything the client
+  // paid looks like an underpayment; the rate against what the vendor pays on
+  // is exactly their stated rate.
+  check(sum.effectivePct === 11.2 && sum.truePct === 16,
+    'so the two rates differ, and only one of them means anything',
+    `${sum.effectivePct}% of everything, ${sum.truePct}% of the commissionable part`);
+  check(sum.expectedCents === 22400 && sum.varianceCents === 0,
+    'and the vendor paid exactly their own rate', JSON.stringify({ e: sum.expectedCents, v: sum.varianceCents }));
+
+  // The headline figures follow the breakdown, so two sets of numbers cannot
+  // drift apart.
+  check(rec.data?.booking?.gross_cents === 199600 && rec.data.booking.commission_cents === 22400,
+    'the reservation totals follow the breakdown');
+
+  // A short payment is the thing an agency never notices.
+  const lines = rec.data.pricing;
+  const fare = lines.find((l) => l.kind === 'fare');
+  await call(advisor, 'PUT', `/api/pricing/${fare.id}`,
+    { kind: 'fare', label: 'Cruise fare', amount: '1400.00', commissionable: true, commission: '180.00' });
+  const short = await call(advisor, 'GET', `/api/bookings/${pricedId}/record`);
+  check(short.data?.priceSummary?.varianceCents === -4400,
+    'and a vendor paying under their rate shows as a shortfall',
+    short.data?.priceSummary?.varianceCents);
+
+  // A discount reduces what the client pays without ever earning commission,
+  // and goes in as a positive number so nobody has to type a minus sign.
+  await call(advisor, 'POST', `/api/bookings/${pricedId}/pricing`,
+    { kind: 'discount', label: 'Onboard credit applied', amount: '100.00', commissionable: true });
+  const discounted = await call(advisor, 'GET', `/api/bookings/${pricedId}/record`);
+  check(discounted.data?.priceSummary?.clientTotalCents === 189600,
+    'a discount is subtracted from what the client pays',
+    discounted.data?.priceSummary?.clientTotalCents);
+  check(discounted.data?.priceSummary?.commissionableCents === 140000,
+    'and never counts as commissionable, whatever the box said',
+    discounted.data?.priceSummary?.commissionableCents);
+
+  const silly = await call(advisor, 'POST', `/api/bookings/${pricedId}/pricing`,
+    { kind: 'fare', amount: '100.00', commission: '500.00' });
+  check(silly.status === 400, 'commission larger than its own line is refused',
+    `status ${silly.status}`);
+
+  // No breakdown means no summary. An empty one reads as zero, and zero is a
+  // claim rather than an absence.
+  const bare2 = await call(advisor, 'GET', `/api/bookings/${bookingId}/record`);
+  check(bare2.data?.priceSummary === null, 'a reservation with no breakdown reports none');
+  }
+
   // ---------------------------------------------- the people on the trip ----
   {
   step('Travellers, passports and amenities');
@@ -730,7 +808,11 @@ async function main() {
   check(merged.data?.reservationsMoved >= 1, 'merging moves the reservations',
     JSON.stringify(merged.data));
 
-  const afterMerge = await call(advisor, 'GET', '/api/bookings?q=Kestrel');
+  // Searched on the full stamped name rather than "Kestrel": another section
+  // creates its own vendor, and a query loose enough to catch it turns a
+  // passing assertion into a puzzle.
+  const afterMerge = await call(advisor, 'GET',
+    `/api/bookings?q=${encodeURIComponent(`Kestrel Cruises ${stamp}`)}`);
   const suppliers = new Set((afterMerge.data?.bookings || []).map((b) => b.supplier));
   check(suppliers.size === 1,
     'and rewrites the name on them, so a report stops splitting', [...suppliers].join(' / '));
