@@ -47,6 +47,8 @@ function publicUser(u) {
     // nobody typed.
     defaultSplitPct: u.default_split_pct === null || u.default_split_pct === undefined
       ? null : Number(u.default_split_pct),
+    agencyAddress: u.agency_address,
+    sellerOfTravel: u.seller_of_travel,
     lastLoginAt: u.last_login_at,
   };
 }
@@ -184,6 +186,11 @@ export async function handleUpdateProfile(request, env) {
     lastName: clean(body.lastName, 80),
     phone: clean(body.phone, 40),
     agencyName: clean(body.agencyName, 120),
+    // Both go on a client invoice. Several states require the registration
+    // number on one, which is a reason to have somewhere to put it and not a
+    // reason to invent one when it is blank.
+    agencyAddress: clean(body.agencyAddress, 200),
+    sellerOfTravel: clean(body.sellerOfTravel, 80),
   });
   return json({ ok: true, user: publicUser(updated) });
 }

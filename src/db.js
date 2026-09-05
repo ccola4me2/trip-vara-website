@@ -14,6 +14,14 @@ const USER_COLUMNS = `
   approved_at, approved_by, default_split_pct, agency_address, seller_of_travel
 `;
 
+// The same columns qualified, for the session lookup that joins sessions to
+// users. A second hand written list of this table's columns is how a field
+// added to the profile form saved correctly and then read back as null on
+// every request: the write went to users, and the session query never learned
+// the column existed. One list per table, and the column checker watches it.
+const USER_COLUMNS_U = USER_COLUMNS.split(',')
+  .map((c) => `u.${c.trim()}`).join(', ');
+
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
@@ -64,13 +72,16 @@ export async function createUser(env, fields) {
 export async function updateUserProfile(env, id, fields) {
   await env.DB.prepare(
     `UPDATE users
-        SET first_name = ?, last_name = ?, phone = ?, agency_name = ?, updated_at = ?
+        SET first_name = ?, last_name = ?, phone = ?, agency_name = ?,
+            agency_address = ?, seller_of_travel = ?, updated_at = ?
       WHERE id = ?`
   ).bind(
     fields.firstName || null,
     fields.lastName || null,
     fields.phone || null,
     fields.agencyName || null,
+    fields.agencyAddress || null,
+    fields.sellerOfTravel || null,
     now(),
     id
   ).run();
@@ -157,8 +168,7 @@ export async function createSession(env, userId, tokenHash, ttlSeconds) {
 export async function getSessionUser(env, tokenHash) {
   if (!tokenHash) return null;
   return env.DB.prepare(
-    `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.agency_name,
-            u.role, u.status, u.ghl_location_id, u.ghl_user_id, u.last_login_at
+    `SELECT ${USER_COLUMNS_U}
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.id = ? AND s.expires_at > ?`
@@ -302,21 +312,14 @@ const BOOKING_COLUMNS = `
   created_at, updated_at
 `;
 
-// The same columns qualified, for the list query that joins users to name the
-// advisor. Spelled out rather than derived from the line above: `status` and
-// `id` exist on both tables, and an unqualified one is an error waiting to
-// happen rather than a clever saving.
-const BOOKING_COLUMNS_B = `
-  b.id, b.user_id, b.ghl_contact_id, b.ghl_opportunity_id, b.client_name, b.supplier,
-  b.product_type, b.product_name, b.destination, b.confirmation_number, b.depart_date,
-  b.return_date, b.deposit_due, b.final_payment_due, b.travellers, b.gross_cents,
-  b.deposit_cents, b.commission_cents, b.commission_status, b.status, b.notes,
-  b.group_id, b.client_id, b.vendor_id, b.cabin, b.cabin_category, b.itinerary,
-  b.booking_method, b.insurance_status, b.advisor_split_pct,
-  b.quote_sent_at, b.quote_sent_count, b.statement_sent_at, b.welcomed_at,
-  b.invoice_no, b.invoice_issued_at, b.invoice_notes,
-  b.created_at, b.updated_at
-`;
+// The same columns qualified, for the queries that join users to name the
+// advisor. Derived rather than written out a second time. The old copy was
+// spelled out on the grounds that id and status exist on both tables and an
+// unqualified one would be an error waiting to happen, which is true and is
+// exactly what prefixing every column prevents. What a second hand written
+// list actually bought was the chance to fall behind the first, which is how
+// the session lookup spent an afternoon reading two profile fields as null.
+const BOOKING_COLUMNS_B = BOOKING_COLUMNS.split(',').map((c) => `b.${c.trim()}`).join(', ');
 
 export async function listBookings(env, scope, { status, search, limit = 200 } = {}) {
   const scoped = scopeWhere(scope, 'b.user_id');

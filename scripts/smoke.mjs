@@ -1591,6 +1591,23 @@ async function main() {
 
   // An invoice is the document a client files. What makes it that rather than
   // an email they skim is a number and a date they can quote back at you.
+  // The header of a client document. Blank until somebody fills it in, and
+  // omitted rather than invented when it is blank: several states require a
+  // seller of travel registration on an invoice, and a made up one is worse
+  // than a missing one.
+  const before = await call(advisor, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
+  check(!/ST-/.test(before.data?.html || ''),
+    'an unset registration number is absent, not invented');
+
+  await call(advisor, 'PUT', '/api/auth/profile', {
+    firstName: 'Smoke', lastName: 'Tester', agencyName: 'Smoke Travel',
+    agencyAddress: `120 Harbour Road ${stamp}`, sellerOfTravel: 'FL ST-12345678',
+  });
+  const withHeader = await call(advisor, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
+  check(/FL ST-12345678/.test(withHeader.data?.html || '')
+    && new RegExp(`120 Harbour Road ${stamp}`).test(withHeader.data?.html || ''),
+    'once set, both reach the document a client keeps');
+
   const invPrev = await call(advisor, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
   check(invPrev.data?.willNumber === true && invPrev.data?.statement?.invoiceNo === null,
     'previewing an invoice says a number is coming rather than burning one',

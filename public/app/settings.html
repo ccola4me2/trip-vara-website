@@ -28,6 +28,15 @@
             </div>
             <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="tel"></div>
             <div class="field"><label for="agencyName">Agency or host</label><input id="agencyName" name="agencyName"></div>
+            <div class="field"><label for="agencyAddress">Agency address</label>
+              <input id="agencyAddress" name="agencyAddress" maxlength="200"
+                     placeholder="120 Harbour Road, Suite 4, Tampa FL 33602">
+              <p class="field-hint">Printed in the footer of every invoice and quote a client receives.</p></div>
+            <div class="field"><label for="sellerOfTravel">Seller of travel registration</label>
+              <input id="sellerOfTravel" name="sellerOfTravel" maxlength="80"
+                     placeholder="FL ST-00000000">
+              <p class="field-hint">Florida, California, Washington and Hawaii require this on a client
+                document. Left blank it is simply omitted, never guessed at.</p></div>
             <button class="btn btn-primary" type="submit">Save details</button>
           </form>
         </div>
@@ -72,6 +81,8 @@ pf.elements.firstName.value = user.firstName || '';
 pf.elements.lastName.value = user.lastName || '';
 pf.elements.phone.value = user.phone || '';
 pf.elements.agencyName.value = user.agencyName || '';
+pf.elements.agencyAddress.value = user.agencyAddress || '';
+pf.elements.sellerOfTravel.value = user.sellerOfTravel || '';
 
 document.getElementById('ghl-info').innerHTML = user.ghlLocationId
   ? `Bound to Trip Vara Tools account <code>${esc(user.ghlLocationId)}</code>.`
