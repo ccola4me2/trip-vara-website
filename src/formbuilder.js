@@ -93,9 +93,14 @@ export async function handleListForms(request, env) {
 }
 
 export async function handleGetForm(request, env, id) {
-  const { response } = await requireUser(request, env);
+  const { user, response } = await requireUser(request, env);
   if (response) return response;
-  const row = await env.DB.prepare('SELECT * FROM forms WHERE id = ?').bind(id).first();
+
+  // Scoped by location, not just id. This returns every submission on the
+  // form, which is client names, emails and phone numbers, and an id is not a
+  // permission.
+  const row = await env.DB.prepare('SELECT * FROM forms WHERE id = ? AND location_id = ?')
+    .bind(id, ghl.locationFor(env, user)).first();
   if (!row) return notFound('Form not found.');
 
   const { results } = await env.DB.prepare(
@@ -165,7 +170,8 @@ export async function handleSaveForm(request, env, id = null) {
     await db.logActivity(env, user.id, 'form.create', `Created form ${name}`, { id });
   }
 
-  const row = await env.DB.prepare('SELECT * FROM forms WHERE id = ?').bind(id).first();
+  const row = await env.DB.prepare('SELECT * FROM forms WHERE id = ? AND location_id = ?')
+    .bind(id, locationId).first();
   return json({ ok: true, form: hydrate(row) }, id ? 200 : 201);
 }
 

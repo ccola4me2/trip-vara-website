@@ -223,6 +223,8 @@ async function runStep(env, run, step, context) {
 // ---------------------------------------------------------------------------
 /** Advances one run as far as it can go. Returns its final status. */
 async function advanceRun(env, run) {
+  // Unscoped on purpose: the id comes from the run being advanced, not from a
+  // request, and the run already carries the location it belongs to.
   const autoRow = await env.DB.prepare('SELECT * FROM automations WHERE id = ?')
     .bind(run.automation_id).first();
   const automation = hydrateAutomation(autoRow);
@@ -393,10 +395,13 @@ export async function handleListAutomations(request, env) {
 }
 
 export async function handleGetAutomation(request, env, id) {
-  const { response } = await requireUser(request, env);
+  const { user, response } = await requireUser(request, env);
   if (response) return response;
 
-  const row = await env.DB.prepare('SELECT * FROM automations WHERE id = ?').bind(id).first();
+  // Scoped by location. The runs below carry contact names and email
+  // addresses, and knowing an id is not the same as being allowed to see it.
+  const row = await env.DB.prepare('SELECT * FROM automations WHERE id = ? AND location_id = ?')
+    .bind(id, ghl.locationFor(env, user)).first();
   if (!row) return notFound('Automation not found.');
 
   const { results: runs } = await env.DB.prepare(
@@ -455,7 +460,8 @@ export async function handleSaveAutomation(request, env, id = null) {
     await db.logActivity(env, user.id, 'automation.create', `Created ${name}`, { id });
   }
 
-  const row = await env.DB.prepare('SELECT * FROM automations WHERE id = ?').bind(id).first();
+  const row = await env.DB.prepare('SELECT * FROM automations WHERE id = ? AND location_id = ?')
+    .bind(id, locationId).first();
   return json({ ok: true, automation: hydrateAutomation(row) });
 }
 

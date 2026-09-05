@@ -290,21 +290,28 @@ export async function bookingStats(env, userId) {
   };
 }
 
-/** Bookings with a deposit or final payment due on or before `through`. */
+/**
+ * Payments falling due on or before `through`, newest deadline first.
+ *
+ * Reads the payment schedule rather than the booking's own date columns. Those
+ * columns say when a deadline is, not whether it has been met, so a dashboard
+ * built on them keeps showing money as due after it has been paid.
+ */
 export async function upcomingPayments(env, userId, through) {
   const { results } = await env.DB.prepare(
-    `SELECT id, client_name, supplier, product_name, deposit_due, final_payment_due,
-            depart_date, gross_cents, status
-       FROM bookings
-      WHERE user_id = ?
-        AND status IN ('quoted','booked')
-        AND (
-          (final_payment_due IS NOT NULL AND final_payment_due <= ?) OR
-          (deposit_due IS NOT NULL AND deposit_due <= ?)
-        )
-      ORDER BY COALESCE(final_payment_due, deposit_due) ASC
+    `SELECT p.id, p.kind, p.amount_cents, p.due_date,
+            b.id AS booking_id, b.client_name, b.supplier, b.product_name,
+            b.depart_date, b.status
+       FROM booking_payments p
+       JOIN bookings b ON b.id = p.booking_id
+      WHERE p.user_id = ?
+        AND p.paid_date IS NULL
+        AND p.due_date IS NOT NULL
+        AND p.due_date <= ?
+        AND b.status IN ('quoted','booked')
+      ORDER BY p.due_date ASC
       LIMIT 50`
-  ).bind(userId, through, through).all();
+  ).bind(userId, through).all();
   return results || [];
 }
 

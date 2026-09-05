@@ -21,7 +21,8 @@
       <section id="ghl-state"></section>
       <section class="split">
         <div class="card">
-          <div class="card-head"><h2>Payments due in the next 60 days</h2></div>
+          <div class="card-head"><h2>Client payments due in the next 60 days</h2>
+            <a class="btn btn-ghost btn-sm" href="/app/payments">All payments</a></div>
           <div id="payments"><p class="spinner">Loading...</p></div>
         </div>
         <div class="card">
@@ -67,22 +68,22 @@ try {
   }
 
   const pay = d.upcomingPayments;
+  const KIND = { deposit: 'Deposit', installment: 'Part payment', final: 'Final balance', refund: 'Refund' };
   document.getElementById('payments').innerHTML = pay.length ? `
     <div class="table-wrap"><table>
-      <thead><tr><th>Client</th><th>Trip</th><th>Due</th><th class="num">Value</th></tr></thead>
-      <tbody>${pay.map((b) => {
-        const due = b.final_payment_due || b.deposit_due;
-        const kind = b.final_payment_due ? 'Final' : 'Deposit';
-        const left = daysUntil(due);
+      <thead><tr><th>Client</th><th>Trip</th><th>Due</th><th class="num">Amount</th></tr></thead>
+      <tbody>${pay.map((p) => {
+        const left = daysUntil(p.due_date);
         const tone = left === null ? 'badge-navy' : left < 0 ? 'badge-red' : left <= 14 ? 'badge-amber' : 'badge-navy';
         return `<tr>
-          <td><span class="name">${esc(b.client_name)}</span></td>
-          <td>${esc(b.product_name || b.supplier || '')}<div class="muted">${esc(b.depart_date ? 'Departs ' + dateFmt(b.depart_date) : '')}</div></td>
-          <td>${esc(kind)} ${esc(dateFmt(due))}<div><span class="badge ${tone}">${
+          <td><span class="name">${esc(p.client_name)}</span>
+            <div class="muted">${esc(KIND[p.kind] || p.kind)}</div></td>
+          <td>${esc(p.product_name || p.supplier || '')}<div class="muted">${esc(p.depart_date ? 'Departs ' + dateFmt(p.depart_date) : '')}</div></td>
+          <td>${esc(dateFmt(p.due_date))}<div><span class="badge ${tone}">${
             left === null ? '' : left < 0 ? `${Math.abs(left)}d overdue` : `in ${left}d`}</span></div></td>
-          <td class="num">${money(b.gross_cents)}</td></tr>`;
+          <td class="num">${money(p.amount_cents)}</td></tr>`;
       }).join('')}</tbody></table></div>`
-    : '<div class="empty"><h3>Nothing due</h3><p>No deposits or final payments land in the next 60 days.</p></div>';
+    : '<div class="empty"><h3>Nothing due</h3><p>No client payments fall due in the next 60 days.</p></div>';
 
   const act = d.activity;
   document.getElementById('activity').innerHTML = act.length
