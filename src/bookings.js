@@ -14,6 +14,7 @@ import { resolveVendor } from './vendors.js';
 import { listTravellers, listAmenities, passportProblem } from './travellers.js';
 import { PAYMENT_TYPES, releaseCredit } from './payments.js';
 import { splitPct, shareOf } from './split.js';
+import { listOptions } from './options.js';
 import { listPricing, summarise, PRICE_KINDS } from './pricing.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
@@ -153,7 +154,8 @@ export async function handleBookingRecord(request, env, id) {
   const taskScope = db.scopeWhere(scope, 't.user_id');
   const creditScope = db.scopeWhere(scope, 'c.user_id');
 
-  const [payments, tasks, credits, spendable, group, people, extras, priceLines] = await Promise.all([
+  const [payments, tasks, credits, spendable, group, people, extras, priceLines,
+         options] = await Promise.all([
     // Joined rather than looked up in the page, so a payment made with a
     // credit can show the credit's own amount beside it. A $250 credit against
     // a $1,000 payment is a difference worth seeing, not one worth hiding.
@@ -203,6 +205,7 @@ export async function handleBookingRecord(request, env, id) {
     listTravellers(env, id, scope),
     listAmenities(env, id, scope),
     listPricing(env, id, scope),
+    listOptions(env, id, scope),
   ]);
 
   // The vendor's own rate, so an expected commission can be worked out and
@@ -228,6 +231,9 @@ export async function handleBookingRecord(request, env, id) {
 
   return json({
     booking,
+    // The choices offered, and which one was taken. Empty for most
+    // reservations, which is the normal case rather than a missing feature.
+    options,
     pricing: priceLines,
     priceKinds: PRICE_KINDS,
     // Null when there is no breakdown: an empty summary reads as zero, and

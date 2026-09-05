@@ -1821,6 +1821,79 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // -------------------------------------------------- quote options --------
+  {
+  step('The two or three choices a quote actually offers');
+
+  const opt = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Choices ${stamp}`, supplier: 'Holland America', status: 'quoted',
+    productName: 'Alaska Inside Passage', departDate: isoDay(250), returnDate: isoDay(257),
+    deposit: '600', depositDue: isoDay(30),
+  });
+  const optId = opt.data?.booking?.id;
+  if (optId) cleanup('the options reservation', () => call(advisor, 'DELETE', `/api/bookings/${optId}`));
+
+  const nameless = await call(advisor, 'POST', `/api/bookings/${optId}/options`, { amount: '1000' });
+  check(nameless.status === 400, 'an option needs a name', `status ${nameless.status}`);
+
+  const inside = await call(advisor, 'POST', `/api/bookings/${optId}/options`,
+    { label: 'Inside, deck 2', detail: 'no window', amount: '1596' });
+  await call(advisor, 'POST', `/api/bookings/${optId}/options`,
+    { label: 'Oceanview, deck 5', detail: 'picture window', amount: '1996' });
+  const balcony = await call(advisor, 'POST', `/api/bookings/${optId}/options`,
+    { label: 'Verandah, deck 8', detail: 'midship', amount: '2596' });
+  check(inside.status === 201 && balcony.status === 201, 'options can be added to a quote');
+
+  const rec = await call(advisor, 'GET', `/api/bookings/${optId}/record`);
+  check((rec.data?.options || []).length === 3, 'and all three come back on the record',
+    rec.data?.options?.length);
+  check(rec.data.options[0].amount_cents === 159600,
+    'cheapest first, so the client reads up rather than down', rec.data.options[0].amount_cents);
+
+  // The quote shows the choices instead of a breakdown: the client is picking
+  // between prices, not auditing one.
+  const qp = await call(advisor, 'POST', `/api/bookings/${optId}/statement`, { preview: true });
+  const qhtml = qp.data?.html || '';
+  check(/Your choices/.test(qhtml) && /Verandah, deck 8/.test(qhtml) && /\$1,596\.00/.test(qhtml),
+    'the quote puts all three in front of the client');
+  check(/Tell me which one/.test(qhtml),
+    'and asks for an answer rather than ending on a number');
+
+  // Choosing is the moment the reservation's price becomes real. A chosen
+  // option saying $2,596 and a trip total saying nothing is a reservation that
+  // will be wrong on every report it appears in.
+  const chose = await call(advisor, 'POST', `/api/options/${balcony.data.id}/choose`, {});
+  check(chose.status === 200, 'the advisor can record what the client took');
+
+  const after = await call(advisor, 'GET', `/api/bookings/${optId}/record`);
+  check(after.data?.booking?.gross_cents === 259600,
+    'and the reservation takes that price', after.data?.booking?.gross_cents);
+  check((after.data?.options || []).filter((o) => o.chosen).length === 1,
+    'exactly one option is marked taken');
+  check((after.data?.options || []).length === 3,
+    'and the ones they turned down are kept, because that is worth knowing next time');
+
+  // A quote is not a booking. A client saying "the balcony then" is not a
+  // deposit, and moving it to booked would put money into production that
+  // nobody has taken.
+  check(after.data?.booking?.status === 'quoted',
+    'choosing does not book the trip on the client\'s behalf', after.data?.booking?.status);
+
+  const moved = await call(advisor, 'POST', `/api/options/${inside.data.id}/choose`, {});
+  const after2 = await call(advisor, 'GET', `/api/bookings/${optId}/record`);
+  check((after2.data?.options || []).filter((o) => o.chosen).length === 1
+    && after2.data.booking.gross_cents === 159600,
+    'changing their mind moves the mark and the price, rather than adding a second',
+    JSON.stringify({ chosen: (after2.data?.options || []).filter((o) => o.chosen).map((o) => o.label),
+      gross: after2.data?.booking?.gross_cents }));
+  check(moved.status === 200, 'and that is one request, not a clear and a set');
+
+  const notYours = await call(admin, 'POST', `/api/bookings/${optId}/options`,
+    { label: 'Intruder', amount: '1' });
+  check(notYours.status === 404, 'an owner cannot add an option to an associate\'s quote',
+    `status ${notYours.status}`);
+  }
+
   // ------------------------------------------------------- birthdays -------
   {
   step('Birthdays, which is what the date of birth was collected for');

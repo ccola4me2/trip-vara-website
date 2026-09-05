@@ -30,6 +30,11 @@
               <span id="pricing-actions"></span></div>
             <div id="pricing"></div>
           </section>
+          <section class="card" style="margin-bottom:1.5rem;" id="options-card" hidden>
+            <div class="card-head"><h2>Choices offered</h2>
+              <span id="option-actions"></span></div>
+            <div id="options"></div>
+          </section>
           <section class="card" style="margin-bottom:1.5rem;">
             <div class="card-head"><h2>Travellers</h2>
               <span id="traveller-actions"></span></div>
@@ -101,6 +106,27 @@
     <div class="card-foot">
       <button class="btn btn-danger btn-sm" type="button" id="p-delete" hidden>Remove</button>
       <button class="btn btn-primary" type="submit">Save line</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="option-dlg">
+  <form id="option-form" method="dialog">
+    <div class="card-head"><h2>An option on this quote</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-option>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="o-label">What it is</label>
+        <input id="o-label" name="label" maxlength="120" required placeholder="Verandah, deck 8"></div>
+      <div class="field"><label for="o-detail">Anything the client should know</label>
+        <input id="o-detail" name="detail" maxlength="200" placeholder="Midship, private balcony"></div>
+      <div class="field"><label for="o-amount">Total price (USD)</label>
+        <input id="o-amount" name="amount" inputmode="decimal" placeholder="2596.00">
+        <p class="field-hint">What this option costs the client in full, not the difference.</p></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="o-delete" hidden>Remove</button>
+      <button class="btn btn-primary" type="submit">Save option</button>
     </div>
   </form>
 </dialog>
@@ -289,6 +315,61 @@ const KIND_LABEL = {
  * vendor has ever paid on. Commission against the commissionable part is the
  * one that can be checked against the vendor's own rate.
  */
+/**
+ * The choices this quote put in front of the client, and which one they took.
+ *
+ * The losing options are kept rather than deleted once the client answers.
+ * "They took the balcony over the oceanview for eight hundred more" is the
+ * most useful thing to know the next time you quote them, and it is exactly
+ * what disappears when the rejected rows are tidied away.
+ */
+function drawOptions() {
+  const rows = d.options || [];
+  const quoting = d.booking.status === 'quoted';
+  const card = document.getElementById('options-card');
+  card.hidden = !rows.length && !quoting;
+  if (card.hidden) return;
+
+  document.getElementById('option-actions').innerHTML = d.editable
+    ? '<button class="btn btn-ghost btn-sm" id="add-option">Add an option</button>' : '';
+  const add = document.getElementById('add-option');
+  if (add) add.addEventListener('click', () => openOption(null));
+
+  document.getElementById('options').innerHTML = rows.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Option</th><th class="num">Price</th><th></th></tr></thead>
+        <tbody>${rows.map((o) => `<tr${o.chosen ? ' style="background:var(--navy-50);"' : ''}>
+          <td><span class="name">${esc(o.label)}</span>
+            ${o.chosen ? ' <span class="badge badge-green">chosen</span>' : ''}
+            ${o.detail ? `<div class="muted">${esc(o.detail)}</div>` : ''}</td>
+          <td class="num">${money(o.amount_cents)}</td>
+          <td class="num" style="white-space:nowrap;">${d.editable ? `
+            <button class="btn btn-ghost btn-sm" data-choose="${esc(o.id)}"
+              data-on="${o.chosen ? '0' : '1'}">${o.chosen ? 'Not this one' : 'Client chose this'}</button>
+            <button class="btn btn-ghost btn-sm" data-option="${esc(o.id)}">Edit</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>One price is not a quote</h3>
+        <p>Add the two or three the client is actually choosing between.</p></div>`;
+
+  document.querySelectorAll('[data-option]').forEach((btn) => {
+    btn.addEventListener('click', () => openOption(rows.find((o) => o.id === btn.dataset.option)));
+  });
+
+  // Choosing sets the reservation's price to that option, because a quote
+  // whose chosen option and whose trip total disagree is wrong on every
+  // report it appears in.
+  document.querySelectorAll('[data-choose]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await api(`/api/options/${encodeURIComponent(btn.dataset.choose)}/choose`,
+          { method: 'POST', body: { chosen: btn.dataset.on === '1' } });
+        await load();
+      } catch (e) { showError(err, e); btn.disabled = false; }
+    });
+  });
+}
+
 function drawPricing() {
   document.getElementById('pricing-actions').innerHTML = d.editable
     ? '<button class="btn btn-ghost btn-sm" id="add-price">Add a line</button>' : '';
@@ -528,6 +609,7 @@ function render() {
     ${b.notes ? `<dt>Notes</dt><dd>${esc(b.notes)}</dd>` : ''}
   </dl>`;
 
+  drawOptions();
   drawPricing();
   drawTravellers();
   drawAmenities();
@@ -750,6 +832,39 @@ onSubmit(document.getElementById('task-form'), async (values) => {
 
 document.getElementById('chase-close').addEventListener('click',
   () => document.getElementById('chase').close());
+
+const optionDlg = document.getElementById('option-dlg');
+const optionForm = document.getElementById('option-form');
+let editingOption = null;
+
+function openOption(o) {
+  editingOption = o ? o.id : null;
+  optionForm.reset();
+  optionForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('o-delete').hidden = !o;
+  if (o) {
+    optionForm.elements.label.value = o.label;
+    optionForm.elements.detail.value = o.detail || '';
+    optionForm.elements.amount.value = (o.amount_cents / 100).toFixed(2);
+  }
+  optionDlg.showModal();
+}
+
+document.querySelector('[data-close-option]').addEventListener('click', () => optionDlg.close());
+document.getElementById('o-delete').addEventListener('click', async () => {
+  if (!editingOption || !confirm('Remove this option?')) return;
+  await api(`/api/options/${encodeURIComponent(editingOption)}`, { method: 'DELETE' });
+  optionDlg.close();
+  await load();
+});
+onSubmit(optionForm, async (values) => {
+  const path = editingOption
+    ? `/api/options/${encodeURIComponent(editingOption)}`
+    : `/api/bookings/${encodeURIComponent(id)}/options`;
+  await api(path, { method: editingOption ? 'PUT' : 'POST', body: values });
+  optionDlg.close();
+  await load();
+});
 
 const priceDlg = document.getElementById('price-dlg');
 const priceForm = document.getElementById('price-form');

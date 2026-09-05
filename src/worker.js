@@ -27,6 +27,9 @@ import {
 } from './bookings.js';
 import { handleStatement } from './statement.js';
 import {
+  handleAddOption, handleUpdateOption, handleDeleteOption, handleChooseOption,
+} from './options.js';
+import {
   handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
 } from './conversations.js';
 import { handleListCalendar, handleCreateAppointment } from './calendar.js';
@@ -215,6 +218,9 @@ async function routeApi(request, env, path, method) {
   const travellerMatch = path.match(/^\/api\/travellers\/([^/]+)$/);
   const amenityMatch = path.match(/^\/api\/amenities\/([^/]+)$/);
   const pricingMatch = path.match(/^\/api\/bookings\/([^/]+)\/pricing$/);
+  const optionsMatch = path.match(/^\/api\/bookings\/([^/]+)\/options$/);
+  const optionMatch = path.match(/^\/api\/options\/([^/]+)$/);
+  const chooseMatch = path.match(/^\/api\/options\/([^/]+)\/choose$/);
   const priceLineMatch = path.match(/^\/api\/pricing\/([^/]+)$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
@@ -286,6 +292,12 @@ async function routeApi(request, env, path, method) {
   if (quickMatch && method === 'POST') return handleQuickUpdate(request, env, quickMatch[1]);
   // What the client is told, which is a narrow subset of what the record holds.
   if (statementMatch && method === 'POST') return handleStatement(request, env, statementMatch[1]);
+
+  // The two or three choices a quote offers, and which one the client took.
+  if (optionsMatch && method === 'POST') return handleAddOption(request, env, optionsMatch[1]);
+  if (chooseMatch && method === 'POST') return handleChooseOption(request, env, chooseMatch[1]);
+  if (optionMatch && method === 'PUT') return handleUpdateOption(request, env, optionMatch[1]);
+  if (optionMatch && method === 'DELETE') return handleDeleteOption(request, env, optionMatch[1]);
 
   // The people on a reservation, and what the vendor has granted them.
   if (travellersMatch && method === 'POST') return handleAddTraveller(request, env, travellersMatch[1]);

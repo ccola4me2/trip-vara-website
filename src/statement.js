@@ -16,6 +16,7 @@ import { json, badRequest, notFound, readJson, now } from './util.js';
 import { requireUser } from './auth.js';
 import { layout, escapeHtml, sendHtml } from './email.js';
 import { listPricing } from './pricing.js';
+import { listOptions } from './options.js';
 import { listTravellers, listAmenities } from './travellers.js';
 import * as db from './db.js';
 
@@ -38,7 +39,7 @@ const sum = (rows) => rows.reduce((n, r) => n + (r.amountCents || 0), 0);
  * Assembles what the client is told. Pure, so the boundary can be tested
  * without a database or an inbox.
  */
-export function buildStatement({ booking, pricing, travellers, payments, amenities, client, user }) {
+export function buildStatement({ booking, pricing, travellers, payments, amenities, options, client, user }) {
   const lines = (pricing || []).map((l) => ({
     label: l.label || CLIENT_LABEL[l.kind] || l.kind,
     amountCents: l.amount_cents || 0,
@@ -88,6 +89,14 @@ export function buildStatement({ booking, pricing, travellers, payments, ameniti
     travellers: (travellers || []).map((t) => t.name).filter(Boolean),
     lines,
     tripCents,
+    // The choices offered. Only on a quote: once a trip is booked there was
+    // one price, and showing a client what they turned down is not a kindness.
+    options: mode === 'quote'
+      ? (options || []).map((o) => ({
+          label: o.label, detail: o.detail || '', amountCents: o.amount_cents || 0,
+          chosen: Boolean(o.chosen),
+        }))
+      : [],
     // A quote carries no payment history because there is none. Empty arrays
     // rather than the fields being absent, so the page reading this does not
     // have to know which kind it asked for.
@@ -163,7 +172,8 @@ export function renderStatement(env, s) {
   // when. A quote that stops at a total leaves them to work out what happens
   // now, and the commonest answer to that is nothing.
   const hold = quote
-    ? `<p style="margin:22px 0 0;">${s.depositCents
+    ? `<p style="margin:22px 0 0;">${s.options.length && !s.options.some((o) => o.chosen)
+        ? 'Tell me which one and I will hold it. ' : ''}${s.depositCents
         ? `A deposit of <strong>${money(s.depositCents)}</strong> holds this${
             s.depositDue ? ` and is due by ${escapeHtml(day(s.depositDue))}` : ''}.`
         : 'Say the word and I will hold it.'
@@ -180,9 +190,19 @@ export function renderStatement(env, s) {
     block(quote ? 'The trip' : 'Your trip', facts.map(([k, v]) => `<tr>
       <td style="padding:6px 0;color:#5c7286;width:38%;">${escapeHtml(k)}</td>
       <td style="padding:6px 0;color:#2f4459;">${escapeHtml(v)}</td></tr>`).join('')),
-    block('What it costs', s.lines.length
-      ? rows(s.lines, { strike: true }) + totalRow('Trip total', s.tripCents, true)
-      : totalRow('Trip total', s.tripCents, true)),
+    // With choices on the table, the breakdown of one of them is noise: the
+    // client is picking between prices, not auditing one.
+    quote && s.options.length
+      ? block('Your choices', s.options.map((o) => `<tr>
+          <td style="padding:8px 0;color:#2f4459;">
+            <strong>${escapeHtml(o.label)}</strong>${o.chosen
+              ? ' <span style="color:#1b3a5f;font-size:12px;">&mdash; the one you chose</span>' : ''}
+            ${o.detail ? `<div style="color:#5c7286;font-size:13px;">${escapeHtml(o.detail)}</div>` : ''}</td>
+          <td style="padding:8px 0;text-align:right;white-space:nowrap;color:#2f4459;">${
+            money(o.amountCents)}</td></tr>`).join(''))
+      : block('What it costs', s.lines.length
+        ? rows(s.lines, { strike: true }) + totalRow('Trip total', s.tripCents, true)
+        : totalRow('Trip total', s.tripCents, true)),
     quote ? '' : block('Received, thank you', rows(s.posted)),
     quote ? '' : block('Still to come', s.due.length
       ? rows(s.due) + totalRow('Balance', s.balanceCents, true)
@@ -240,11 +260,12 @@ export async function handleStatement(request, env, id) {
   }
 
   const scope = db.selfScope(user);
-  const [pricing, travellers, amenities, payments] = await Promise.all([
+  const [pricing, travellers, amenities, payments, options] = await Promise.all([
     listPricing(env, id, scope),
     listTravellers(env, id, scope),
     listAmenities(env, id, scope),
     db.listPayments(env, scope, { bookingId: id }),
+    listOptions(env, id, scope),
   ]);
 
   const client = booking.client_id
@@ -252,7 +273,7 @@ export async function handleStatement(request, env, id) {
     : await db.getClient(env, scope, { name: booking.client_name });
 
   const statement = buildStatement({
-    booking, pricing, travellers, amenities, payments, client, user,
+    booking, pricing, travellers, amenities, payments, options, client, user,
   });
   const { subject, html } = renderStatement(env, statement);
 

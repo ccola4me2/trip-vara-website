@@ -21,19 +21,37 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { schemaFromMigrations } from './lib/schema.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-// Tables whose rows belong to one advisor.
+// Which tables belong to an advisor is a judgement, not a column. sessions and
+// password_reset_tokens carry a user_id and are found by their token, which is
+// the secret; the CRM mirror and the automations belong to a sub-account.
+// Deriving the list mechanically got all of those wrong, so it is written out.
+//
+// What is not left to memory is noticing a new one. Any table in the schema
+// with a user_id column that appears in neither list below fails the check and
+// asks to be classified, which is what would have happened when quote_options
+// was added rather than it going unchecked.
+const SCHEMA = schemaFromMigrations(ROOT);
+
 const OWNED = new Set([
-  'bookings', 'booking_payments', 'booking_pricing', 'travellers', 'amenities',
-  'tasks', 'client_credits', 'clients', 'travel_groups', 'vendors', 'goals',
-  'user_prefs', 'reminders',
+  'bookings', 'booking_payments', 'booking_pricing', 'quote_options', 'travellers',
+  'amenities', 'tasks', 'client_credits', 'clients', 'travel_groups', 'vendors',
+  'goals', 'user_prefs', 'reminders',
 ]);
 
-// Tables that belong to a GoHighLevel sub-account rather than to one advisor.
-// A whole agency shares these, so location_id is the predicate that matters.
+// Shared by a whole agency through a GoHighLevel sub-account, so location_id
+// is the predicate that matters rather than user_id.
 const LOCATION_OWNED = new Set(['forms', 'form_submissions']);
+
+// Carries a user_id, and is not reached through one.
+const EXEMPT = new Map([
+  ['sessions', 'found by its token, which is the secret; the user_id is the answer, not the question'],
+  ['password_reset_tokens', 'same: the token is the credential'],
+  ['activity_log', 'written with a user id and read only through a scoped query'],
+]);
 
 // Statements that touch an owned table without naming a user, and why that is
 // correct. Matched on a distinctive fragment of the SQL. Every entry is a
@@ -109,6 +127,9 @@ for (const file of files) {
     const tables = [...all].filter((t) => OWNED.has(t));
     const byLocation = [...all].filter((t) => LOCATION_OWNED.has(t));
     if (!tables.length && !byLocation.length) continue;
+    // A location table is not subject to the write rule below: its predicate
+    // is a sub-account, and reporting it as "no user_id" names the wrong fix.
+    const writeRuleApplies = tables.length > 0;
 
     checked += 1;
 
@@ -131,7 +152,7 @@ for (const file of files) {
     // reservation and may not change it, and the two would quietly become one
     // permission the moment a write borrowed the reading scope. Every write in
     // this codebase names user_id outright, and this keeps it that way.
-    if (/^\s*(INSERT|UPDATE|DELETE)/i.test(sql)) {
+    if (writeRuleApplies && /^\s*(INSERT|UPDATE|DELETE)/i.test(sql)) {
       if (namesUser && !viaHelper) continue;
       const excused = ALLOWED.find(([fragment]) => sql.includes(fragment));
       if (excused) continue;
@@ -153,6 +174,17 @@ for (const file of files) {
     console.log(`FAIL  src/${file}:${line}  touches ${named} with ${kind}`);
     console.log(`        ${sql.replace(/\s+/g, ' ').trim().slice(0, 140)}`);
   }
+}
+
+// A table that belongs to an advisor and is in neither list is not safe by
+// default; it is unexamined. Failing here is the difference between a check
+// that covers the codebase and one that covers what somebody remembered.
+for (const [table, cols] of SCHEMA) {
+  if (!cols.has('user_id')) continue;
+  if (OWNED.has(table) || LOCATION_OWNED.has(table) || EXEMPT.has(table)) continue;
+  problems += 1;
+  console.log(`FAIL  ${table} has a user_id and is in none of the lists in this checker`);
+  console.log('        add it to OWNED, or to EXEMPT with the reason it is reached another way');
 }
 
 console.log('');

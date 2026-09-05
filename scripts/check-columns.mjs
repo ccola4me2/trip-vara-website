@@ -27,6 +27,7 @@
 //   node scripts/check-columns.mjs
 
 import { readFileSync, readdirSync } from 'node:fs';
+import { schemaFromMigrations } from './lib/schema.mjs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,53 +44,6 @@ const DELIBERATE = {
 // ---------------------------------------------------------------------------
 // The schema, as the migrations actually leave it
 // ---------------------------------------------------------------------------
-
-const CONSTRAINT = /^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)\b/i;
-
-function schemaFromMigrations() {
-  const dir = join(ROOT, 'migrations');
-  const tables = new Map();
-
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
-    const sql = readFileSync(join(dir, file), 'utf8')
-      // Comments first: a column named inside one is not a column.
-      .replace(/--[^\n]*/g, '');
-
-    for (const m of sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][\w]*)\s*\(([\s\S]*?)\n\s*\);/gi)) {
-      const [, table, body] = m;
-      const cols = tables.get(table) || new Set();
-      // Split on commas that are not inside brackets, so DEFAULT (a, b) and
-      // CHECK (x IN ('a','b')) do not each look like a new column.
-      let depth = 0;
-      let current = '';
-      const parts = [];
-      for (const ch of body) {
-        if (ch === '(') depth += 1;
-        if (ch === ')') depth -= 1;
-        if (ch === ',' && depth === 0) { parts.push(current); current = ''; continue; }
-        current += ch;
-      }
-      parts.push(current);
-
-      for (const part of parts) {
-        const line = part.trim();
-        if (!line || CONSTRAINT.test(line)) continue;
-        const name = line.match(/^([A-Za-z_][\w]*)/);
-        if (name) cols.add(name[1]);
-      }
-      tables.set(table, cols);
-    }
-
-    for (const m of sql.matchAll(/ALTER\s+TABLE\s+([A-Za-z_][\w]*)\s+ADD\s+COLUMN\s+([A-Za-z_][\w]*)/gi)) {
-      const [, table, col] = m;
-      const cols = tables.get(table) || new Set();
-      cols.add(col);
-      tables.set(table, cols);
-    }
-  }
-
-  return tables;
-}
 
 // ---------------------------------------------------------------------------
 // The column lists, as the source actually writes them
@@ -167,7 +121,7 @@ function listsFromSource() {
 
 // ---------------------------------------------------------------------------
 
-const tables = schemaFromMigrations();
+const tables = schemaFromMigrations(ROOT);
 const lists = listsFromSource();
 
 let problems = 0;
