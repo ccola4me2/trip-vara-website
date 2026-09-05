@@ -356,6 +356,60 @@ async function main() {
   check((detail.data?.logs || []).length >= 1,
     'leaving a log of what it did', `${(detail.data?.logs || []).length} log line(s)`);
 
+  // ------------------------------------------------------- group space ------
+  step('Group space, and the option date that ends it');
+
+  const badDate = await call(advisor, 'POST', '/api/groups', {
+    name: `Bad dates ${stamp}`, departDate: isoDay(100), optionDate: isoDay(120),
+  });
+  check(badDate.status === 400, 'an option date after departure is refused', `status ${badDate.status}`);
+
+  const grp = await call(advisor, 'POST', '/api/groups', {
+    name: `Islander New Year ${stamp}`, vendor: 'Margaritaville at Sea', groupCode: '4668',
+    departDate: isoDay(120), returnDate: isoDay(126), optionDate: isoDay(30), cabinsHeld: 20,
+  });
+  const groupId = grp.data?.group?.id;
+  check(grp.status === 201 && groupId, 'a group is opened', `status ${grp.status}`);
+  if (groupId) cleanup('the group', () => call(advisor, 'DELETE', `/api/groups/${groupId}`));
+  check(grp.data?.group?.cabins_sold === 0, 'holding cabins none of which are sold yet',
+    grp.data?.group?.cabins_sold);
+
+  const inGroup = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Group Client ${stamp}`, supplier: 'Margaritaville at Sea',
+    departDate: isoDay(120), gross: '2400', status: 'booked', groupId,
+  });
+  const inGroupId = inGroup.data?.booking?.id;
+  check(inGroup.data?.booking?.group_id === groupId,
+    'a reservation sold from the block records the group', inGroup.data?.booking?.group_id);
+  if (inGroupId) cleanup('the group reservation', () =>
+    call(advisor, 'DELETE', `/api/bookings/${inGroupId}`));
+
+  // Sold is counted from the reservations rather than stored, so it cannot
+  // drift away from the truth.
+  const groupDetail = await call(advisor, 'GET', `/api/groups/${groupId}`);
+  check(groupDetail.data?.group?.cabins_sold === 1, 'and the sold count follows from it',
+    groupDetail.data?.group?.cabins_sold);
+  check((groupDetail.data?.bookings || []).some((b) => b.id === inGroupId),
+    'with the reservation listed in the block');
+
+  const groupList = await call(advisor, 'GET', '/api/groups?status=open');
+  check(groupList.data?.stats?.held >= 20 && groupList.data.stats.sold >= 1,
+    'held and sold roll up across groups', JSON.stringify(groupList.data?.stats));
+
+  const ownerEdit = await call(admin, 'PUT', `/api/groups/${groupId}`, { name: 'Not yours' });
+  check(ownerEdit.status === 404, 'an owner cannot rewrite an associate\'s group',
+    `status ${ownerEdit.status}`);
+
+  // A block is a commercial arrangement; the trips sold out of it are real
+  // holidays people have paid for. Deleting one must not delete the other.
+  // Checked here rather than after cleanup, where the reservation has already
+  // been removed and a 404 would look like a pass for the wrong reason.
+  await call(advisor, 'DELETE', `/api/groups/${groupId}`);
+  const survivor = await call(advisor, 'GET', `/api/bookings/${inGroupId}`);
+  check(survivor.status === 200 && !survivor.data.booking.group_id,
+    'deleting a group keeps its reservations and clears the link',
+    `status ${survivor.status}, group ${survivor.data?.booking?.group_id}`);
+
   // ------------------------------------------------------------- tasks ------
   step('The task list');
 

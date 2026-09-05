@@ -9,6 +9,7 @@ import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { readLayout, PANELS } from './prefs.js';
 import { listTasks } from './tasks.js';
+import { listGroups } from './groups.js';
 import * as ghl from './ghl.js';
 
 function isoDay(offsetDays = 0) {
@@ -27,7 +28,11 @@ export async function handleDashboard(request, env) {
   const [stats, payStats, payments, activity, recentAdded, recentModified,
          upcoming, traveling, returned] = await Promise.all([
     db.bookingStats(env, scope),
-    db.paymentStats(env, scope, { today, soonThrough: isoDay(60) }),
+    // Fourteen days, not sixty. The headline figure is meant to be the thing
+    // you act on this fortnight; a two month net catches so much that the
+    // number stops meaning anything urgent. The Deadlines panel below still
+    // lists sixty days, because a list is a horizon and a headline is not.
+    db.paymentStats(env, scope, { today, soonThrough: isoDay(14) }),
     db.upcomingPayments(env, scope, isoDay(60)),
     db.recentActivity(env, scope, 8),
     db.recentReservations(env, scope, { by: 'added' }),
@@ -91,6 +96,7 @@ export async function handleDashboard(request, env) {
     notices: await noticesFor(env, user, scope),
     trend: await db.productionByMonth(env, scope, isoDay(-365)),
     tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
+    groups: await listGroups(env, scope, { status: 'open', limit: 12 }).catch(() => []),
   });
 }
 
@@ -190,6 +196,23 @@ async function noticesFor(env, user, scope) {
       title: `${failed.n} automation run${failed.n === 1 ? '' : 's'} failed this week`,
       detail: failed.last_error || 'Open the automation to see why.',
       href: '/app/automations', label: 'Open automations',
+    });
+  }
+
+  const releasing = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM travel_groups g
+      WHERE ${db.scopeWhere(scope, 'g.user_id').sql} AND g.status = 'open'
+        AND g.option_date IS NOT NULL AND g.option_date <= ?
+        AND g.cabins_held > (SELECT COUNT(*) FROM bookings b
+                              WHERE b.group_id = g.id AND b.status IN ('quoted','booked','travelled'))`
+  ).bind(...db.scopeWhere(scope, 'g.user_id').binds, isoDay(21)).first().catch(() => null);
+
+  if (releasing && releasing.n) {
+    out.push({
+      tone: 'warn',
+      title: `${releasing.n} group${releasing.n === 1 ? '' : 's'} releasing unsold space within three weeks`,
+      detail: 'Cabins you have not sold go back to the vendor on the option date.',
+      href: '/app/groups', label: 'Open group space',
     });
   }
 

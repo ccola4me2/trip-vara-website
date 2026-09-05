@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group space | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Group space</h1><p class="sub">Cabins a vendor is holding for you, and how long you have to sell them.</p></div>
+      <div class="toolbar" style="margin:0;">
+        <span id="scope"></span>
+        <button class="btn btn-primary btn-sm" id="add">Open a group</button>
+      </div>
+    </header>
+    <div class="content">
+      <section id="stats" class="stat-grid"></section>
+      <div class="toolbar">
+        <select id="status-filter" aria-label="Status">
+          <option value="">All groups</option>
+          <option value="open" selected>Open</option>
+          <option value="closed">Closed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <section class="card" id="panel"><p class="spinner">Loading groups...</p></section>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <form id="group-form" method="dialog">
+    <div class="card-head"><h2 id="dlg-title">Open a group</h2>
+      <button class="btn btn-ghost btn-sm" type="button" id="close">Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="name">Group name</label>
+        <input id="name" name="name" maxlength="160" required placeholder="Islander New Year Cruise"></div>
+      <div class="field-row">
+        <div class="field"><label for="vendor">Vendor</label>
+          <input id="vendor" name="vendor" placeholder="Margaritaville at Sea"></div>
+        <div class="field"><label for="groupCode">Group number</label>
+          <input id="groupCode" name="groupCode" placeholder="4668">
+          <p class="field-hint">The vendor's reference for the block.</p></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="productName">Ship or property</label>
+          <input id="productName" name="productName" placeholder="Islander"></div>
+        <div class="field"><label for="destination">Destination</label>
+          <input id="destination" name="destination" placeholder="Bahamas"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="departDate">Departing</label>
+          <input id="departDate" name="departDate" type="date"></div>
+        <div class="field"><label for="returnDate">Returning</label>
+          <input id="returnDate" name="returnDate" type="date"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="optionDate">Option date</label>
+          <input id="optionDate" name="optionDate" type="date">
+          <p class="field-hint">Unsold cabins go back to the vendor on this day.</p></div>
+        <div class="field"><label for="cabinsHeld">Cabins held</label>
+          <input id="cabinsHeld" name="cabinsHeld" type="number" min="0" max="9999" value="0"></div>
+      </div>
+      <div class="field"><label for="status">Status</label>
+        <select id="status" name="status">
+          <option value="open">Open</option>
+          <option value="closed">Closed</option>
+          <option value="cancelled">Cancelled</option>
+        </select></div>
+      <div class="field"><label for="notes">Notes</label>
+        <textarea id="notes" name="notes" maxlength="4000"></textarea></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="delete" hidden>Delete</button>
+      <button class="btn btn-primary" type="submit">Save group</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit,
+         mountScopePicker, advisorParam } from '/js/app.js';
+const ME = (await mountShell()).id;
+
+const panel = document.getElementById('panel');
+const dlg = document.getElementById('dlg');
+const form = document.getElementById('group-form');
+const deleteBtn = document.getElementById('delete');
+const statusFilter = document.getElementById('status-filter');
+let editingId = null;
+let cache = [];
+
+const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
+
+function render(d) {
+  cache = d.groups;
+  const showAdvisor = Boolean(d.scope && d.scope.all);
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Open groups</p><p class="value">${d.stats.open}</p>
+      <p class="meta">Blocks still selling</p></div>
+    <div class="stat"><p class="label">Cabins held</p><p class="value">${d.stats.held}</p>
+      <p class="meta">${d.stats.sold} sold so far</p></div>
+    <div class="stat"><p class="label">Releasing in 30 days</p>
+      <p class="value" style="${d.stats.releasing ? 'color:var(--red-600);' : ''}">${d.stats.releasing}</p>
+      <p class="meta">Unsold cabins going back to the vendor</p></div>
+    <div class="stat"><p class="label">Still to sell</p>
+      <p class="value">${Math.max(0, d.stats.held - d.stats.sold)}</p>
+      <p class="meta">Across every open group</p></div>`;
+
+  if (!d.groups.length) {
+    panel.innerHTML = `<div class="empty"><h3>No group space</h3>
+      <p>Open a group when a vendor holds a block of cabins for you.</p></div>`;
+    return;
+  }
+
+  panel.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Group</th>${showAdvisor ? '<th>Advisor</th>' : ''}<th>Vendor</th><th>Departing</th>
+      <th>Option date</th><th class="num">Held</th><th class="num">Sold</th><th class="num">Left</th><th></th></tr></thead>
+    <tbody>${d.groups.map((g) => {
+      const left = Math.max(0, (g.cabins_held || 0) - (g.cabins_sold || 0));
+      const days = daysUntil(g.option_date);
+      const tone = days === null ? '' : days < 0 ? 'badge-red' : days <= 14 ? 'badge-red'
+        : days <= 45 ? 'badge-amber' : 'badge-navy';
+      const label = days === null ? '' : days < 0 ? 'space released'
+        : days === 0 ? 'releases today' : `releases in ${days}d`;
+      return `<tr>
+        <td><span class="name">${esc(g.name)}</span>
+          <div class="muted">${esc([g.group_code, g.product_name].filter(Boolean).join(' / '))}</div></td>
+        ${showAdvisor ? `<td class="muted">${esc(g.advisor_name || '-')}</td>` : ''}
+        <td>${esc(g.vendor || '-')}</td>
+        <td>${esc(short(g.depart_date))}</td>
+        <td>${g.option_date ? `${esc(short(g.option_date))}
+            ${left > 0 && label ? `<div><span class="badge ${tone}">${esc(label)}</span></div>` : ''}`
+          : '<span class="muted">none set</span>'}</td>
+        <td class="num">${g.cabins_held || 0}</td>
+        <td class="num">${g.cabins_sold || 0}</td>
+        <td class="num"><strong>${left}</strong></td>
+        <td class="num">${g.user_id === ME
+          ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(g.id)}">Edit</button>`
+          : '<span class="muted">view only</span>'}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+
+  panel.querySelectorAll('[data-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => openEdit(cache.find((g) => g.id === btn.dataset.edit)));
+  });
+}
+
+function openCreate() {
+  editingId = null;
+  form.reset();
+  document.getElementById('dlg-title').textContent = 'Open a group';
+  deleteBtn.hidden = true;
+  form.querySelector('.notice-error').hidden = true;
+  dlg.showModal();
+}
+
+function openEdit(g) {
+  if (!g) return;
+  editingId = g.id;
+  document.getElementById('dlg-title').textContent = 'Edit group';
+  deleteBtn.hidden = false;
+  form.querySelector('.notice-error').hidden = true;
+  const set = (n, v) => { const el = form.elements[n]; if (el) el.value = v ?? ''; };
+  set('name', g.name); set('vendor', g.vendor); set('groupCode', g.group_code);
+  set('productName', g.product_name); set('destination', g.destination);
+  set('departDate', g.depart_date); set('returnDate', g.return_date);
+  set('optionDate', g.option_date); set('cabinsHeld', g.cabins_held || 0);
+  set('status', g.status); set('notes', g.notes);
+  dlg.showModal();
+}
+
+async function load() {
+  try {
+    const q = [statusFilter.value ? `status=${statusFilter.value}` : '', advisorParam()]
+      .filter(Boolean).join('&');
+    const d = await api(`/api/groups${q ? '?' + q : ''}`);
+    mountScopePicker(document.getElementById('scope'), d, load);
+    render(d);
+  } catch (err) { showError(panel, err); }
+}
+
+document.getElementById('add').addEventListener('click', openCreate);
+document.getElementById('close').addEventListener('click', () => dlg.close());
+statusFilter.addEventListener('change', load);
+
+deleteBtn.addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Delete this group? The reservations made from it are kept.')) return;
+  await api(`/api/groups/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
+  dlg.close();
+  await load();
+});
+
+onSubmit(form, async (values) => {
+  const path = editingId ? `/api/groups/${encodeURIComponent(editingId)}` : '/api/groups';
+  await api(path, { method: editingId ? 'PUT' : 'POST', body: values });
+  dlg.close();
+  await load();
+});
+
+await load();
+</script>
+</body></html>

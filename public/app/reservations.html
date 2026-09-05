@@ -47,13 +47,18 @@
       <div class="field-row">
         <div class="field"><label for="productType">Type</label>
           <select id="productType" name="productType">
-            <option value="cruise">Cruise</option><option value="resort">Resort</option>
-            <option value="package">Package</option><option value="air">Air</option>
-            <option value="other">Other</option>
+            <option value="cruise">Cruise</option><option value="hotel">Hotel</option>
+            <option value="resort">Resort</option><option value="package">Package</option>
+            <option value="tour">Tour</option><option value="air">Air</option>
+            <option value="rail">Rail</option><option value="car">Car hire</option>
+            <option value="transfer">Transfer</option><option value="excursion">Excursion</option>
+            <option value="attraction">Attraction</option><option value="event_ticket">Event ticket</option>
+            <option value="insurance">Travel insurance</option><option value="parking">Parking</option>
+            <option value="visa_passport">Visa or passport</option><option value="other">Other</option>
           </select></div>
         <div class="field"><label for="status">Status</label>
           <select id="status" name="status">
-            <option value="booked">Booked</option><option value="quoted">Quoted</option>
+            <option value="quoted">Quoted</option><option value="booked">Booked</option>
             <option value="travelled">Travelled</option><option value="cancelled">Cancelled</option>
           </select></div>
       </div>
@@ -64,6 +69,9 @@
           <input id="productName" name="productName"></div>
       </div>
       <div class="field-row">
+        <div class="field"><label for="groupId">Group <span style="font-weight:400;color:var(--ink-400);">(optional)</span></label>
+          <select id="groupId" name="groupId"></select>
+          <p class="field-hint">Sold out of a block a vendor is holding for you.</p></div>
         <div class="field"><label for="destination">Destination</label><input id="destination" name="destination"></div>
         <div class="field"><label for="confirmationNumber">Confirmation number</label>
           <input id="confirmationNumber" name="confirmationNumber"></div>
@@ -183,6 +191,7 @@ function render(bookings, stats, scope) {
 function openCreate() {
   editingId = null;
   form.reset();
+  fillGroups('');
   document.getElementById('dlg-title').textContent = 'Add a reservation';
   deleteBtn.hidden = true;
   form.querySelector('.notice-error').hidden = true;
@@ -199,6 +208,7 @@ function openEdit(b) {
   set('clientName', b.client_name); set('supplier', b.supplier);
   set('productType', b.product_type); set('productName', b.product_name);
   set('destination', b.destination); set('confirmationNumber', b.confirmation_number);
+  fillGroups(b.group_id || '');
   set('departDate', b.depart_date); set('returnDate', b.return_date);
   set('depositDue', b.deposit_due); set('finalPaymentDue', b.final_payment_due);
   set('travellers', b.travellers); set('status', b.status);
@@ -207,6 +217,14 @@ function openEdit(b) {
   set('deposit', ((b.deposit_cents || 0) / 100).toFixed(2));
   set('commission', (b.commission_cents / 100).toFixed(2));
   dlg.showModal();
+}
+
+let groups = [];
+function fillGroups(selected) {
+  document.getElementById('groupId').innerHTML =
+    '<option value="">Not part of a group</option>' +
+    groups.map((g) => `<option value="${esc(g.id)}"${g.id === selected ? ' selected' : ''}>
+      ${esc([g.group_code, g.name].filter(Boolean).join(' / '))}</option>`).join('');
 }
 
 async function load() {
@@ -245,6 +263,11 @@ onSubmit(form, async (values) => {
   dlg.close();
   await load();
 });
+
+// Only the advisor's own open groups: a reservation cannot be sold out of
+// somebody else's block.
+groups = await api('/api/groups?status=open')
+  .then((g) => g.groups.filter((x) => x.user_id === ME)).catch(() => []);
 
 const params = new URLSearchParams(location.search);
 if (params.get('new')) openCreate();

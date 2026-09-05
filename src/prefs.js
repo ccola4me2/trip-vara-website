@@ -26,6 +26,7 @@ export const PANELS = [
   { id: 'deadlines', title: 'Deadlines', hint: 'Reminders, vendor dates and anything past due' },
   { id: 'bookings', title: 'Latest bookings', hint: 'Newest and recently changed reservations' },
   { id: 'travelling', title: "Who's travelling", hint: 'Leaving soon, away now, just back' },
+  { id: 'groups', title: 'Group space', hint: 'Blocks of cabins and when they release' },
   { id: 'deals', title: 'Deals in play', hint: 'Open opportunities by stage' },
   { id: 'trend', title: 'Production trend', hint: 'Booked value by month' },
   { id: 'links', title: 'Quick links', hint: 'Your own shortcuts' },

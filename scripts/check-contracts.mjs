@@ -24,7 +24,8 @@ import { readFileSync } from 'node:fs';
 const PAGES = [
   ['public/app/index.html', ['/api/dashboard']],
   ['public/app/payments.html', ['/api/payments?state=all']],
-  ['public/app/reservations.html', ['/api/bookings']],
+  ['public/app/reservations.html', ['/api/bookings', '/api/groups?status=open']],
+  ['public/app/groups.html', ['/api/groups']],
   ['public/app/tasks.html', ['/api/tasks?state=all', '/api/bookings']],
   ['public/app/billing.html', ['/api/billing']],
   ['public/app/reports.html', ['/api/reports/production?months=12']],

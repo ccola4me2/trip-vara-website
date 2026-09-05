@@ -11,7 +11,16 @@ import * as db from './db.js';
 import * as ghl from './ghl.js';
 import { fireTrigger } from './automations.js';
 
-const PRODUCT_TYPES = ['cruise', 'resort', 'package', 'air', 'other'];
+// The taxonomy a travel agency actually reports on. Five buckets could not
+// tell a transfer from a tour from travel insurance, which meant "travel by
+// type" said almost nothing. Cruise leads because oneOf falls back to the
+// first entry and this is a cruise-first agency, so it is the likeliest
+// answer rather than an arbitrary one.
+const PRODUCT_TYPES = [
+  'cruise', 'hotel', 'resort', 'package', 'tour', 'air', 'rail', 'car',
+  'transfer', 'excursion', 'attraction', 'event_ticket', 'insurance',
+  'parking', 'visa_passport', 'other',
+];
 // oneOf falls back to the first entry, so this order decides what a
 // reservation created without a status becomes. Quoted, not booked: a
 // reservation that nobody said was booked should not quietly land in
@@ -47,6 +56,7 @@ function parseBooking(body) {
     fields: {
       ghlContactId: clean(body.ghlContactId, 64) || null,
       ghlOpportunityId: clean(body.ghlOpportunityId, 64) || null,
+      groupId: clean(body.groupId, 64) || null,
       clientName,
       supplier: clean(body.supplier, 120),
       productType: oneOf(body.productType, PRODUCT_TYPES),

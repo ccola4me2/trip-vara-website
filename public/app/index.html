@@ -115,10 +115,10 @@ function build() {
 
   document.getElementById('greeting').textContent = `${d.user.name}, here is where things stand.`;
   document.getElementById('stats').innerHTML = `
-    <div class="stat"><p class="label">Cancels within 60 days</p>
+    <div class="stat"><p class="label">Cancels within 14 days</p>
       <p class="value" style="${p.hardDueCents ? 'color:var(--red-600);' : ''}">${money(p.hardDueCents)}</p>
       <p class="meta">${p.hardCount} vendor deadline${p.hardCount === 1 ? '' : 's'}</p></div>
-    <div class="stat"><p class="label">Reminders due</p><p class="value">${money(p.softDueCents)}</p>
+    <div class="stat"><p class="label">Reminders next 14 days</p><p class="value">${money(p.softDueCents)}</p>
       <p class="meta">${p.softCount} to chase before the deadline</p></div>
     <div class="stat"><p class="label">Active reservations</p><p class="value">${s.booked}</p>
       <p class="meta">${s.quoted} quoted, ${s.travelled} travelled</p></div>
@@ -172,6 +172,27 @@ const PANELS = {
     { key: 'upcoming', label: 'Leaving soon', render: () => reservationTable(d.current.upcoming, CUR_COLS) },
     { key: 'traveling', label: 'Away now', render: () => reservationTable(d.current.traveling, CUR_COLS) },
     { key: 'returned', label: 'Just back', render: () => reservationTable(d.current.returned, CUR_COLS) },
+  ], 'upcoming'),
+
+  groups: () => widget('Group space', { href: '/app/groups', label: 'All groups' }, [
+    { key: 'upcoming', label: 'Open blocks', render: () => {
+      const rows = d.groups || [];
+      if (!rows.length) return '<p class="wempty">No group space open.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Vendor</th><th>Departing</th><th>Number / name</th><th class="num">Left</th></tr></thead>
+        <tbody>${rows.map((g) => {
+          const left = Math.max(0, (g.cabins_held || 0) - (g.cabins_sold || 0));
+          const days = daysUntil(g.option_date);
+          return `<tr>
+            <td>${esc(g.vendor || '-')}</td>
+            <td>${esc(fmtShort(g.depart_date))}</td>
+            <td><span class="name">${esc([g.group_code, g.name].filter(Boolean).join(' / '))}</span>
+              ${left > 0 && days !== null && days <= 45
+                ? `<div><span class="badge ${days < 0 ? 'badge-red' : days <= 14 ? 'badge-red' : 'badge-amber'}">${
+                    days < 0 ? 'space released' : `releases in ${days}d`}</span></div>` : ''}</td>
+            <td class="num">${left}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+    } },
   ], 'upcoming'),
 
   deals: () => widget('Deals in play', { href: '/app/pipeline', label: 'Pipeline' }, [
