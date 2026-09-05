@@ -22,6 +22,7 @@
     </header>
     <div class="content">
       <section id="stats" class="stat-grid"></section>
+      <section id="stat-note"></section>
       <section id="ghl-state"></section>
       <section class="card customiser" id="customiser" hidden>
         <div class="card-head"><h2>Your dashboard</h2>
@@ -115,16 +116,23 @@ function build() {
 
   document.getElementById('greeting').textContent = `${d.user.name}, here is where things stand.`;
   document.getElementById('stats').innerHTML = `
-    <div class="stat"><p class="label">Cancels within 14 days</p>
+    <div class="stat"><p class="label">Chase this week</p><p class="value">${money(p.softDueCents)}</p>
+      <p class="meta">${p.softCount} client${p.softCount === 1 ? '' : 's'} to ring in the next 7 days</p></div>
+    <div class="stat"><p class="label">At risk of cancelling</p>
       <p class="value" style="${p.hardDueCents ? 'color:var(--red-600);' : ''}">${money(p.hardDueCents)}</p>
-      <p class="meta">${p.hardCount} vendor deadline${p.hardCount === 1 ? '' : 's'}</p></div>
-    <div class="stat"><p class="label">Reminders next 7 days</p><p class="value">${money(p.softDueCents)}</p>
-      <p class="meta">${p.softCount} to chase before the deadline</p></div>
+      <p class="meta">${p.hardCount} vendor deadline${p.hardCount === 1 ? '' : 's'} in the next 14 days</p></div>
     <div class="stat"><p class="label">Active reservations</p><p class="value">${s.booked}</p>
       <p class="meta">${s.quoted} quoted, ${s.travelled} travelled</p></div>
     <div class="stat"><p class="label">${everyone ? 'Agency earnings' : 'Your earnings'}</p>
       <p class="value">${money(s.commissionCents)}</p>
       <p class="meta">${money(s.commissionPaidCents)} paid out</p></div>`;
+
+  // Said once, in plain words, because the same balance appears in both
+  // figures a week apart and that is not obvious from two numbers side by side.
+  document.getElementById('stat-note').innerHTML =
+    `<p class="stat-note">Usually the same money twice. <strong>Chase this week</strong> is your own
+     reminder to collect. <strong>At risk of cancelling</strong> is the vendor's own deadline, a week
+     later, after which they cancel the trip.</p>`;
 
   if (d.ghlStatus === 'not_configured') showError(document.getElementById('ghl-state'), { code: 'not_configured' });
   else if (d.ghlStatus === 'error') document.getElementById('ghl-state').innerHTML =
@@ -157,10 +165,12 @@ const PANELS = {
     { key: 'someday', label: 'No date', render: () => taskRows(openTasks().filter((t) => !t.due_date)) },
   ], 'due'),
 
+  month: () => monthWidget(),
+
   deadlines: () => widget('Deadlines', { href: '/app/payments', label: 'All payments' }, [
-    { key: 'soft', label: 'Reminders', render: () => paymentRows(byClass('soft')) },
-    { key: 'hard', label: 'Vendor dates', render: () => paymentRows(byClass('hard')) },
-    { key: 'past', label: 'Overdue', render: () => paymentRows(byClass('past')) },
+    { key: 'soft', label: 'To chase', render: () => paymentRows(byClass('soft')) },
+    { key: 'hard', label: 'Vendor deadline', render: () => paymentRows(byClass('hard')) },
+    { key: 'past', label: 'Passed', render: () => paymentRows(byClass('past')) },
   ], 'soft'),
 
   bookings: () => widget('Latest bookings', { href: '/app/reservations', label: 'All reservations' }, [
@@ -280,6 +290,119 @@ const PANELS = {
 };
 
 const everyoneNow = () => Boolean(d.scope && d.scope.all);
+
+// ------------------------------------------------------------- calendar ---
+// A month of everything with a date on it: departures, returns, vendor
+// deadlines, own reminders, tasks and the day a group's unsold space goes
+// back. Built here rather than pulled in as a library because a month grid is
+// forty two divs and a date loop.
+const KIND_TONE = {
+  depart: 'depart', return: 'return', hard: 'hard', soft: 'soft', task: 'task', option: 'option',
+};
+const KIND_NAME = {
+  depart: 'Departure', return: 'Return', hard: 'Vendor deadline',
+  soft: 'Reminder', task: 'Task', option: 'Group option date',
+};
+
+let monthCursor = null;
+
+function monthWidget() {
+  const el = document.createElement('section');
+  el.className = 'widget';
+  el.innerHTML = `<header><h2>This month</h2>
+      <a href="/app/calendar">Appointments</a></header>
+    <div class="wbody" id="month-body"><p class="spinner">Loading...</p></div>`;
+  // Drawn after the element is in the DOM, so the fetch cannot race the mount.
+  queueMicrotask(() => drawMonth(el.querySelector('#month-body')));
+  return el;
+}
+
+async function drawMonth(host) {
+  if (!host) return;
+  const month = monthCursor || d.today.slice(0, 7);
+  let data;
+  try {
+    data = await api(`/api/month?month=${month}${advisorParam() ? '&' + advisorParam() : ''}`);
+  } catch {
+    host.innerHTML = '<p class="wempty">Could not load the month.</p>';
+    return;
+  }
+  monthCursor = data.month;
+
+  const byDay = new Map();
+  for (const e of data.events) {
+    if (!byDay.has(e.date)) byDay.set(e.date, []);
+    byDay.get(e.date).push(e);
+  }
+
+  const [y, m] = data.month.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lead = first.getUTCDay();
+  const title = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<span class="cal-day empty"></span>');
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = `${data.month}-${String(day).padStart(2, '0')}`;
+    const events = byDay.get(iso) || [];
+    const kinds = [...new Set(events.map((e) => e.kind))];
+    cells.push(`<button type="button" class="cal-day${iso === data.today ? ' today' : ''}${
+      events.length ? ' has' : ''}" data-day="${iso}"
+      ${events.length ? `aria-label="${day}, ${events.length} item${events.length === 1 ? '' : 's'}"` : ''}>
+      <span class="n">${day}</span>
+      <span class="dots">${kinds.slice(0, 4).map((k) => `<i class="dot ${KIND_TONE[k]}"></i>`).join('')}</span>
+    </button>`);
+  }
+
+  host.innerHTML = `<div class="cal">
+      <div class="cal-head">
+        <button type="button" class="cal-nav" data-move="-1" aria-label="Previous month">&lsaquo;</button>
+        <strong>${esc(title)}</strong>
+        <button type="button" class="cal-nav" data-move="1" aria-label="Next month">&rsaquo;</button>
+      </div>
+      <div class="cal-grid">
+        ${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((n) => `<span class="cal-dow">${n}</span>`).join('')}
+        ${cells.join('')}
+      </div>
+      <div class="cal-detail" id="cal-detail"></div>
+    </div>`;
+
+  host.querySelectorAll('[data-move]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const step = Number(btn.dataset.move);
+      const next = new Date(Date.UTC(y, m - 1 + step, 1));
+      monthCursor = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
+      drawMonth(host);
+    });
+  });
+
+  const detail = host.querySelector('#cal-detail');
+  const show = (iso) => {
+    const events = byDay.get(iso) || [];
+    host.querySelectorAll('.cal-day').forEach((c) => c.classList.toggle('picked', c.dataset.day === iso));
+    if (!events.length) { detail.innerHTML = '<p class="cal-none">Nothing on this day.</p>'; return; }
+    detail.innerHTML = `<ul class="rows">${events.map((e) => `<li>
+      <a href="${esc(e.href)}" class="cal-event">
+        <i class="dot ${KIND_TONE[e.kind]}"></i>
+        <span><span class="t">${esc(e.title)}</span>
+          <span class="m">${esc(KIND_NAME[e.kind])}${e.detail ? ' · ' + esc(e.detail) : ''}${
+            e.amountCents ? ' · ' + esc(money(e.amountCents)) : ''}</span></span>
+      </a></li>`).join('')}</ul>`;
+  };
+
+  host.querySelectorAll('.cal-day[data-day]').forEach((cell) => {
+    cell.addEventListener('click', () => show(cell.dataset.day));
+  });
+
+  // Opens on today when you are looking at this month, and on the first day
+  // that has anything when you are not, so paging never lands on a blank list.
+  const opening = data.month === data.today.slice(0, 7)
+    ? data.today
+    : (data.events[0] && data.events[0].date);
+  if (opening) show(opening);
+  else detail.innerHTML = '<p class="cal-none">Nothing dated this month.</p>';
+}
 const openTasks = () => (d.tasks || []).filter((t) => !t.done_at);
 
 /**

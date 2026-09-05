@@ -115,6 +115,32 @@ export async function handleDashboard(request, env) {
   });
 }
 
+/**
+ * A month of everything with a date on it.
+ *
+ * Its own endpoint rather than part of the dashboard payload, because moving
+ * between months should fetch one month rather than the whole dashboard again.
+ */
+export async function handleMonth(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const url = new URL(request.url);
+  const raw = url.searchParams.get('month') || '';
+  // yyyy-mm or today's month. Anything else is a typo, not a request.
+  const month = /^\d{4}-\d{2}$/.test(raw) ? raw : isoDay(0).slice(0, 7);
+  const [y, m] = month.split('-').map(Number);
+  const from = `${month}-01`;
+  const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+
+  const scope = db.scopeFor(env, user, request);
+  return json({
+    month, from, to, today: isoDay(0),
+    events: await db.calendarMonth(env, scope, { from, to }),
+    scope: db.scopeLabel(scope, user),
+  });
+}
+
 export async function handleProduction(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;

@@ -530,6 +530,34 @@ async function main() {
   check(!(callList.data?.rebook || []).some((r) => r.client_name === `Lapsed Traveller ${stamp}`),
     'and booking them again takes them off the list');
 
+  // ----------------------------------------------------------- calendar -----
+  step('A month of everything with a date on it');
+
+  const monthOf = (iso) => iso.slice(0, 7);
+  const cal = await call(advisor, 'GET', `/api/month?month=${monthOf(isoDay(90))}`);
+  check(cal.status === 200 && cal.data?.month === monthOf(isoDay(90)),
+    'the month asked for is the month returned', cal.data?.month);
+  check(cal.data?.from?.endsWith('-01') && cal.data?.to > cal.data?.from,
+    'spanning that whole month', `${cal.data?.from} to ${cal.data?.to}`);
+
+  const kinds = new Set((cal.data?.events || []).map((e) => e.kind));
+  check(kinds.size > 0, 'with events on it', [...kinds].join(', '));
+  check((cal.data?.events || []).every((e) => e.date >= cal.data.from && e.date <= cal.data.to),
+    'and nothing outside the month');
+
+  // A month is a bounded window, so a bad one should be corrected rather than
+  // handed to the database.
+  const junk = await call(advisor, 'GET', '/api/month?month=not-a-month');
+  check(junk.status === 200 && /^\d{4}-\d{2}$/.test(junk.data?.month || ''),
+    'a nonsense month falls back to this one', junk.data?.month);
+
+  // Same boundary as everywhere else.
+  const ownerMonth = await call(admin, 'GET', `/api/month?month=${monthOf(isoDay(210))}`);
+  const advisorMonth = await call(advisor, 'GET', `/api/month?month=${monthOf(isoDay(210))}`);
+  check(ownerMonth.data.events.length >= advisorMonth.data.events.length,
+    'an owner sees at least what the associate sees',
+    `${ownerMonth.data.events.length} vs ${advisorMonth.data.events.length}`);
+
   // ------------------------------------------------- dashboard layout ------
   step('The dashboard remembers how you arranged it');
 

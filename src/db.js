@@ -550,6 +550,85 @@ export async function rebookCandidates(env, scope, { today, limit = 25 } = {}) {
   return results || [];
 }
 
+/**
+ * Everything with a date on it, for one month.
+ *
+ * Departures, returns, vendor deadlines, own reminders, task due dates and the
+ * day a group's unsold space goes back. Six queries rather than one union so
+ * each keeps its own columns and its own scope column, and because a union of
+ * six differently shaped tables is unreadable a month after writing it.
+ *
+ * Read only and cheap: each is an indexed range scan over one month.
+ */
+export async function calendarMonth(env, scope, { from, to }) {
+  const b = scopeWhere(scope, 'b.user_id');
+  const p = scopeWhere(scope, 'p.user_id');
+  const t = scopeWhere(scope, 't.user_id');
+  const g = scopeWhere(scope, 'g.user_id');
+
+  const [departs, returns, payments, tasks, options] = await Promise.all([
+    env.DB.prepare(
+      `SELECT b.id, b.depart_date AS on_date, b.client_name, b.supplier
+         FROM bookings b WHERE ${b.sql} AND b.status IN ('quoted','booked','travelled')
+          AND b.depart_date BETWEEN ? AND ?`
+    ).bind(...b.binds, from, to).all().catch(() => ({ results: [] })),
+
+    env.DB.prepare(
+      `SELECT b.id, b.return_date AS on_date, b.client_name, b.supplier
+         FROM bookings b WHERE ${b.sql} AND b.status IN ('quoted','booked','travelled')
+          AND b.return_date BETWEEN ? AND ?`
+    ).bind(...b.binds, from, to).all().catch(() => ({ results: [] })),
+
+    env.DB.prepare(
+      `SELECT p.id, p.due_date AS on_date, p.payment_class, p.kind, p.amount_cents,
+              b.client_name, b.supplier
+         FROM booking_payments p JOIN bookings b ON b.id = p.booking_id
+        WHERE ${p.sql} AND p.paid_date IS NULL AND p.due_date BETWEEN ? AND ?`
+    ).bind(...p.binds, from, to).all().catch(() => ({ results: [] })),
+
+    env.DB.prepare(
+      `SELECT t.id, t.due_date AS on_date, t.title, t.priority
+         FROM tasks t WHERE ${t.sql} AND t.done_at IS NULL AND t.due_date BETWEEN ? AND ?`
+    ).bind(...t.binds, from, to).all().catch(() => ({ results: [] })),
+
+    env.DB.prepare(
+      `SELECT g.id, g.option_date AS on_date, g.name, g.vendor, g.cabins_held,
+              (SELECT COUNT(*) FROM bookings x WHERE x.group_id = g.id
+                AND x.status IN ('quoted','booked','travelled')) AS cabins_sold
+         FROM travel_groups g WHERE ${g.sql} AND g.status = 'open'
+          AND g.option_date BETWEEN ? AND ?`
+    ).bind(...g.binds, from, to).all().catch(() => ({ results: [] })),
+  ]);
+
+  const out = [];
+  for (const r of departs.results || []) {
+    out.push({ date: r.on_date, kind: 'depart', title: r.client_name,
+               detail: `Departs${r.supplier ? ' · ' + r.supplier : ''}`, href: '/app/reservations?focus=' + r.id });
+  }
+  for (const r of returns.results || []) {
+    out.push({ date: r.on_date, kind: 'return', title: r.client_name,
+               detail: `Returns${r.supplier ? ' · ' + r.supplier : ''}`, href: '/app/reservations?focus=' + r.id });
+  }
+  for (const r of payments.results || []) {
+    out.push({ date: r.on_date, kind: r.payment_class === 'hard' ? 'hard' : 'soft',
+               title: r.client_name, amountCents: r.amount_cents,
+               detail: r.payment_class === 'hard' ? `${r.kind} due to vendor` : `chase ${r.kind}`,
+               href: '/app/payments' });
+  }
+  for (const r of tasks.results || []) {
+    out.push({ date: r.on_date, kind: 'task', title: r.title,
+               detail: r.priority === 'high' ? 'high priority' : 'task', href: '/app/tasks' });
+  }
+  for (const r of options.results || []) {
+    const left = Math.max(0, (r.cabins_held || 0) - (r.cabins_sold || 0));
+    out.push({ date: r.on_date, kind: 'option', title: r.name,
+               detail: `${left} unsold cabin${left === 1 ? '' : 's'} released`, href: '/app/groups' });
+  }
+
+  out.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+  return out;
+}
+
 export async function logActivity(env, userId, kind, subject, meta = null) {
   try {
     await env.DB.prepare(

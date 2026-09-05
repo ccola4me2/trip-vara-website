@@ -64,7 +64,7 @@ import {
   handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
   handleCreateSocialPost, handleCreateProduct, handleCreateAccountItem,
 } from './library.js';
-import { handleDashboard, handleProduction } from './reports.js';
+import { handleDashboard, handleProduction, handleMonth } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth, handleTestEmail,
   handleSyncStatus, handleRunSync,
@@ -331,6 +331,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/prefs/dashboard' && method === 'PUT') return handleSaveLayout(request, env);
   if (path === '/api/prefs/dashboard' && method === 'DELETE') return handleResetLayout(request, env);
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);
+  if (path === '/api/month' && method === 'GET') return handleMonth(request, env);
   if (path === '/api/reports/production' && method === 'GET') return handleProduction(request, env);
 
   // ---- admin ------------------------------------------------------------
