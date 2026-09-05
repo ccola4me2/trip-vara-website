@@ -121,10 +121,28 @@ for (const file of files) {
     // Named directly, or through one of the helpers that writes the predicate.
     // `${scoped.sql}` is the usual shape; the calendar builds several at once
     // and names them b, t and g, so any `${x.sql}` counts.
-    const scoped = /\buser_id\b/.test(sql)
-      || /\$\{[^}]*[Ss]cope[^}]*\}/.test(sql)
+    const viaHelper = /\$\{[^}]*[Ss]cope[^}]*\}/.test(sql)
       || /\$\{[A-Za-z_$][\w$]*\.sql\}/.test(sql);
-    if (scoped) continue;
+    const namesUser = /\buser_id\b/.test(sql);
+
+    // The other half of the rule, and the half that is a privilege bug rather
+    // than a privacy one. A read may widen to the whole agency when an owner
+    // asks; a write may not, ever. An owner may see an associate's
+    // reservation and may not change it, and the two would quietly become one
+    // permission the moment a write borrowed the reading scope. Every write in
+    // this codebase names user_id outright, and this keeps it that way.
+    if (/^\s*(INSERT|UPDATE|DELETE)/i.test(sql)) {
+      if (namesUser && !viaHelper) continue;
+      const excused = ALLOWED.find(([fragment]) => sql.includes(fragment));
+      if (excused) continue;
+      problems += 1;
+      console.log(`FAIL  src/${file}:${line}  writes to ${tables.join(', ')} ${
+        viaHelper ? 'through a scope helper, which can widen past the caller' : 'without naming user_id'}`);
+      console.log(`        ${sql.replace(/\s+/g, ' ').trim().slice(0, 140)}`);
+      continue;
+    }
+
+    if (namesUser || viaHelper) continue;
 
     const excuse = ALLOWED.find(([fragment]) => sql.includes(fragment));
     if (excuse) continue;
