@@ -105,6 +105,7 @@ const NAV = [
     hub: 'Reservation', icon: I.ship, items: [
       { href: '/app/reservations', label: 'Reservations' },
       { href: '/app/groups', label: 'Group space' },
+      { href: '/app/import', label: 'Import' },
       { href: '/app/payments', label: 'Payments Due' },
       { href: '/app/commissions', label: 'Commission owed' },
       { href: '/app/billing', label: 'Invoices' },

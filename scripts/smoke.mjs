@@ -599,6 +599,66 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // ----------------------------------------------------------- importing ----
+  step('Bringing an existing book across');
+
+  const pasted = [
+    'CLIENT\tBOOKING AGENT\tVENDOR\tDEPARTURE DATE\tCONFIRMATION',
+    `Montoro, Manuel\tB Beasley\tMargaritaville at Sea (Margaritaville at Sea Beachcomber)\t3/11/27\tIMP1-${stamp}`,
+    `Gallo, James\tB Beasley\tCelebrity Cruises - Ocean (Celebrity Ascent)\t9/17/27\tIMP2-${stamp}`,
+    `\tB Beasley\tNobody Cruises\t1/1/27\tIMP3-${stamp}`,
+    `Bearse, Charlotte\tB Beasley\tVirgin Voyages\tnot a date\tIMP4-${stamp}`,
+  ].join('\n');
+
+  const pv = await call(advisor, 'POST', '/api/import/preview', { text: pasted });
+  check(pv.status === 200 && pv.data?.skippedHeader === true,
+    'a heading row is recognised and not imported as data', pv.data?.skippedHeader);
+  check(pv.data?.columns?.[1] === '',
+    'a column that means nothing here is ignored rather than guessed at',
+    JSON.stringify(pv.data?.columns));
+
+  const first = pv.data.rows[0];
+  check(first.clientName === 'Manuel Montoro',
+    'surname first is turned around, since every screen afterwards reads it', first.clientName);
+  check(first.supplier === 'Margaritaville at Sea' && first.productName === 'Beachcomber',
+    'the vendor and the ship are separated, and the vendor is not repeated',
+    `${first.supplier} / ${first.productName}`);
+  check(first.departDate === '2027-03-11',
+    'a two digit year is read as this century, not the last', first.departDate);
+
+  check(pv.data.rows[2].problems.length === 1,
+    'a row with no client is flagged rather than dropped in silence',
+    JSON.stringify(pv.data.rows[2].problems));
+  check(/could not read the date/.test(pv.data.rows[3].problems[0] || ''),
+    'and so is a date nobody can parse', pv.data.rows[3].problems[0]);
+  check(pv.data.summary.ready === 2 && pv.data.summary.problems === 2,
+    'the preview counts what will actually happen', JSON.stringify(pv.data.summary));
+
+  const ran = await call(advisor, 'POST', '/api/import/reservations', { text: pasted });
+  check(ran.data?.created === 2 && ran.data?.skipped === 2,
+    'the import creates the sound rows and skips the rest', JSON.stringify(ran.data));
+
+  const imported = await call(advisor, 'GET', `/api/bookings?q=IMP1-${stamp}`);
+  const madeIt = (imported.data?.bookings || [])[0];
+  check(madeIt && madeIt.client_name === 'Manuel Montoro', 'and they are real reservations');
+  for (const b of imported.data?.bookings || []) {
+    cleanup('an imported reservation', () => call(advisor, 'DELETE', `/api/bookings/${b.id}`));
+  }
+  const alsoImported = await call(advisor, 'GET', `/api/bookings?q=IMP2-${stamp}`);
+  for (const b of alsoImported.data?.bookings || []) {
+    cleanup('an imported reservation', () => call(advisor, 'DELETE', `/api/bookings/${b.id}`));
+  }
+
+  // Pasting the same list twice is the single likeliest mistake, since the
+  // source is paged and it is easy to lose your place.
+  const twice = await call(advisor, 'POST', '/api/import/reservations', { text: pasted });
+  check(twice.data?.created === 0 && twice.data?.skipped === 4,
+    'running the same paste again imports nothing', JSON.stringify(twice.data));
+
+  const clientMade = await call(advisor, 'GET', '/api/clients?q=Manuel%20Montoro');
+  check((clientMade.data?.clients || []).some((c) => c.name === 'Manuel Montoro'),
+    'and importing creates the client records too');
+
   // ---------------------------------------------------- the client record ---
   step('One client on one screen');
 

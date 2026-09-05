@@ -59,6 +59,7 @@ import {
 import { handleGetGoals, handleSaveGoals } from './goals.js';
 import { handleListCommissions, handleSetCommissionStatus } from './commissions.js';
 import { handleClientRecord, handleListClients, handleUpdateClient } from './clients.js';
+import { handlePreviewImport, handleRunImport } from './importer.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
@@ -120,6 +121,7 @@ const PAGE_FILES = {
   '/app/reservation': '/app/reservation.html',
   '/app/client': '/app/client.html',
   '/app/clients': '/app/clients.html',
+  '/app/import': '/app/import.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
   '/app/settings': '/app/settings.html',
@@ -347,6 +349,8 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/goals' && method === 'PUT') return handleSaveGoals(request, env);
   if (path === '/api/client' && method === 'GET') return handleClientRecord(request, env);
   if (path === '/api/clients' && method === 'GET') return handleListClients(request, env);
+  if (path === '/api/import/preview' && method === 'POST') return handlePreviewImport(request, env);
+  if (path === '/api/import/reservations' && method === 'POST') return handleRunImport(request, env);
   if (clientMatch && method === 'PUT') return handleUpdateClient(request, env, clientMatch[1]);
   if (path === '/api/commissions' && method === 'GET') return handleListCommissions(request, env);
   if (path === '/api/commissions/status' && method === 'POST') {

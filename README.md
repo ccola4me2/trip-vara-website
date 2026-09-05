@@ -51,6 +51,7 @@ tracking has value on its own.
 | `/app/reservations` | Advisor | Reservation CRUD, vendor deadlines, commission |
 | `/app/reservation` | Advisor | One trip: schedule, tasks, credits, group |
 | `/app/clients` | Advisor | Everyone who has booked or holds a credit |
+| `/app/import` | Advisor | Paste an existing book of business in |
 | `/app/client` | Advisor | One client: trips, lifetime value, credits |
 | `/app/billing` | Advisor | Invoices, transactions, reconciliation against reservations |
 | `/app/reports` | Advisor | Production by departure month |

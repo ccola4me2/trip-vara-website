@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Import reservations | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Import reservations</h1><p class="sub">Bring an existing book of business across by pasting it.</p></div>
+      <a class="btn btn-ghost btn-sm" href="/app/reservations">All reservations</a>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section class="card">
+        <div class="card-head"><h2>Paste your reservations</h2></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin:0 0 .9rem;">
+            Select the rows in your other system, copy, and paste them below. A heading row is
+            recognised if there is one. Tabs or commas both work, so a spreadsheet, a CSV file or a
+            selection straight off a web page are all fine. Nothing is written until you have seen
+            the preview.
+          </p>
+          <div class="field">
+            <label for="paste">Rows</label>
+            <textarea id="paste" style="min-height:180px;font-family:ui-monospace,Menlo,monospace;font-size:.8rem;"
+              placeholder="Client&#9;Vendor&#9;Departure&#9;Confirmation&#10;Montoro, Manuel&#9;Margaritaville at Sea (Islander)&#9;3/11/27&#9;54455257"></textarea>
+          </div>
+          <div class="toolbar" style="margin:0;">
+            <button class="btn btn-primary btn-sm" id="preview">Preview</button>
+            <button class="btn btn-ghost btn-sm" id="clear">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="mapping-card" style="margin-top:1.5rem;" hidden>
+        <div class="card-head"><h2>What the columns are</h2></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin:0 0 .9rem;">Change any that were read wrongly, then preview again.</p>
+          <div id="mapping" class="field-row" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"></div>
+        </div>
+      </section>
+
+      <section class="card" id="preview-card" style="margin-top:1.5rem;" hidden>
+        <div class="card-head"><h2>Preview</h2><span id="summary" class="muted"></span></div>
+        <div id="rows"></div>
+        <div class="card-foot">
+          <button class="btn btn-primary" id="run">Import</button>
+        </div>
+      </section>
+
+      <section class="card" id="result-card" style="margin-top:1.5rem;" hidden>
+        <div class="card-head"><h2>Done</h2></div>
+        <div class="card-pad" id="result"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, showError } from '/js/app.js';
+await mountShell();
+
+const err = document.getElementById('err');
+const paste = document.getElementById('paste');
+let mapping = null;
+let lastPreview = null;
+
+const LABEL = {
+  clientName: 'Client', supplier: 'Vendor', productName: 'Ship or product',
+  departDate: 'Departing', returnDate: 'Returning', confirmationNumber: 'Confirmation',
+  gross: 'Trip cost', commission: 'Commission', status: 'Status', destination: 'Destination',
+};
+
+function drawMapping(d) {
+  const card = document.getElementById('mapping-card');
+  card.hidden = false;
+  document.getElementById('mapping').innerHTML = d.columns.map((col, i) => `
+    <div class="field" style="margin:0;">
+      <label for="col-${i}">Column ${i + 1}</label>
+      <select id="col-${i}" data-col="${i}">
+        <option value="">Ignore</option>
+        ${d.fields.map((f) => `<option value="${esc(f)}"${f === col ? ' selected' : ''}>${esc(LABEL[f] || f)}</option>`).join('')}
+      </select>
+    </div>`).join('');
+
+  document.querySelectorAll('[data-col]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      mapping = [...document.querySelectorAll('[data-col]')].map((s) => s.value);
+      preview();
+    });
+  });
+}
+
+function drawPreview(d) {
+  lastPreview = d;
+  document.getElementById('preview-card').hidden = false;
+  const s = d.summary;
+  document.getElementById('summary').textContent =
+    `${s.ready} to import · ${s.duplicates} already here · ${s.problems} with a problem`;
+
+  document.getElementById('rows').innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th></th><th>Client</th><th>Vendor</th><th>Ship</th><th>Departing</th>
+      <th>Conf #</th><th class="num">Cost</th></tr></thead>
+    <tbody>${d.rows.map((r) => {
+      const tone = r.problems.length ? 'badge-red' : r.duplicate ? 'badge-amber' : 'badge-green';
+      const label = r.problems.length ? r.problems.join(', ') : r.duplicate ? 'already here' : 'new';
+      return `<tr>
+        <td><span class="badge ${tone}">${esc(label)}</span></td>
+        <td><span class="name">${esc(r.clientName || '-')}</span></td>
+        <td>${esc(r.supplier || '-')}</td>
+        <td>${esc(r.productName || '-')}</td>
+        <td>${esc(r.departDate || '-')}</td>
+        <td>${esc(r.confirmationNumber || '-')}</td>
+        <td class="num">${r.gross ? esc(money(Math.round(Number(r.gross) * 100))) : '-'}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+
+  document.getElementById('run').disabled = s.ready === 0;
+}
+
+async function preview() {
+  if (!paste.value.trim()) { err.innerHTML = '<div class="notice notice-info">Paste some rows first.</div>'; return; }
+  try {
+    err.innerHTML = '';
+    const d = await api('/api/import/preview', { method: 'POST', body: { text: paste.value, mapping } });
+    drawMapping(d);
+    drawPreview(d);
+  } catch (e) { showError(err, e); }
+}
+
+document.getElementById('preview').addEventListener('click', preview);
+document.getElementById('clear').addEventListener('click', () => {
+  paste.value = '';
+  mapping = null;
+  lastPreview = null;
+  document.getElementById('mapping-card').hidden = true;
+  document.getElementById('preview-card').hidden = true;
+  document.getElementById('result-card').hidden = true;
+});
+
+document.getElementById('run').addEventListener('click', async () => {
+  const btn = document.getElementById('run');
+  btn.disabled = true;
+  try {
+    const d = await api('/api/import/reservations', { method: 'POST', body: { text: paste.value, mapping } });
+    document.getElementById('result-card').hidden = false;
+    document.getElementById('result').innerHTML = `
+      <p><strong>${d.created}</strong> reservation${d.created === 1 ? '' : 's'} imported.
+        ${d.skipped ? `${d.skipped} skipped, being duplicates or rows with a problem.` : ''}</p>
+      ${d.failures.length ? `<ul class="rows">${d.failures.map((f) => `<li>
+        <span class="t">Line ${f.line}: ${esc(f.client || 'unnamed')}</span>
+        <span class="m">${esc(f.error)}</span></li>`).join('')}</ul>` : ''}
+      <a class="btn btn-primary btn-sm" href="/app/reservations" style="margin-top:.9rem;">See them</a>`;
+    document.getElementById('preview-card').hidden = true;
+  } catch (e) { showError(err, e); btn.disabled = false; }
+});
+</script>
+</body></html>
