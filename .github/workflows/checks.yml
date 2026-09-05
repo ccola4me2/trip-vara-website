@@ -1,0 +1,79 @@
+# The checks nobody can run locally.
+#
+# There is no Node on Brent's machine, so the smoke test, the page contracts
+# and the column lists only ever ran when someone was working on the code.
+# This runs all three on every push, against a Worker started from the same
+# wrangler.toml the deployment uses and a D1 built from the migrations in this
+# commit, so a column list that has drifted from the schema fails here rather
+# than showing up as an empty field on a live screen weeks later.
+#
+# Deliberately separate from the deploy. Cloudflare Workers Builds ships main
+# on its own; this reports on the same commit and does not gate it, because a
+# failing check should not be able to leave the site down.
+
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      CI: 'true'
+      # No account is involved: everything below runs against local D1 state.
+      WRANGLER_SEND_METRICS: 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Offline, needs no server, and catches the cheapest class of bug, so it
+      # goes first and fails fast.
+      - name: Column lists against the schema
+        run: npm run check:columns
+
+      - name: Build the database from the migrations
+        run: npx wrangler d1 migrations apply trip-vara --local
+
+      # Seeded before the Worker starts, so nothing is holding the SQLite file
+      # open while wrangler writes to it.
+      - name: Seed the test admin
+        run: |
+          node scripts/seed-admin.mjs > /tmp/seed.sql
+          npx wrangler d1 execute trip-vara --local --file /tmp/seed.sql
+
+      - name: Start the Worker
+        run: |
+          nohup npx wrangler dev --port 8787 --ip 127.0.0.1 > /tmp/dev.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -sf -o /dev/null http://127.0.0.1:8787/login; then
+              echo "up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the Worker never answered on 8787"
+          cat /tmp/dev.log
+          exit 1
+
+      - name: Page contracts
+        run: npm run check:contracts
+
+      - name: Smoke test
+        run: npm run check:smoke
+
+      # The Worker's own output, which is where the cause usually is when one
+      # of the three fails for a reason the assertion cannot see.
+      - name: Worker log
+        if: failure()
+        run: cat /tmp/dev.log
