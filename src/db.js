@@ -490,6 +490,29 @@ export async function getBookingInScope(env, id, scope) {
   ).bind(id, ...scoped.binds).first();
 }
 
+/**
+ * Booked value split by what was sold, and by whom it was sold through.
+ *
+ * Two questions an owner actually asks: what mix are we selling, and which
+ * vendors are we sending business to. Both are one grouped query, so they are
+ * one function with the grouping column chosen rather than two near copies.
+ */
+export async function productionBreakdown(env, scope, sinceDate, by = 'type') {
+  const column = by === 'vendor' ? "COALESCE(NULLIF(supplier, ''), 'Unrecorded')" : 'product_type';
+  const scoped = scopeWhere(scope);
+  const { results } = await env.DB.prepare(
+    `SELECT ${column} AS label,
+            COUNT(*) AS bookings,
+            SUM(gross_cents) AS gross_cents,
+            SUM(commission_cents) AS commission_cents
+       FROM bookings
+      WHERE ${scoped.sql} AND depart_date IS NOT NULL AND depart_date >= ?
+        AND status IN ('booked','travelled')
+      GROUP BY label ORDER BY gross_cents DESC LIMIT 20`
+  ).bind(...scoped.binds, sinceDate).all();
+  return results || [];
+}
+
 export async function logActivity(env, userId, kind, subject, meta = null) {
   try {
     await env.DB.prepare(
@@ -617,6 +640,36 @@ export async function localOpportunitiesForContact(env, contactId) {
     id: r.id, name: r.name || 'Untitled opportunity', status: r.status || '',
     monetaryValue: Number(r.monetary_value || 0), contactId: r.contact_id,
   }));
+}
+
+/**
+ * How opportunities finished, for a closing rate.
+ *
+ * The rate counts won against won plus lost. Abandoned deals are reported but
+ * kept out of the denominator: a lead that went quiet was never a decision,
+ * and folding it in makes an advisor who chases plenty of cold leads look
+ * worse than one who chases none.
+ */
+export async function localOpportunityOutcomes(env, locationId, sinceIso) {
+  const { results } = await env.DB.prepare(
+    `SELECT status, COUNT(*) AS n, COALESCE(SUM(monetary_value), 0) AS value
+       FROM crm_opportunities
+      WHERE location_id = ? AND status IS NOT NULL AND status != 'open'
+        AND COALESCE(updated_at, created_at, '') >= ?
+      GROUP BY status`
+  ).bind(locationId, sinceIso).all().catch(() => ({ results: [] }));
+
+  const by = Object.fromEntries((results || []).map((r) => [r.status, r]));
+  const won = by.won?.n || 0;
+  const lost = by.lost?.n || 0;
+  const decided = won + lost;
+  return {
+    won,
+    lost,
+    abandoned: by.abandoned?.n || 0,
+    wonValue: by.won?.value || 0,
+    closingRate: decided > 0 ? Math.round((won / decided) * 1000) / 10 : null,
+  };
 }
 
 export async function crmCounts(env, locationId) {

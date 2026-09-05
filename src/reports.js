@@ -68,9 +68,15 @@ export async function handleDashboard(request, env) {
           openCount: opps.length,
           openValue: opps.reduce((n, o) => n + o.monetaryValue, 0),
           stages: byStage,
+          closed: await db.localOpportunityOutcomes(
+            env, locationId, new Date(Date.now() - 365 * 86400000).toISOString()),
         };
       } else {
-        pipeline = { name: null, openCount: 0, openValue: 0, stages: [] };
+        pipeline = {
+          name: null, openCount: 0, openValue: 0, stages: [],
+          closed: await db.localOpportunityOutcomes(
+            env, locationId, new Date(Date.now() - 365 * 86400000).toISOString()),
+        };
       }
     } catch (e) {
       ghlStatus = 'error';
@@ -95,6 +101,10 @@ export async function handleDashboard(request, env) {
     panels: PANELS,
     notices: await noticesFor(env, user, scope),
     trend: await db.productionByMonth(env, scope, isoDay(-365)),
+    // The next twelve months, not the last: what you are selling is a
+    // forward looking question, and departures are in the future.
+    byType: await db.productionBreakdown(env, scope, isoDay(0), 'type'),
+    byVendor: await db.productionBreakdown(env, scope, isoDay(0), 'vendor'),
     tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
     groups: await listGroups(env, scope, { status: 'open', limit: 12 }).catch(() => []),
   });

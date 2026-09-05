@@ -196,6 +196,21 @@ const PANELS = {
   ], 'upcoming'),
 
   deals: () => widget('Deals in play', { href: '/app/pipeline', label: 'Pipeline' }, [
+    { key: 'closed', label: 'Closed', render: () => {
+      const c = d.pipeline && d.pipeline.closed;
+      if (!c) return '<p class="wempty">Pipeline unavailable.</p>';
+      if (!c.won && !c.lost && !c.abandoned) return '<p class="wempty">Nothing closed in the last year.</p>';
+      return `<div style="padding:.9rem 1rem;">
+        <p style="font-size:.82rem;margin:0 0 .7rem;">Closing rate
+          <strong style="font-size:1.4rem;">${c.closingRate === null ? '-' : c.closingRate + '%'}</strong>
+          <span class="muted">won against won plus lost, last 12 months</span></p>
+        <div class="stage-row"><span style="min-width:6rem;">Won</span>
+          <span class="n">${c.won} &middot; ${esc(money(c.wonValue * 100))}</span></div>
+        <div class="stage-row"><span style="min-width:6rem;">Lost</span><span class="n">${c.lost}</span></div>
+        <div class="stage-row"><span style="min-width:6rem;">Went quiet</span>
+          <span class="n">${c.abandoned}<span class="muted"> (not counted in the rate)</span></span></div>
+      </div>`;
+    } },
     { key: 'active', label: 'Open', render: () => {
       if (!d.pipeline) return '<p class="wempty">Pipeline unavailable.</p>';
       if (!d.pipeline.openCount) return '<p class="wempty">No open opportunities.</p>';
@@ -210,8 +225,9 @@ const PANELS = {
   ], 'active'),
 
   trend: () => widget('Production trend', { href: '/app/reports', label: 'Full report' }, [
-    { key: 'gross', label: 'Booked value', render: () => trendBars('gross_cents') },
-    { key: 'commission', label: 'Commission', render: () => trendBars('commission_cents') },
+    { key: 'gross', label: 'By month', render: () => trendBars('gross_cents') },
+    { key: 'type', label: 'By type', render: () => breakdown(d.byType, TYPE_LABEL) },
+    { key: 'vendor', label: 'By vendor', render: () => breakdown(d.byVendor) },
   ], 'gross'),
 
   links: () => widget('Quick links', null, [
@@ -257,6 +273,25 @@ function taskRows(list) {
         </span>
       </label></li>`;
   }).join('')}</ul>`;
+}
+
+const TYPE_LABEL = {
+  cruise: 'Cruise', hotel: 'Hotel', resort: 'Resort', package: 'Package', tour: 'Tour',
+  air: 'Air', rail: 'Rail', car: 'Car hire', transfer: 'Transfer', excursion: 'Excursion',
+  attraction: 'Attraction', event_ticket: 'Event ticket', insurance: 'Travel insurance',
+  parking: 'Parking', visa_passport: 'Visa or passport', other: 'Other',
+};
+
+/** A ranked bar list. Reads better than a pie for fifteen categories. */
+function breakdown(rows, labels) {
+  if (!rows || !rows.length) return '<p class="wempty">Nothing booked ahead yet.</p>';
+  const top = Math.max(...rows.map((r) => r.gross_cents || 0), 1);
+  return `<div style="padding:.4rem 0 .6rem;">${rows.map((r) => `
+    <div class="stage-row">
+      <span style="min-width:8.5rem;">${esc((labels && labels[r.label]) || r.label)}</span>
+      <span class="bar"><span style="width:${Math.round(((r.gross_cents || 0) / top) * 100)}%"></span></span>
+      <span class="n">${esc(money(r.gross_cents))}</span>
+    </div>`).join('')}</div>`;
 }
 
 function trendBars(field) {
