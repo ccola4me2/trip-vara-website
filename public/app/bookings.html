@@ -141,8 +141,9 @@ function render(bookings, stats) {
     <thead><tr><th>Client</th><th>Trip</th><th>Dates</th><th>Final payment</th>
       <th class="num">Gross</th><th class="num">Commission</th><th></th></tr></thead>
     <tbody>${bookings.map((b) => {
+      // The final payment is a cancellation deadline, not an invoice date.
       const left = daysUntil(b.final_payment_due);
-      const tone = left === null ? '' : left < 0 ? 'badge-red' : left <= 21 ? 'badge-amber' : 'badge-navy';
+      const tone = left === null ? '' : left < 0 ? 'badge-red' : left <= 14 ? 'badge-red' : left <= 30 ? 'badge-amber' : 'badge-navy';
       return `<tr>
         <td><span class="name">${esc(b.client_name)}</span>
           <div><span class="badge ${STATUS_TONE[b.status] || 'badge-navy'}">${esc(b.status)}</span></div></td>
@@ -152,7 +153,7 @@ function render(bookings, stats) {
           <div class="muted">${b.return_date ? 'to ' + esc(dateFmt(b.return_date)) : ''}</div></td>
         <td>${b.final_payment_due
             ? `${esc(dateFmt(b.final_payment_due))}<div><span class="badge ${tone}">${
-                left < 0 ? `${Math.abs(left)}d overdue` : `in ${left}d`}</span></div>`
+                left < 0 ? 'past due, may be cancelled' : left === 0 ? 'cancels today' : `cancels in ${left}d`}</span></div>`
             : '<span class="muted">-</span>'}</td>
         <td class="num">${money(b.gross_cents)}</td>
         <td class="num">${money(b.commission_cents)}
