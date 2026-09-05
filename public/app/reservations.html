@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bookings | Trip Vara Portal</title>
+<title>Reservations | Trip Vara Portal</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/app.css">
@@ -13,13 +13,13 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Bookings</h1><p class="sub">Trips, payment deadlines and commission.</p></div>
-      <button class="btn btn-primary btn-sm" id="add">Add a booking</button>
+      <div><h1>Reservations</h1><p class="sub">Trips, vendor deadlines and commission.</p></div>
+      <button class="btn btn-primary btn-sm" id="add">Add a reservation</button>
     </header>
     <div class="content">
       <section id="stats" class="stat-grid"></section>
       <div class="toolbar">
-        <input id="search" type="search" placeholder="Client, supplier, confirmation" style="min-width:250px;">
+        <input id="search" type="search" placeholder="Client, vendor, conf #" style="min-width:250px;">
         <select id="status-filter" aria-label="Status">
           <option value="">All statuses</option>
           <option value="quoted">Quoted</option>
@@ -28,14 +28,14 @@
           <option value="cancelled">Cancelled</option>
         </select>
       </div>
-      <section class="card" id="panel"><p class="spinner">Loading bookings...</p></section>
+      <section class="card" id="panel"><p class="spinner">Loading reservations...</p></section>
     </div>
   </div>
 </div>
 
 <dialog id="dlg">
   <form id="booking-form" method="dialog">
-    <div class="card-head"><h2 id="dlg-title">Add a booking</h2>
+    <div class="card-head"><h2 id="dlg-title">Add a reservation</h2>
       <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
     <div class="dialog-body">
       <div class="notice notice-error" hidden></div>
@@ -55,7 +55,7 @@
           </select></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="supplier">Supplier</label>
+        <div class="field"><label for="supplier">Vendor</label>
           <input id="supplier" name="supplier" placeholder="Margaritaville at Sea"></div>
         <div class="field"><label for="productName">Ship or property</label>
           <input id="productName" name="productName"></div>
@@ -81,9 +81,9 @@
           <input id="commission" name="commission" inputmode="decimal" placeholder="0.00"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="deposit">Deposit due to supplier (USD)</label>
+        <div class="field"><label for="deposit">Deposit due to vendor (USD)</label>
           <input id="deposit" name="deposit" inputmode="decimal" placeholder="0.00">
-          <p class="field-hint">What the client pays the supplier to hold the trip.</p></div>
+          <p class="field-hint">What the client pays the vendor to hold the trip.</p></div>
         <div class="field"><label>&nbsp;</label><span class="field-hint">The final balance is the trip cost less this deposit.</span></div>
       </div>
       <div class="field-row">
@@ -101,7 +101,7 @@
       <button class="btn btn-danger" type="button" id="delete" hidden>Delete</button>
       <span style="flex:1;"></span>
       <button class="btn btn-ghost" type="button" data-close>Cancel</button>
-      <button class="btn btn-primary" type="submit">Save booking</button>
+      <button class="btn btn-primary" type="submit">Save reservation</button>
     </div>
   </form>
 </dialog>
@@ -125,7 +125,7 @@ const STATUS_TONE = { booked: 'badge-green', quoted: 'badge-amber', travelled: '
 function render(bookings, stats) {
   cache = bookings;
   statsEl.innerHTML = `
-    <div class="stat"><p class="label">Bookings</p><p class="value">${stats.total}</p>
+    <div class="stat"><p class="label">Reservations</p><p class="value">${stats.total}</p>
       <p class="meta">${stats.booked} booked, ${stats.quoted} quoted</p></div>
     <div class="stat"><p class="label">Volume</p><p class="value">${money(stats.grossCents)}</p>
       <p class="meta">Booked and travelled</p></div>
@@ -133,13 +133,13 @@ function render(bookings, stats) {
       <p class="meta">${money(stats.commissionPaidCents)} received</p></div>`;
 
   if (!bookings.length) {
-    panel.innerHTML = '<div class="empty"><h3>No bookings yet</h3><p>Add one to start tracking payment dates and commission.</p></div>';
+    panel.innerHTML = '<div class="empty"><h3>No reservations yet</h3><p>Add one to start tracking payment dates and commission.</p></div>';
     return;
   }
 
   panel.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Client</th><th>Trip</th><th>Dates</th><th>Final payment</th>
-      <th class="num">Gross</th><th class="num">Commission</th><th></th></tr></thead>
+    <thead><tr><th>Client</th><th>Vendor</th><th>Conf #</th><th>Trip</th><th>Departing</th>
+      <th>Final payment</th><th class="num">Gross</th><th class="num">Commission</th><th></th></tr></thead>
     <tbody>${bookings.map((b) => {
       // The final payment is a cancellation deadline, not an invoice date.
       const left = daysUntil(b.final_payment_due);
@@ -147,10 +147,12 @@ function render(bookings, stats) {
       return `<tr>
         <td><span class="name">${esc(b.client_name)}</span>
           <div><span class="badge ${STATUS_TONE[b.status] || 'badge-navy'}">${esc(b.status)}</span></div></td>
-        <td>${esc(b.product_name || b.supplier || '-')}
-          <div class="muted">${esc([b.supplier && b.product_name ? b.supplier : '', b.destination].filter(Boolean).join(' &middot; '))}</div></td>
+        <td>${b.supplier ? esc(b.supplier) : '<span class="muted">-</span>'}</td>
+        <td>${b.confirmation_number ? esc(b.confirmation_number) : '<span class="muted">-</span>'}</td>
+        <td>${esc(b.product_name || '-')}
+          <div class="muted">${esc(b.destination || '')}</div></td>
         <td>${b.depart_date ? esc(dateFmt(b.depart_date)) : '<span class="muted">-</span>'}
-          <div class="muted">${b.return_date ? 'to ' + esc(dateFmt(b.return_date)) : ''}</div></td>
+          <div class="muted">${b.return_date ? 'back ' + esc(dateFmt(b.return_date)) : ''}</div></td>
         <td>${b.final_payment_due
             ? `${esc(dateFmt(b.final_payment_due))}<div><span class="badge ${tone}">${
                 left < 0 ? 'past due, may be cancelled' : left === 0 ? 'cancels today' : `cancels in ${left}d`}</span></div>`
@@ -170,7 +172,7 @@ function render(bookings, stats) {
 function openCreate() {
   editingId = null;
   form.reset();
-  document.getElementById('dlg-title').textContent = 'Add a booking';
+  document.getElementById('dlg-title').textContent = 'Add a reservation';
   deleteBtn.hidden = true;
   form.querySelector('.notice-error').hidden = true;
   dlg.showModal();
@@ -180,7 +182,7 @@ function openEdit(id) {
   const b = cache.find((x) => x.id === id);
   if (!b) return;
   editingId = id;
-  document.getElementById('dlg-title').textContent = 'Edit booking';
+  document.getElementById('dlg-title').textContent = 'Edit reservation';
   deleteBtn.hidden = false;
   form.querySelector('.notice-error').hidden = true;
   const set = (name, value) => { const el = form.elements[name]; if (el) el.value = value ?? ''; };
@@ -198,7 +200,7 @@ function openEdit(id) {
 }
 
 async function load() {
-  panel.innerHTML = '<p class="spinner">Loading bookings...</p>';
+  panel.innerHTML = '<p class="spinner">Loading reservations...</p>';
   try {
     const params = new URLSearchParams();
     if (search.value.trim()) params.set('q', search.value.trim());
@@ -219,7 +221,7 @@ statusFilter.addEventListener('change', load);
 
 deleteBtn.addEventListener('click', async () => {
   if (!editingId) return;
-  if (!confirm('Delete this booking? This cannot be undone.')) return;
+  if (!confirm('Delete this reservation? This cannot be undone.')) return;
   await api(`/api/bookings/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
   dlg.close();
   await load();

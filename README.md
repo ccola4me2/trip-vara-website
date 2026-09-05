@@ -38,13 +38,13 @@ tracking has value on its own.
 | `/forgot-password`, `/reset-password` | Public | Password reset |
 | `/pending` | Public | Shown while an account awaits approval |
 | `/app/` | Advisor | Dashboard: numbers, payments due, activity |
-| `/app/inbox` | Advisor | SMS and email threads, with a composer |
-| `/app/leads` | Advisor | Contacts from GHL, add a lead |
+| `/app/inbox` | Advisor | Messages: SMS and email threads, with a composer |
+| `/app/leads` | Advisor | Clients: everyone in the book of business |
 | `/app/contact` | Advisor | One contact: details, notes, tasks, deals |
-| `/app/pipeline` | Advisor | Opportunity board, drag between stages, create deals |
+| `/app/pipeline` | Advisor | Sales opportunities: board, drag between stages, create deals |
 | `/app/calendar` | Advisor | Upcoming appointments, book new ones |
-| `/app/bookings` | Advisor | Booking CRUD, deadlines, commission |
-| `/app/billing` | Advisor | Invoices, transactions, reconciliation |
+| `/app/reservations` | Advisor | Reservation CRUD, vendor deadlines, commission |
+| `/app/billing` | Advisor | Invoices, transactions, reconciliation against reservations |
 | `/app/reports` | Advisor | Production by departure month |
 | `/app/settings` | Advisor | Profile, password, CRM binding |
 | `/admin/` | Admin | Approve, suspend and bind advisors |

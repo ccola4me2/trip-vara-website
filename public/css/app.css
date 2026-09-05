@@ -68,14 +68,24 @@ a:hover { color: var(--coral-500); }
 }
 
 /* ---------------------------------------------------------------- brand -- */
-.wordmark { display: flex; align-items: center; gap: .6rem; text-decoration: none; }
-.wordmark img { width: 30px; height: 30px; display: block; }
+.wordmark { display: flex; align-items: center; gap: .65rem; text-decoration: none; }
+.wordmark img { width: 32px; height: 32px; display: block; }
 .wordmark b {
   font-weight: 650; font-size: .92rem; letter-spacing: .26em;
   text-transform: uppercase; color: var(--navy-800);
 }
-.wordmark.on-dark b { color: #fff; }
 .wordmark small { display: block; font-size: .58rem; letter-spacing: .06em; color: var(--coral-400); }
+
+/* The mark is drawn in navy, so on the navy sidebar it needs a light plate
+   behind it or it simply disappears. */
+.wordmark.on-dark b { color: #fff; font-size: 1rem; }
+.wordmark.on-dark small { color: var(--coral-200); font-size: .62rem; }
+.wordmark.on-dark img {
+  width: 34px; height: 34px; padding: 5px; box-sizing: content-box;
+  background: #fff; border-radius: 11px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.5), 0 6px 16px rgba(0,0,0,.35);
+}
+.wordmark.on-dark:hover img { box-shadow: 0 0 0 2px var(--coral-400), 0 6px 16px rgba(0,0,0,.35); }
 
 /* ------------------------------------------------------------- controls -- */
 .btn {
@@ -364,13 +374,29 @@ tbody tr[data-href] { cursor: pointer; }
 .event .what { flex: 1; min-width: 0; }
 .event .what .title { font-weight: 600; color: var(--navy-800); }
 
-/* Grouped sidebar navigation */
-.nav-group {
-  padding: 1rem .7rem .3rem;
-  font-size: .62rem; font-weight: 700; letter-spacing: .16em;
-  text-transform: uppercase; color: rgba(255,255,255,.38);
+/* Hub sidebar navigation: an area of the business, then the screens in it. */
+.nav-hub { display: flex; flex-direction: column; }
+.hub-toggle {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  background: none; border: 0; cursor: pointer; font: inherit;
+  padding: .55rem .7rem; border-radius: 9px;
+  color: var(--navy-200); font-size: .875rem; font-weight: 550; text-align: left;
 }
-.nav-group:first-child { padding-top: .2rem; }
+.hub-toggle:hover { background: rgba(255,255,255,.07); color: #fff; }
+.hub-toggle span { flex: 1; }
+.hub-toggle svg { width: 17px; height: 17px; flex: none; }
+.hub-toggle svg:last-child { width: 14px; height: 14px; opacity: .55; transition: transform .15s; }
+.nav-hub.open > .hub-toggle { color: #fff; }
+.nav-hub.open > .hub-toggle svg:last-child { transform: rotate(180deg); }
+
+.hub-items { display: none; flex-direction: column; gap: .1rem; padding: .15rem 0 .35rem; }
+.nav-hub.open .hub-items { display: flex; }
+.sidebar nav .hub-items a {
+  padding: .42rem .7rem .42rem 2.05rem;
+  font-size: .83rem; font-weight: 500; color: var(--navy-300);
+}
+.sidebar nav .hub-items a:hover { color: #fff; }
+.sidebar nav .hub-items a[aria-current="page"] { background: var(--coral-400); color: #fff; font-weight: 600; }
 
 /* Tabs */
 .tabs { display: flex; gap: .3rem; flex-wrap: wrap; border-bottom: 1px solid var(--navy-100); margin-bottom: 1.3rem; }

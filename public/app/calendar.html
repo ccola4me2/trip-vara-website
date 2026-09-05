@@ -161,7 +161,7 @@ contactSearch.addEventListener('input', () => {
       picker.hidden = false;
       picker.querySelectorAll('[data-cid]').forEach((b) => b.addEventListener('click', () => {
         document.getElementById('contactId').value = b.dataset.cid;
-        document.getElementById('picked').textContent = `Booking for ${b.dataset.cname}`;
+        document.getElementById('picked').textContent = `Appointment for ${b.dataset.cname}`;
         contactSearch.value = b.dataset.cname;
         picker.hidden = true;
       }));

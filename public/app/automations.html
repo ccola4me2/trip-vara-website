@@ -42,7 +42,7 @@
         <select id="triggerType" name="triggerType">
           <option value="form.submitted">Someone submits a form</option>
           <option value="contact.created">A new contact is added</option>
-          <option value="booking.created">A booking is created</option>
+          <option value="booking.created">A reservation is created</option>
           <option value="booking.final_payment_due">A final payment falls due</option>
         </select></div>
       <div class="field" id="form-filter-field" hidden>
@@ -93,7 +93,7 @@ let cache = [];
 const TRIGGER_LABEL = {
   'form.submitted': 'Form submitted',
   'contact.created': 'Contact added',
-  'booking.created': 'Booking created',
+  'booking.created': 'Reservation created',
   'booking.final_payment_due': 'Final payment due',
 };
 const STATUS_TONE = { done: 'badge-green', waiting: 'badge-amber', pending: 'badge-navy', failed: 'badge-red', cancelled: 'badge-navy' };

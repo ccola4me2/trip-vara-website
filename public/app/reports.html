@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reports | Trip Vara Portal</title>
+<title>Production | Trip Vara Portal</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/app.css">
@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Reports</h1><p class="sub">Production by departure month.</p></div>
+      <div><h1>Production</h1><p class="sub">Volume and commission by departure month.</p></div>
       <select id="range" aria-label="Range" style="width:auto;">
         <option value="12">Last 12 months</option>
         <option value="24">Last 24 months</option>
@@ -61,7 +61,7 @@ function render(data) {
     <div class="stat"><p class="label">Trips booked</p><p class="value">${money(s.grossCents)}</p>
       <p class="meta">Value of travel sold, not your revenue</p></div>
     <div class="stat"><p class="label">Your earnings</p><p class="value">${money(s.commissionCents)}</p>
-      <p class="meta">${money(s.commissionPaidCents)} paid to you by suppliers</p></div>
+      <p class="meta">${money(s.commissionPaidCents)} paid to you by vendors</p></div>
     <div class="stat"><p class="label">Effective rate</p><p class="value">${rate.toFixed(1)}%</p>
       <p class="meta">Commission as a share of trips booked</p></div>
     <div class="stat"><p class="label">Outstanding</p>
@@ -72,7 +72,7 @@ function render(data) {
       <p class="meta">Of payments already due, how much was posted in time</p></div>
     <div class="stat"><p class="label">Past due date</p>
       <p class="value" style="${pay.pastDueCents ? 'color:var(--red-600);' : ''}">${money(pay.pastDueCents || 0)}</p>
-      <p class="meta">${pay.pastDueCount || 0} booking${pay.pastDueCount === 1 ? '' : 's'} to confirm with the supplier</p></div>`;
+      <p class="meta">${pay.pastDueCount || 0} reservation${pay.pastDueCount === 1 ? '' : 's'} to confirm with the vendor</p></div>`;
 
   const cf = data.cashflow || [];
   document.getElementById('cashflow').innerHTML = cf.length
@@ -85,10 +85,10 @@ function render(data) {
           <td class="num">${money(m.posted_cents)}</td>
           <td class="num" style="${m.outstanding_cents ? 'color:var(--amber-600);' : ''}">${money(m.outstanding_cents)}</td>
         </tr>`).join('')}</tbody></table></div>`
-    : '<div class="empty"><p>No scheduled client payments yet. Build a schedule on a booking to see this.</p></div>';
+    : '<div class="empty"><p>No scheduled client payments yet. Build a schedule on a reservation to see this.</p></div>';
 
   if (!data.byMonth.length) {
-    chart.innerHTML = '<div class="empty"><h3>Nothing to chart yet</h3><p>Bookings with a departure date and a booked status show up here.</p></div>';
+    chart.innerHTML = '<div class="empty"><h3>Nothing to chart yet</h3><p>Reservations with a departure date and a booked status show up here.</p></div>';
     table.innerHTML = '';
     return;
   }
@@ -107,7 +107,7 @@ function render(data) {
   </div>`;
 
   table.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Month</th><th class="num">Bookings</th><th class="num">Volume</th>
+    <thead><tr><th>Month</th><th class="num">Reservations</th><th class="num">Volume</th>
       <th class="num">Commission</th></tr></thead>
     <tbody>${data.byMonth.map((m) => `<tr>
       <td><span class="name">${esc(monthLabel(m.month))}</span></td>

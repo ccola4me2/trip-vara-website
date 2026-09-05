@@ -20,7 +20,7 @@
       </div>
       <div class="toolbar" style="margin:0;">
         <a class="btn btn-ghost btn-sm" id="ghl-link" target="_blank" rel="noopener" hidden>Open in Trip Vara Tools</a>
-        <a class="btn btn-primary btn-sm" id="new-booking" href="/app/bookings?new=1">Add a booking</a>
+        <a class="btn btn-primary btn-sm" id="new-booking" href="/app/reservations?new=1">Add a reservation</a>
       </div>
     </header>
     <div class="content">
@@ -207,7 +207,7 @@ async function load() {
     renderOpps(d.opportunities, d.unavailable.opportunities);
 
     document.getElementById('new-booking').href =
-      `/app/bookings?new=1&contact=${encodeURIComponent(id)}&name=${encodeURIComponent(c.name)}`;
+      `/app/reservations?new=1&contact=${encodeURIComponent(id)}&name=${encodeURIComponent(c.name)}`;
     document.getElementById('body').hidden = false;
   } catch (err) {
     showError(errBox, err);

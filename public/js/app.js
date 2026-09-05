@@ -85,47 +85,99 @@ export function daysUntil(iso) {
 }
 
 // --------------------------------------------------------------- shell ---
+const I = {
+  home: 'M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5',
+  ship: 'M4 17.5c1.5 0 1.5 1 3 1s1.5-1 3-1 1.5 1 3 1 1.5-1 3-1 1.5 1 3 1M5 14l1.2-4.2A2 2 0 0 1 8.1 8.3h7.8a2 2 0 0 1 1.9 1.5L19 14M12 8V5M9 5h6',
+  people: 'M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M9.5 9.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 11h2m-1-1v2',
+  megaphone: 'M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1Zm14-3a5 5 0 0 1 0 8',
+  chart: 'M5 20V10m7 10V4m7 16v-7',
+  gear: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8-3.5a8 8 0 0 1-.1 1.2l2 1.6-2 3.4-2.4-1a8 8 0 0 1-2 1.2l-.4 2.6h-4l-.4-2.6a8 8 0 0 1-2-1.2l-2.4 1-2-3.4 2-1.6A8 8 0 0 1 4 12a8 8 0 0 1 .1-1.2l-2-1.6 2-3.4 2.4 1a8 8 0 0 1 2-1.2L11 3h4l.4 2.6a8 8 0 0 1 2 1.2l2.4-1 2 3.4-2 1.6c.06.4.1.8.1 1.2Z',
+  shield: 'M12 3l8 4v5c0 4.5-3.2 8.3-8 9-4.8-.7-8-4.5-8-9V7l8-4Z',
+  back: 'M10 19l-7-7 7-7M3 12h18',
+  chevron: 'm6 9 6 6 6-6',
+};
+
+// The portal is organised into hubs, the way a back office is: pick the area
+// of the business you are working in, then the screen inside it.
 const NAV = [
-  { group: 'Work' },
-  { href: '/app/', label: 'Dashboard', icon: 'M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5' },
-  { href: '/app/inbox', label: 'Inbox', icon: 'M3 8l9 6 9-6M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z' },
-  { href: '/app/leads', label: 'Leads', icon: 'M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M9.5 9.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 11h2m-1-1v2' },
-  { href: '/app/pipeline', label: 'Pipeline', icon: 'M4 5h16M4 12h10M4 19h6' },
-  { href: '/app/calendar', label: 'Calendar', icon: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm4-4v4m8-4v4M4 11h16' },
-
-  { group: 'Money' },
-  { href: '/app/bookings', label: 'Bookings', icon: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm4-4v4m8-4v4M4 10h16' },
-  { href: '/app/payments', label: 'Payments', icon: 'M3 10h18M6 6h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 8h4' },
-  { href: '/app/billing', label: 'Invoices', icon: 'M3 10h18M6 6h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 8h4' },
-  { href: '/app/catalog', label: 'Products', icon: 'M20 7 12 3 4 7l8 4 8-4Zm0 0v10l-8 4-8-4V7' },
-  { href: '/app/reports', label: 'Reports', icon: 'M5 20V10m7 10V4m7 16v-7' },
-
-  { group: 'Content' },
-  { href: '/app/formbuilder', label: 'Forms', icon: 'M9 12h6m-6 4h6M8 4h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4h6' },
-  { href: '/app/forms', label: 'Imported forms', icon: 'M9 12h6m-6 4h6M8 4h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4h6' },
-  { href: '/app/automations', label: 'Automations', icon: 'M13 2 4.5 13H11l-1 9 8.5-11H12l1-9Z' },
-  { href: '/app/marketing', label: 'Marketing', icon: 'M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1Zm14-3a5 5 0 0 1 0 8' },
-  { href: '/app/library', label: 'Media', icon: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6Zm2 10 4-4 3 3 3-3 4 4M9 9.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z' },
-
-  { group: 'Setup' },
-  { href: '/app/account', label: 'Account', icon: 'M12 3l8 4v5c0 4.5-3.2 8.3-8 9-4.8-.7-8-4.5-8-9V7l8-4Z' },
-  { href: '/app/crm', label: 'Trip Vara Tools', icon: 'M14 3h7v7m0-7L10 14M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5' },
-  { href: '/app/settings', label: 'Settings', icon: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8-3.5a8 8 0 0 1-.1 1.2l2 1.6-2 3.4-2.4-1a8 8 0 0 1-2 1.2l-.4 2.6h-4l-.4-2.6a8 8 0 0 1-2-1.2l-2.4 1-2-3.4 2-1.6A8 8 0 0 1 4 12a8 8 0 0 1 .1-1.2l-2-1.6 2-3.4 2.4 1a8 8 0 0 1 2-1.2L11 3h4l.4 2.6a8 8 0 0 1 2 1.2l2.4-1 2 3.4-2 1.6c.06.4.1.8.1 1.2Z' },
+  { href: '/app/', label: 'Dashboard', icon: I.home },
+  {
+    hub: 'Reservation', icon: I.ship, items: [
+      { href: '/app/reservations', label: 'Reservations' },
+      { href: '/app/payments', label: 'Payments Due' },
+      { href: '/app/billing', label: 'Invoices' },
+      { href: '/app/catalog', label: 'Vendor products' },
+    ],
+  },
+  {
+    hub: 'Client', icon: I.people, items: [
+      { href: '/app/leads', label: 'Clients' },
+      { href: '/app/pipeline', label: 'Sales opportunities' },
+      { href: '/app/inbox', label: 'Messages' },
+      { href: '/app/calendar', label: 'Calendar' },
+    ],
+  },
+  {
+    hub: 'Marketing', icon: I.megaphone, items: [
+      { href: '/app/marketing', label: 'Campaigns & funnels' },
+      { href: '/app/formbuilder', label: 'Forms' },
+      { href: '/app/forms', label: 'Imported forms' },
+      { href: '/app/automations', label: 'Automations' },
+      { href: '/app/library', label: 'Media' },
+    ],
+  },
+  {
+    hub: 'Report', icon: I.chart, items: [
+      { href: '/app/reports', label: 'Production' },
+    ],
+  },
+  {
+    hub: 'Setup', icon: I.gear, items: [
+      { href: '/app/account', label: 'Account' },
+      { href: '/app/settings', label: 'Settings' },
+      { href: '/app/crm', label: 'Trip Vara Tools' },
+    ],
+  },
 ];
 
 const ADMIN_NAV = [
-  { href: '/admin/', label: 'Advisors', icon: 'M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M9.5 9.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z' },
-  { href: '/app/', label: 'Back to portal', icon: 'M10 19l-7-7 7-7M3 12h18' },
+  { href: '/admin/', label: 'Advisors', icon: I.people },
+  { href: '/app/', label: 'Back to portal', icon: I.back },
 ];
 
+const HUB_KEY = 'tv.nav.hub';
+
+/** The hub a path belongs to, or null for a top level link. */
+function hubOf(path) {
+  for (const entry of NAV) {
+    if (entry.hub && entry.items.some((i) => i.href === path)) return entry.hub;
+  }
+  return null;
+}
+
+function icon(d) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+}
+
 function navLink(item, current) {
-  if (item.group) return `<p class="nav-group">${esc(item.group)}</p>`;
   const active = item.href === current ? ' aria-current="page"' : '';
-  return `<a href="${item.href}"${active}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${item.icon}"/></svg>
-    ${esc(item.label)}
-  </a>`;
+  return `<a href="${item.href}"${active}>${item.icon ? icon(item.icon) : ''}${esc(item.label)}</a>`;
+}
+
+function navHub(entry, current, open) {
+  const id = `hub-${entry.hub.toLowerCase().replace(/[^a-z]+/g, '-')}`;
+  return `<div class="nav-hub${open ? ' open' : ''}">
+    <button type="button" class="hub-toggle" aria-expanded="${open}" aria-controls="${id}"
+            data-hub="${esc(entry.hub)}">
+      ${icon(entry.icon)}<span>${esc(entry.hub)}</span>${icon(I.chevron)}
+    </button>
+    <div class="hub-items" id="${id}">${entry.items.map((i) => navLink(i, current)).join('')}</div>
+  </div>`;
+}
+
+function navEntry(entry, current, openHub) {
+  return entry.hub ? navHub(entry, current, entry.hub === openHub) : navLink(entry, current);
 }
 
 /**
@@ -143,6 +195,13 @@ export async function mountShell({ admin = false } = {}) {
   const items = admin ? ADMIN_NAV : NAV;
   const showAdminLink = !admin && user.role === 'admin';
 
+  // The hub holding the current page always opens. Otherwise reopen whichever
+  // hub the advisor last worked in, so the sidebar looks the same each visit.
+  let openHub = hubOf(current);
+  if (!openHub) {
+    try { openHub = localStorage.getItem(HUB_KEY); } catch { openHub = null; }
+  }
+
   sidebar.innerHTML = `
     <a class="wordmark on-dark" href="${admin ? '/admin/' : '/app/'}">
       <img src="/logo-mark.svg" alt="">
@@ -154,8 +213,8 @@ export async function mountShell({ admin = false } = {}) {
            stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
     </button>
     <nav id="sidebar-nav" aria-label="Portal">
-      ${items.map((i) => navLink(i, current)).join('')}
-      ${showAdminLink ? navLink({ href: '/admin/', label: 'Admin', icon: 'M12 3l8 4v5c0 4.5-3.2 8.3-8 9-4.8-.7-8-4.5-8-9V7l8-4Z' }, current) : ''}
+      ${items.map((i) => navEntry(i, current, openHub)).join('')}
+      ${showAdminLink ? navLink({ href: '/admin/', label: 'Admin', icon: I.shield }, current) : ''}
     </nav>
     <div class="sidebar-foot">
       <p class="who">${esc(user.name)}<span>${esc(user.email)}</span></p>
@@ -165,6 +224,23 @@ export async function mountShell({ admin = false } = {}) {
   sidebar.querySelector('#signout').addEventListener('click', async () => {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
     window.location.href = '/login';
+  });
+
+  sidebar.querySelectorAll('.hub-toggle').forEach((button) => {
+    button.addEventListener('click', () => {
+      const hub = button.closest('.nav-hub');
+      const open = !hub.classList.contains('open');
+      // One hub at a time, like a back office menu.
+      sidebar.querySelectorAll('.nav-hub').forEach((other) => {
+        other.classList.remove('open');
+        other.querySelector('.hub-toggle').setAttribute('aria-expanded', 'false');
+      });
+      if (open) {
+        hub.classList.add('open');
+        button.setAttribute('aria-expanded', 'true');
+      }
+      try { localStorage.setItem(HUB_KEY, open ? button.dataset.hub : ''); } catch { /* private mode */ }
+    });
   });
 
   const toggle = sidebar.querySelector('.menu-toggle');
@@ -184,7 +260,7 @@ export function showError(container, err) {
       <p style="font-size:.72rem;font-weight:650;letter-spacing:.16em;text-transform:uppercase;color:var(--coral-500);margin:0 0 .6rem;">Setup needed</p>
       <h3>Trip Vara Tools is not connected yet</h3>
       <p style="margin-top:.6rem;">Set the <code>GHL_API_TOKEN</code> secret on the Worker so the portal can
-      read contacts, opportunities and calendars from your account. Bookings and reports work without it.</p>
+      read contacts, opportunities and calendars from your account. Reservations and reports work without it.</p>
     </div>`;
     return;
   }

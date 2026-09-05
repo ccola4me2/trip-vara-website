@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Billing | Trip Vara Portal</title>
+<title>Invoices | Trip Vara Portal</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/app.css">
@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Billing</h1><p class="sub">Invoices and payments from Trip Vara Tools, against what your bookings expect.</p></div>
+      <div><h1>Invoices</h1><p class="sub">Invoices and payments from Trip Vara Tools, against what your reservations expect.</p></div>
       <div class="toolbar" style="margin:0;">
         <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
         <button class="btn btn-primary btn-sm" id="new-invoice">Raise invoice</button>
@@ -67,7 +67,7 @@
           <input id="dueDate" name="dueDate" type="date"></div>
       </div>
       <div class="field"><label for="notes">Terms or notes</label>
-        <textarea id="notes" name="notes" placeholder="Deposit due on booking, balance 60 days before sailing."></textarea></div>
+        <textarea id="notes" name="notes" placeholder="Deposit due at booking, balance 60 days before sailing."></textarea></div>
       <label style="display:flex;gap:.55rem;align-items:center;font-weight:500;">
         <input type="checkbox" id="send" name="send" style="width:auto;">
         Email it to the client straight away
@@ -110,22 +110,22 @@ function render(d) {
     <div class="stat"><p class="label">Transactions</p><p class="value">${money(s.settledCents)}</p>
       <p class="meta">${s.transactionCount} successful payment${s.transactionCount === 1 ? '' : 's'}</p></div>`;
 
-  // The point of this page: what bookings expect against what the CRM has seen.
+  // The point of this page: what reservations expect against what the CRM has seen.
   const b = d.bookings;
   const gap = b.grossCents - s.invoicedCents;
   document.getElementById('reconcile').hidden = false;
   document.getElementById('reconcile').innerHTML = `
-    <div class="card-head"><h2>Bookings against billing</h2></div>
+    <div class="card-head"><h2>Reservations against invoices</h2></div>
     <div class="card-pad">
       <dl class="kv" style="grid-template-columns:220px 1fr;">
-        <dt>Booked volume</dt><dd>${money(b.grossCents)} <span class="muted">from your bookings</span></dd>
+        <dt>Booked volume</dt><dd>${money(b.grossCents)} <span class="muted">from your reservations</span></dd>
         <dt>Invoiced in Trip Vara Tools</dt><dd>${money(s.invoicedCents)}</dd>
         <dt>Difference</dt><dd style="color:${gap === 0 ? 'var(--green-600)' : 'var(--amber-600)'};font-weight:650;">
-          ${money(Math.abs(gap))} ${gap === 0 ? 'matched' : gap > 0 ? 'booked but not invoiced' : 'invoiced beyond bookings'}</dd>
+          ${money(Math.abs(gap))} ${gap === 0 ? 'matched' : gap > 0 ? 'booked but not invoiced' : 'invoiced beyond reservations'}</dd>
         <dt>Commission expected</dt><dd>${money(b.commissionCents)}</dd>
         <dt>Commission received</dt><dd>${money(b.commissionPaidCents)}</dd>
       </dl>
-      <p class="field-hint" style="margin-top:.9rem;">Booked volume is what you entered on the Bookings page.
+      <p class="field-hint" style="margin-top:.9rem;">Booked volume is what you entered on the Reservations page.
       Invoiced is what exists in Trip Vara Tools. A gap usually means an invoice has not been raised yet.</p>
     </div>`;
 
