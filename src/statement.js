@@ -63,7 +63,16 @@ export function buildStatement({ booking, pricing, travellers, payments, ameniti
 
   const paidCents = sum(posted);
 
+  // A quote and a booked trip are not the same document, and sending one as
+  // the other is worse than sending nothing. A client who has not booked has
+  // paid nothing and owes nothing; showing them "Received: $0.00" and a
+  // balance for a trip they have not agreed to reads as a demand, and the
+  // reply is not the one you wanted.
+  const mode = booking.status === 'booked' || booking.status === 'travelled'
+    ? 'statement' : 'quote';
+
   return {
+    mode,
     clientName: (client && client.name) || booking.client_name || '',
     to: (client && client.email) || '',
     tripName: booking.product_name || '',
@@ -79,14 +88,21 @@ export function buildStatement({ booking, pricing, travellers, payments, ameniti
     travellers: (travellers || []).map((t) => t.name).filter(Boolean),
     lines,
     tripCents,
-    posted,
-    due,
-    paidCents,
+    // A quote carries no payment history because there is none. Empty arrays
+    // rather than the fields being absent, so the page reading this does not
+    // have to know which kind it asked for.
+    posted: mode === 'quote' ? [] : posted,
+    due: mode === 'quote' ? [] : due,
+    paidCents: mode === 'quote' ? 0 : paidCents,
+    // What it takes to hold it, which is the only number a quote should end
+    // on. Null when the reservation does not say, rather than a guess.
+    depositCents: mode === 'quote' ? (booking.deposit_cents || 0) || null : null,
+    depositDue: mode === 'quote' ? (booking.deposit_due || '') : '',
     // What the client still owes on the whole trip, which is not the same as
     // what happens to be scheduled: a trip with a deposit paid and nothing
     // else booked in still has a balance, and it is the balance that matters.
-    balanceCents: Math.max(0, tripCents - paidCents),
-    scheduledCents: sum(due),
+    balanceCents: mode === 'quote' ? 0 : Math.max(0, tripCents - paidCents),
+    scheduledCents: mode === 'quote' ? 0 : sum(due),
     // What the vendor granted them, without saying who paid for it.
     amenities: (amenities || [])
       .filter((a) => a.status === 'confirmed' || a.status === 'applied')
@@ -116,7 +132,8 @@ function rows(items, { strike = false } = {}) {
 }
 
 export function renderStatement(env, s) {
-  const heading = [s.tripName, s.vendor].filter(Boolean).join(' with ') || 'Your trip';
+  const heading = [s.tripName, s.vendor].filter(Boolean).join(' with ')
+    || (s.mode === 'quote' ? 'Your quote' : 'Your trip');
 
   const facts = [
     ['Confirmation', s.confirmation],
@@ -140,22 +157,43 @@ export function renderStatement(env, s) {
     <td style="padding:8px 0;border-top:1px solid #e4edf5;text-align:right;white-space:nowrap;${
       strong ? 'font-weight:600;' : ''}color:#1b3a5f;">${money(cents)}</td></tr>`;
 
+  const quote = s.mode === 'quote';
+
+  // What a quote ends on: the one thing the client has to do next, and by
+  // when. A quote that stops at a total leaves them to work out what happens
+  // now, and the commonest answer to that is nothing.
+  const hold = quote
+    ? `<p style="margin:22px 0 0;">${s.depositCents
+        ? `A deposit of <strong>${money(s.depositCents)}</strong> holds this${
+            s.depositDue ? ` and is due by ${escapeHtml(day(s.depositDue))}` : ''}.`
+        : 'Say the word and I will hold it.'
+      } Prices and space are not held until it is booked.</p>`
+    : '';
+
   const body = [
     `<p style="margin:0 0 14px;">Hello ${escapeHtml(s.clientName || 'there')},</p>`,
-    '<p style="margin:0 0 14px;">Here is where your trip stands. Anything that looks wrong, '
-      + 'reply to this and I will sort it out.</p>',
-    block('Your trip', facts.map(([k, v]) => `<tr>
+    quote
+      ? '<p style="margin:0 0 14px;">Here is what I have put together. Anything you would '
+        + 'change, reply to this and I will rework it.</p>'
+      : '<p style="margin:0 0 14px;">Here is where your trip stands. Anything that looks wrong, '
+        + 'reply to this and I will sort it out.</p>',
+    block(quote ? 'The trip' : 'Your trip', facts.map(([k, v]) => `<tr>
       <td style="padding:6px 0;color:#5c7286;width:38%;">${escapeHtml(k)}</td>
       <td style="padding:6px 0;color:#2f4459;">${escapeHtml(v)}</td></tr>`).join('')),
     block('What it costs', s.lines.length
       ? rows(s.lines, { strike: true }) + totalRow('Trip total', s.tripCents, true)
       : totalRow('Trip total', s.tripCents, true)),
-    block('Received, thank you', rows(s.posted)),
-    block('Still to come', s.due.length
+    quote ? '' : block('Received, thank you', rows(s.posted)),
+    quote ? '' : block('Still to come', s.due.length
       ? rows(s.due) + totalRow('Balance', s.balanceCents, true)
       : totalRow('Balance', s.balanceCents, true)),
+    quote ? hold : '',
     s.amenities.length
-      ? block('Included with your booking', s.amenities.map((a) => `<tr>
+      // Confirmed by the vendor only, in both documents. Listing something
+      // that was merely asked for is a promise on somebody else's behalf, and
+      // on a quote it is the promise that wins the sale and loses the client.
+      ? block(quote ? 'Included in this price' : 'Included with your booking',
+          s.amenities.map((a) => `<tr>
           <td style="padding:6px 0;color:#2f4459;">${escapeHtml(a.description)}</td>
           <td style="padding:6px 0;text-align:right;color:#5c7286;white-space:nowrap;">${
             a.amountCents ? money(a.amountCents) : ''}</td></tr>`).join(''))
@@ -173,7 +211,10 @@ export function renderStatement(env, s) {
       escapeHtml(s.advisorEmail)}</a>`,
   ].filter(Boolean).join(' &middot; ');
 
-  return { subject: `Your trip: ${heading}`, html: layout(env, { heading, body, footer }) };
+  return {
+    subject: s.mode === 'quote' ? `Your quote: ${heading}` : `Your trip: ${heading}`,
+    html: layout(env, { heading, body, footer }),
+  };
 }
 
 /**
@@ -191,6 +232,12 @@ export async function handleStatement(request, env, id) {
   // client an email over that advisor's name is not reading.
   const booking = await db.getBooking(env, id, user.id);
   if (!booking) return notFound('Reservation not found.');
+
+  // Nothing goes out about a trip that is off. Whatever the advisor meant to
+  // send, this is not it.
+  if (booking.status === 'cancelled') {
+    return badRequest('That reservation is cancelled. Nothing should go to the client about it.');
+  }
 
   const scope = db.selfScope(user);
   const [pricing, travellers, amenities, payments] = await Promise.all([

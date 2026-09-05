@@ -1520,6 +1520,40 @@ async function main() {
   check(!/advisor portal/i.test(html) && html.includes(ADVISOR_EMAIL),
     'and it is signed by the advisor, not by the portal');
 
+  // A quote is not a statement. A client who has not booked has paid nothing
+  // and owes nothing, and showing them "Received: $0.00" and a balance reads
+  // as a demand for a trip they never agreed to.
+  const quoted = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Statement ${stamp}`, supplier: 'Princess Cruises', status: 'quoted',
+    productName: 'Mexican Riviera', departDate: isoDay(220), returnDate: isoDay(227),
+    gross: '3200', deposit: '500', depositDue: isoDay(20),
+  });
+  const quotedId = quoted.data?.booking?.id;
+  if (quotedId) cleanup('the quoted reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${quotedId}`));
+
+  const qp = await call(advisor, 'POST', `/api/bookings/${quotedId}/statement`, { preview: true });
+  const qs = qp.data?.statement || {};
+  check(qs.mode === 'quote', 'an unbooked trip produces a quote, not a statement', qs.mode);
+  check(/^Your quote:/.test(qp.data?.subject || ''), 'and says so in the subject', qp.data?.subject);
+  check(qs.posted?.length === 0 && qs.due?.length === 0 && qs.balanceCents === 0,
+    'carrying no payment history and no balance, because there is none',
+    JSON.stringify({ posted: qs.posted?.length, due: qs.due?.length, bal: qs.balanceCents }));
+
+  const qhtml = qp.data?.html || '';
+  check(!/Received, thank you/.test(qhtml) && !/Still to come/.test(qhtml),
+    'and none of the wording that only makes sense once they have booked');
+  // A quote that stops at a total leaves the client to work out what happens
+  // next, and the commonest answer to that is nothing.
+  check(/\$500\.00/.test(qhtml) && /holds this/.test(qhtml),
+    'while saying what it takes to hold it, and by when');
+
+  // Nothing goes out about a trip that is off.
+  await call(advisor, 'POST', `/api/bookings/${quotedId}/quick`, { status: 'cancelled' });
+  const dead = await call(advisor, 'POST', `/api/bookings/${quotedId}/statement`, { preview: true });
+  check(dead.status === 400, 'a cancelled reservation sends nothing at all',
+    `status ${dead.status}`);
+
   const notYours = await call(admin, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
   check(notYours.status === 404,
     'and an owner cannot send a statement over an associate\'s name',
