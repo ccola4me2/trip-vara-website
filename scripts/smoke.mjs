@@ -26,6 +26,11 @@ const ADVISOR_PASSWORD = 'smoke-test-12345';
 
 let failures = 0;
 let checks = 0;
+// Sections that could not run here rather than sections that passed. Counted
+// apart from the checks and named at the end, because a suite that quietly
+// shrinks by eight on a machine with no catalog is a suite reporting a number
+// that means something different from run to run.
+const skips = [];
 
 function ok(label) { checks++; console.log(`  ok    ${label}`); }
 function fail(label, detail) {
@@ -36,6 +41,11 @@ function fail(label, detail) {
 function check(condition, label, detail) {
   condition ? ok(label) : fail(label, detail);
   return Boolean(condition);
+}
+function skip(what, why) {
+  skips.push(what);
+  console.log(`  skip  ${what}`);
+  console.log(`        ${why}`);
 }
 function step(name) { console.log(`\n${name}`); }
 
@@ -851,8 +861,8 @@ async function main() {
   check(lines.status === 200, 'the catalog answers', `status ${lines.status}`);
 
   if (!lines.data?.ready) {
-    check(true, 'no catalog imported here, so the rest is skipped');
-    console.log('        (set CRUISEFEED_KEY and let the cron run to exercise this)');
+    skip('the sailing catalog',
+      'nothing imported here; set CRUISEFEED_KEY and let the cron run to exercise it');
   } else {
     const line = lines.data.lines[0];
     check(line && line.name, 'with cruise lines that have upcoming sailings', line && line.name);
@@ -1794,6 +1804,8 @@ main()
     }
     console.log(
       `\n${failures ? `${failures} of ${checks} checks failed.` : `All ${checks} checks passed.`}` +
+      (skips.length ? ` ${skips.length} section${skips.length === 1 ? '' : 's'} skipped: ${
+        skips.join(', ')}.` : '') +
       ` (${((Date.now() - started) / 1000).toFixed(1)}s)`
     );
     process.exit(failures ? 1 : 0);
