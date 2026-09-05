@@ -344,6 +344,7 @@ const QUICK_FIELDS = {
   status: ['status', (v) => oneOf(v, STATUSES)],
   productType: ['product_type', (v) => oneOf(v, PRODUCT_TYPES)],
   commissionStatus: ['commission_status', (v) => oneOf(v, COMMISSION_STATUSES)],
+  invoiceNotes: ['invoice_notes', (v) => clean(v, 1000)],
   // Blank clears the override and puts the trip back on the advisor's standing
   // agreement, which is why this cannot go through toCents or oneOf: both turn
   // "nothing set" into a value.

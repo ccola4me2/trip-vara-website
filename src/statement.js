@@ -64,6 +64,33 @@ export function buildStatement({ booking, pricing, travellers, payments, ameniti
 
   const paidCents = sum(posted);
 
+  /**
+   * Where the money stands, in one line.
+   *
+   * CP Maxx asks the advisor to tick which of eight notices applies: deposit
+   * due, deposit received, non-refundable deposit, payment received, final
+   * payment due, paid in full, and so on. Every one of those is a fact the
+   * software already knows. Asking a person to tick the right one is asking
+   * them to be the database's memory, and the day they tick the wrong one the
+   * client gets a demand for money they already sent.
+   */
+  const standing = (() => {
+    const total = lines.length ? brokenDown : (booking.gross_cents || 0);
+    const owing = Math.max(0, total - paidCents);
+    const nextDue = hard.filter((p) => !p.paid_date && p.due_date)
+      .sort((a, b) => (a.due_date < b.due_date ? -1 : 1))[0];
+
+    if (total > 0 && owing === 0 && paidCents > 0) return 'Paid in full. Thank you.';
+    if (nextDue) {
+      const what = nextDue.kind === 'deposit' ? 'Deposit' : 'Balance';
+      return `${paidCents > 0 ? `${money(paidCents)} received. ` : ''}${what} of ${
+        money(nextDue.amount_cents || 0)} due by ${day(nextDue.due_date)}.`;
+    }
+    if (paidCents > 0 && owing > 0) return `${money(paidCents)} received. ${money(owing)} still to pay.`;
+    if (paidCents > 0) return `${money(paidCents)} received. Thank you.`;
+    return null;
+  })();
+
   // A quote and a booked trip are not the same document, and sending one as
   // the other is worse than sending nothing. A client who has not booked has
   // paid nothing and owes nothing; showing them "Received: $0.00" and a
@@ -74,6 +101,10 @@ export function buildStatement({ booking, pricing, travellers, payments, ameniti
 
   return {
     mode,
+    standing,
+    invoiceNo: mode === 'statement' ? (booking.invoice_no || null) : null,
+    invoiceIssuedAt: mode === 'statement' ? (booking.invoice_issued_at || null) : null,
+    notes: booking.invoice_notes || '',
     clientName: (client && client.name) || booking.client_name || '',
     to: (client && client.email) || '',
     tripName: booking.product_name || '',
@@ -118,7 +149,12 @@ export function buildStatement({ booking, pricing, travellers, payments, ameniti
       .map((a) => ({ description: a.description, amountCents: a.amount_cents || 0 })),
     advisorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email,
     advisorEmail: user.email,
+    advisorPhone: user.phone || '',
     agencyName: user.agency_name || '',
+    agencyAddress: user.agency_address || '',
+    // Required on a client document in several states. Empty rather than
+    // invented: an omitted registration is a gap, a made up one is a lie.
+    sellerOfTravel: user.seller_of_travel || '',
   };
 }
 
@@ -181,6 +217,15 @@ export function renderStatement(env, s) {
     : '';
 
   const body = [
+    // The number and date first, because the thing that makes this a document
+    // a client can file rather than an email they skim is that it is
+    // identifiable eleven months later.
+    !quote && s.invoiceNo
+      ? `<p style="margin:0 0 14px;font-size:13px;color:#5c7286;">
+          Invoice ${escapeHtml(s.invoiceNo)}${s.invoiceIssuedAt
+            ? ` &middot; ${escapeHtml(new Date(s.invoiceIssuedAt * 1000)
+                .toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }))}` : ''}</p>`
+      : '',
     `<p style="margin:0 0 14px;">Hello ${escapeHtml(s.clientName || 'there')},</p>`,
     quote
       ? '<p style="margin:0 0 14px;">Here is what I have put together. Anything you would '
@@ -208,6 +253,13 @@ export function renderStatement(env, s) {
       ? rows(s.due) + totalRow('Balance', s.balanceCents, true)
       : totalRow('Balance', s.balanceCents, true)),
     quote ? hold : '',
+    // Where the money stands, worked out rather than ticked.
+    !quote && s.standing
+      ? `<p style="margin:20px 0 0;padding:12px 16px;background:#f2f7fb;border-radius:8px;
+           font-weight:600;color:#1b3a5f;">${escapeHtml(s.standing)}</p>`
+      : '',
+    s.notes
+      ? `<p style="margin:18px 0 0;white-space:pre-wrap;">${escapeHtml(s.notes)}</p>` : '',
     s.amenities.length
       // Confirmed by the vendor only, in both documents. Listing something
       // that was merely asked for is a promise on somebody else's behalf, and
@@ -227,14 +279,49 @@ export function renderStatement(env, s) {
   const footer = [
     escapeHtml(s.advisorName),
     s.agencyName ? escapeHtml(s.agencyName) : '',
+    s.agencyAddress ? escapeHtml(s.agencyAddress) : '',
+    s.advisorPhone ? escapeHtml(s.advisorPhone) : '',
     `<a href="mailto:${escapeHtml(s.advisorEmail)}" style="color:#1b3a5f;">${
       escapeHtml(s.advisorEmail)}</a>`,
+    s.sellerOfTravel ? escapeHtml(s.sellerOfTravel) : '',
   ].filter(Boolean).join(' &middot; ');
 
   return {
-    subject: s.mode === 'quote' ? `Your quote: ${heading}` : `Your trip: ${heading}`,
+    subject: s.mode === 'quote'
+      ? `Your quote: ${heading}`
+      : `Invoice${s.invoiceNo ? ` ${s.invoiceNo}` : ''}: ${heading}`,
     html: layout(env, { heading, body, footer }),
   };
+}
+
+/**
+ * The next invoice number for this advisor, this year.
+ *
+ * Assigned when an invoice is first issued rather than when the reservation is
+ * created, because numbering trips nobody has invoiced leaves gaps in a
+ * sequence that somebody may one day have to explain to an accountant.
+ *
+ * Per advisor, so two advisors in one agency do not interleave into a sequence
+ * neither of them can reconcile.
+ */
+async function nextInvoiceNo(env, userId, year) {
+  const prefix = `INV-${year}-`;
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM bookings
+      WHERE user_id = ? AND invoice_no LIKE ?`
+  ).bind(userId, `${prefix}%`).first().catch(() => ({ n: 0 }));
+
+  // Checked rather than trusted: a deleted reservation makes the count lower
+  // than the highest number issued, and reusing a number is worse than
+  // skipping one.
+  for (let i = (row?.n || 0) + 1; i < (row?.n || 0) + 50; i += 1) {
+    const candidate = `${prefix}${String(i).padStart(4, '0')}`;
+    const clash = await env.DB.prepare(
+      'SELECT id FROM bookings WHERE user_id = ? AND invoice_no = ?'
+    ).bind(userId, candidate).first().catch(() => null);
+    if (!clash) return candidate;
+  }
+  return `${prefix}${Date.now().toString(36).toUpperCase()}`;
 }
 
 /**
@@ -272,12 +359,20 @@ export async function handleStatement(request, env, id) {
     ? await db.getClient(env, scope, { id: booking.client_id })
     : await db.getClient(env, scope, { name: booking.client_name });
 
-  const statement = buildStatement({
+  // Numbered on send, not on preview. Previewing an invoice three times before
+  // deciding not to send it would otherwise burn three numbers out of a
+  // sequence whose whole value is that it has no gaps. The preview says a
+  // number will be assigned rather than showing a blank where one will be.
+  const body = await readJson(request);
+  const issuing = booking.status === 'booked' || booking.status === 'travelled';
+
+  const build = () => buildStatement({
     booking, pricing, travellers, amenities, payments, options, client, user,
   });
-  const { subject, html } = renderStatement(env, statement);
 
-  const body = await readJson(request);
+  let statement = build();
+  let rendered = renderStatement(env, statement);
+
   if (body.preview) {
     return json({
       preview: true,
@@ -294,17 +389,44 @@ export async function handleStatement(request, env, id) {
       alreadySent: (statement.mode === 'quote' ? booking.quote_sent_at : booking.statement_sent_at)
         || null,
       sentCount: statement.mode === 'quote' ? (booking.quote_sent_count || 0) : 0,
-      subject,
+      // So the page can say so rather than showing a gap where a number goes.
+      willNumber: issuing && !booking.invoice_no,
+      subject: rendered.subject,
       statement,
-      html,
+      html: rendered.html,
     });
   }
 
   if (!statement.to) return badRequest('That client has no email address on file.');
 
+  // Numbered here and nowhere earlier: after the preview has returned, after
+  // the address has been checked, immediately before the send. Every step
+  // skipped over above is a way of not sending an invoice, and each of them
+  // would otherwise have spent a number out of a sequence whose only value is
+  // having no gaps in it.
+  const assignedHere = issuing && !booking.invoice_no;
+  if (assignedHere) {
+    const no = await nextInvoiceNo(env, user.id, new Date().getFullYear());
+    await env.DB.prepare(
+      'UPDATE bookings SET invoice_no = ?, invoice_issued_at = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+    ).bind(no, now(), now(), id, user.id).run();
+    booking.invoice_no = no;
+    booking.invoice_issued_at = now();
+    statement = build();
+    rendered = renderStatement(env, statement);
+  }
+
   try {
-    await sendHtml(env, { to: statement.to, replyTo: user.email, subject, html });
+    await sendHtml(env, {
+      to: statement.to, replyTo: user.email, subject: rendered.subject, html: rendered.html,
+    });
   } catch (e) {
+    // The number goes back. A send that failed is an invoice nobody has.
+    if (assignedHere) {
+      await env.DB.prepare(
+        'UPDATE bookings SET invoice_no = NULL, invoice_issued_at = NULL WHERE id = ? AND user_id = ?'
+      ).bind(id, user.id).run().catch(() => null);
+    }
     return badRequest(String((e && e.message) || e).slice(0, 300));
   }
 
@@ -324,5 +446,5 @@ export async function handleStatement(request, env, id) {
 
   await db.logActivity(env, user.id, `booking.${statement.mode}`,
     `Sent ${statement.clientName} a ${statement.mode}`, { bookingId: id });
-  return json({ ok: true, sentTo: statement.to, subject, mode: statement.mode });
+  return json({ ok: true, sentTo: statement.to, subject: rendered.subject, mode: statement.mode });
 }

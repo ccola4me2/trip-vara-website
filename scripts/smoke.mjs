@@ -1589,6 +1589,22 @@ async function main() {
   check(dead.status === 400, 'a cancelled reservation sends nothing at all',
     `status ${dead.status}`);
 
+  // An invoice is the document a client files. What makes it that rather than
+  // an email they skim is a number and a date they can quote back at you.
+  const invPrev = await call(advisor, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
+  check(invPrev.data?.willNumber === true && invPrev.data?.statement?.invoiceNo === null,
+    'previewing an invoice says a number is coming rather than burning one',
+    JSON.stringify({ will: invPrev.data?.willNumber, no: invPrev.data?.statement?.invoiceNo }));
+
+  // Where the money stands, worked out rather than ticked. CP Maxx asks the
+  // advisor which of eight notices applies; every one of them is a fact this
+  // already knows, and the day somebody ticks the wrong one a client gets a
+  // demand for money they already sent.
+  check(/received/i.test(invPrev.data?.statement?.standing || '')
+    && /due by/i.test(invPrev.data?.statement?.standing || ''),
+    'and states what has been received and what is due, in one line',
+    invPrev.data?.statement?.standing);
+
   const notYours = await call(admin, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
   check(notYours.status === 404,
     'and an owner cannot send a statement over an associate\'s name',

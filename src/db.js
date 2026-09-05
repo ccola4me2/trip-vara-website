@@ -11,7 +11,7 @@ import { SPLIT_PCT_SQL, ADVISOR_SHARE_SQL } from './split.js';
 const USER_COLUMNS = `
   id, email, first_name, last_name, phone, agency_name, role, status,
   ghl_location_id, ghl_user_id, created_at, updated_at, last_login_at,
-  approved_at, approved_by, default_split_pct
+  approved_at, approved_by, default_split_pct, agency_address, seller_of_travel
 `;
 
 // ---------------------------------------------------------------------------
@@ -298,6 +298,7 @@ const BOOKING_COLUMNS = `
   commission_cents, commission_status, status, notes, group_id, client_id, vendor_id,
   cabin, cabin_category, itinerary, booking_method, insurance_status, advisor_split_pct,
   quote_sent_at, quote_sent_count, statement_sent_at, welcomed_at,
+  invoice_no, invoice_issued_at, invoice_notes,
   created_at, updated_at
 `;
 
@@ -313,6 +314,7 @@ const BOOKING_COLUMNS_B = `
   b.group_id, b.client_id, b.vendor_id, b.cabin, b.cabin_category, b.itinerary,
   b.booking_method, b.insurance_status, b.advisor_split_pct,
   b.quote_sent_at, b.quote_sent_count, b.statement_sent_at, b.welcomed_at,
+  b.invoice_no, b.invoice_issued_at, b.invoice_notes,
   b.created_at, b.updated_at
 `;
 
