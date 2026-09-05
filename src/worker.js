@@ -40,6 +40,7 @@ import {
   handleListForms as handleListOwnForms, handleGetForm, handleSaveForm, handleDeleteForm,
 } from './formbuilder.js';
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
+import { handleSearch } from './search.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
@@ -285,6 +286,7 @@ async function routeApi(request, env, path, method) {
   }
 
   // ---- dashboard and reports -------------------------------------------
+  if (path === '/api/search' && method === 'GET') return handleSearch(request, env);
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);
   if (path === '/api/reports/production' && method === 'GET') return handleProduction(request, env);
 

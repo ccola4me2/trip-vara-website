@@ -410,6 +410,52 @@ tbody tr[data-href] { cursor: pointer; }
 .event .what { flex: 1; min-width: 0; }
 .event .what .title { font-weight: 600; color: var(--navy-800); }
 
+/* Sidebar search. Lives here rather than in each page's topbar so there is
+   one implementation, and so it is in the same place on all nineteen screens. */
+.nav-search { position: relative; margin: 0 0 .9rem; }
+.nav-search > svg {
+  position: absolute; left: .62rem; top: 50%; transform: translateY(-50%);
+  width: 15px; height: 15px; color: var(--navy-300); pointer-events: none;
+}
+.nav-search input {
+  width: 100%; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14);
+  color: #fff; border-radius: 9px; padding: .48rem 2rem .48rem 2rem; font-size: .84rem;
+}
+.nav-search input::placeholder { color: var(--navy-300); }
+.nav-search input:focus { border-color: var(--coral-400); background: rgba(255,255,255,.12); }
+.nav-search input::-webkit-search-cancel-button { display: none; }
+.nav-search kbd {
+  position: absolute; right: .5rem; top: 50%; transform: translateY(-50%);
+  font: inherit; font-size: .68rem; color: var(--navy-300);
+  border: 1px solid rgba(255,255,255,.18); border-radius: 4px; padding: 0 .3rem;
+  pointer-events: none;
+}
+.nav-search input:focus ~ kbd { display: none; }
+
+.search-results {
+  position: absolute; top: calc(100% + .35rem); left: 0; right: 0; z-index: 40;
+  background: #fff; border: 1px solid var(--navy-100); border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(15,28,43,.22); padding: .3rem;
+  max-height: 60vh; overflow-y: auto;
+}
+.search-group {
+  font-size: .62rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-400); padding: .5rem .55rem .25rem; margin: 0;
+}
+.search-results a {
+  display: block; padding: .42rem .55rem; border-radius: 7px; text-decoration: none;
+}
+.search-results a:hover, .search-results a.on { background: var(--navy-50); }
+.search-results a .t {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .84rem; font-weight: 600; color: var(--navy-800);
+}
+.search-results a .s {
+  display: block; font-size: .74rem; color: var(--ink-500);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.search-empty { font-size: .82rem; color: var(--ink-500); padding: .7rem .6rem; margin: 0; }
+
 /* Hub sidebar navigation: an area of the business, then the screens in it. */
 .nav-hub { display: flex; flex-direction: column; }
 .hub-toggle {

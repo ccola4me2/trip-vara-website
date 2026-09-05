@@ -181,6 +181,102 @@ function navEntry(entry, current, openHub) {
 }
 
 /**
+ * Wires the sidebar search: type, see grouped results, arrow through them,
+ * Enter to go. "/" focuses it from anywhere that is not already a text field.
+ *
+ * Requests are debounced and the stale ones are discarded by sequence number
+ * rather than aborted, because a slow first response arriving after a fast
+ * second one is the ordinary case, not the rare one, and it would otherwise
+ * paint results for a query the person has already finished typing over.
+ */
+function mountSearch(sidebar) {
+  const input = sidebar.querySelector('#global-search');
+  const panel = sidebar.querySelector('#search-results');
+  if (!input || !panel) return;
+
+  let timer = null;
+  let sequence = 0;
+  let items = [];
+  let active = -1;
+
+  function close() {
+    panel.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    active = -1;
+  }
+
+  function highlight(next) {
+    const links = [...panel.querySelectorAll('a')];
+    if (!links.length) return;
+    active = (next + links.length) % links.length;
+    links.forEach((a, i) => a.classList.toggle('on', i === active));
+    links[active].scrollIntoView({ block: 'nearest' });
+  }
+
+  function render(data) {
+    items = data.groups.flatMap((g) => g.items);
+    if (!data.groups.length) {
+      panel.innerHTML = `<p class="search-empty">Nothing matches “${esc(data.query)}”.</p>`;
+    } else {
+      panel.innerHTML = data.groups.map((g) => `
+        <p class="search-group">${esc(g.label)}</p>
+        ${g.items.map((i) => `<a href="${i.href}" role="option">
+          <span class="t">${esc(i.title)}${i.badge ? `<span class="badge badge-navy">${esc(i.badge)}</span>` : ''}</span>
+          ${i.subtitle ? `<span class="s">${esc(i.subtitle)}</span>` : ''}
+        </a>`).join('')}`).join('');
+    }
+    panel.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    active = -1;
+  }
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+    if (q.length < 2) { close(); return; }
+    timer = setTimeout(async () => {
+      const mine = ++sequence;
+      try {
+        const data = await api(`/api/search?q=${encodeURIComponent(q)}`);
+        if (mine !== sequence) return; // A newer query has already been sent.
+        render(data);
+      } catch {
+        if (mine === sequence) close();
+      }
+    }, 180);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { close(); input.blur(); return; }
+    if (panel.hidden || !items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); highlight(active + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(active - 1); }
+    else if (e.key === 'Enter') {
+      const links = [...panel.querySelectorAll('a')];
+      // With nothing arrowed to, Enter takes the first result, which is what
+      // typing a name and hitting Enter is asking for.
+      const target = links[active >= 0 ? active : 0];
+      if (target) { e.preventDefault(); window.location.href = target.href; }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== input) close();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+    const el = document.activeElement;
+    const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    if (typing) return;
+    e.preventDefault();
+    sidebar.classList.add('open');
+    input.focus();
+    input.select();
+  });
+}
+
+/**
  * Fills #sidebar, wires sign out and the mobile menu, and returns the signed
  * in user. Every portal page calls this first.
  */
@@ -212,6 +308,15 @@ export async function mountShell({ admin = false } = {}) {
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
            stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
     </button>
+    ${admin ? '' : `<div class="nav-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="global-search" type="search" placeholder="Search anything" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="search-results"
+             aria-label="Search clients, reservations and payments">
+      <kbd>/</kbd>
+      <div class="search-results" id="search-results" role="listbox" hidden></div>
+    </div>`}
     <nav id="sidebar-nav" aria-label="Portal">
       ${items.map((i) => navEntry(i, current, openHub)).join('')}
       ${showAdminLink ? navLink({ href: '/admin/', label: 'Admin', icon: I.shield }, current) : ''}
@@ -225,6 +330,8 @@ export async function mountShell({ admin = false } = {}) {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
     window.location.href = '/login';
   });
+
+  if (!admin) mountSearch(sidebar);
 
   sidebar.querySelectorAll('.hub-toggle').forEach((button) => {
     button.addEventListener('click', () => {
