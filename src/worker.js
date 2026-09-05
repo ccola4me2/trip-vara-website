@@ -46,6 +46,7 @@ import {
 } from './automations.js';
 import {
   handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
+  handleCreateSocialPost, handleCreateProduct, handleCreateAccountItem,
 } from './library.js';
 import { handleDashboard, handleProduction } from './reports.js';
 import {
@@ -155,6 +156,7 @@ async function routeApi(request, env, path, method) {
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
   const publicFormMatch = path.match(/^\/api\/public\/forms\/([^/]+)$/);
   // Excludes /run, which is an action rather than an automation id.
+  const accountItemMatch = path.match(/^\/api\/account\/(tags|custom-values|custom-fields)$/);
   const autoMatch = path.match(/^\/api\/automations\/(?!run$)([^/]+)$/);
   const payMatch = path.match(/^\/api\/payments\/([^/]+)$/);
   const payPaidMatch = path.match(/^\/api\/payments\/([^/]+)\/paid$/);
@@ -254,6 +256,11 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/catalog' && method === 'GET') return handleCatalog(request, env);
   if (path === '/api/library' && method === 'GET') return handleLibrary(request, env);
   if (path === '/api/account' && method === 'GET') return handleAccount(request, env);
+  if (path === '/api/marketing/social' && method === 'POST') return handleCreateSocialPost(request, env);
+  if (path === '/api/catalog/products' && method === 'POST') return handleCreateProduct(request, env);
+  if (accountItemMatch && method === 'POST') {
+    return handleCreateAccountItem(request, env, accountItemMatch[1]);
+  }
 
   // ---- payments ---------------------------------------------------------
   if (path === '/api/payments' && method === 'GET') return handlePayments(request, env);

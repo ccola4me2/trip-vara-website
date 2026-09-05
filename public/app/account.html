@@ -14,7 +14,10 @@
   <div class="main">
     <header class="topbar">
       <div><h1>Account</h1><p class="sub">Your Trip Vara Tools account: users, fields, values and tags.</p></div>
-      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+      <div class="toolbar" style="margin:0;">
+        <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+        <button class="btn btn-primary btn-sm" id="add-item" hidden>Add</button>
+      </div>
     </header>
     <div class="content">
       <div id="err"></div>
@@ -24,8 +27,32 @@
     </div>
   </div>
 </div>
+<dialog id="item-dialog">
+  <form id="item-form" method="dialog">
+    <div class="card-head"><h2 id="item-title">Add</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="name">Name</label><input id="name" name="name" required></div>
+      <div class="field" id="value-field" hidden><label for="value">Value</label>
+        <input id="value" name="value"></div>
+      <div class="field" id="type-field" hidden><label for="dataType">Type</label>
+        <select id="dataType" name="dataType">
+          <option value="TEXT">Text</option><option value="LARGE_TEXT">Long text</option>
+          <option value="NUMERICAL">Number</option><option value="PHONE">Phone</option>
+          <option value="MONETORY">Money</option><option value="DATE">Date</option>
+          <option value="CHECKBOX">Checkbox</option>
+        </select></div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Add</button>
+    </div>
+  </form>
+</dialog>
+
 <script type="module">
-import { api, mountShell, esc, showError } from '/js/app.js';
+import { api, mountShell, esc, showError, onSubmit } from '/js/app.js';
 await mountShell();
 
 const tabsEl = document.getElementById('tabs');
@@ -75,7 +102,18 @@ function renderTabs() {
     b.addEventListener('click', () => { active = b.dataset.key; renderTabs(); renderPanel(); }));
 }
 
+// Only three of the tabs can be added to; the rest are read-only upstream.
+const ADDABLE = { tags: 'tags', customValues: 'custom-values', customFields: 'custom-fields' };
+const ADD_LABEL = { tags: 'Add a tag', customValues: 'Add a custom value', customFields: 'Add a custom field' };
+
+function syncAddButton() {
+  const btn = document.getElementById('add-item');
+  btn.hidden = !ADDABLE[active];
+  btn.textContent = ADD_LABEL[active] || 'Add';
+}
+
 function renderPanel() {
+  syncAddButton();
   if (data.unavailable && data.unavailable[active]) {
     panel.innerHTML = '<div class="empty"><p>This area is not available with the current Trip Vara Tools permissions.</p></div>';
     return;
@@ -96,6 +134,25 @@ async function load() {
   try { data = await api('/api/account'); renderLocation(); renderTabs(); renderPanel(); }
   catch (err) { tabsEl.innerHTML = ''; locEl.hidden = true; showError(document.getElementById('err'), err); panel.innerHTML = ''; }
 }
+const itemDlg = document.getElementById('item-dialog');
+document.getElementById('add-item').addEventListener('click', () => {
+  const f = document.getElementById('item-form');
+  f.reset();
+  f.querySelector('.notice-error').hidden = true;
+  document.getElementById('item-title').textContent = ADD_LABEL[active] || 'Add';
+  document.getElementById('value-field').hidden = active !== 'customValues';
+  document.getElementById('type-field').hidden = active !== 'customFields';
+  itemDlg.showModal();
+});
+itemDlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => itemDlg.close()));
+onSubmit(document.getElementById('item-form'), async (values) => {
+  const kind = ADDABLE[active];
+  if (!kind) throw new Error('This list cannot be added to here.');
+  await api(`/api/account/${kind}`, { method: 'POST', body: values });
+  itemDlg.close();
+  await load();
+});
+
 document.getElementById('refresh').addEventListener('click', load);
 await load();
 </script>

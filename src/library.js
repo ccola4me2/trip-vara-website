@@ -119,3 +119,113 @@ export async function handleSurveys(request, env) {
     return ghl.ghlErrorResponse(e);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Writes
+//
+// Every handler here resolves the location from the signed-in user and never
+// from the request. Three authorization bugs in this codebase have all been
+// the same shape: a scope check present on one handler and missing on its
+// neighbour, so the rule is that the location is derived, never supplied.
+// ---------------------------------------------------------------------------
+import { badRequest, clean, oneOf, toCents, readJson } from './util.js';
+import * as db from './db.js';
+
+export async function handleCreateSocialPost(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const summary = clean(body.summary, 2000);
+  const accountIds = Array.isArray(body.accountIds)
+    ? body.accountIds.map((a) => clean(a, 64)).filter(Boolean).slice(0, 20)
+    : [];
+
+  if (!summary) return badRequest('Write something to post.');
+  if (!accountIds.length) return badRequest('Choose at least one account to post to.');
+
+  // A schedule in the past would publish immediately, which is rarely what
+  // someone picking a date meant.
+  const scheduleDate = clean(body.scheduleDate, 40);
+  if (scheduleDate && Date.parse(scheduleDate) < Date.now() - 60000) {
+    return badRequest('That time is in the past.');
+  }
+
+  try {
+    const post = await ghl.createSocialPost(env, ghl.locationFor(env, user), {
+      accountIds, summary, scheduleDate: scheduleDate || undefined,
+    });
+    await db.logActivity(env, user.id, 'social.create',
+      scheduleDate ? 'Scheduled a social post' : 'Created a social post', { id: post.id });
+    return json({ ok: true, post }, 201);
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
+}
+
+export async function handleCreateProduct(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const name = clean(body.name, 160);
+  if (!name) return badRequest('Give the product a name.');
+
+  const locationId = ghl.locationFor(env, user);
+  try {
+    const product = await ghl.createProduct(env, locationId, {
+      name,
+      description: clean(body.description, 2000),
+      productType: oneOf(body.productType, ['SERVICE', 'PHYSICAL', 'DIGITAL']).toUpperCase(),
+    });
+
+    // A price is optional, but a product without one cannot be sold, so it is
+    // created in the same step rather than left as a second thing to remember.
+    let price = null;
+    const amountCents = toCents(body.amount);
+    if (product?.id && amountCents > 0) {
+      price = await ghl.createProductPrice(env, locationId, product.id, {
+        name: clean(body.priceName, 80) || name,
+        amount: amountCents / 100,
+        type: oneOf(body.priceType, ['one_time', 'recurring']),
+      }).catch(() => null);
+    }
+
+    await db.logActivity(env, user.id, 'product.create', `Added product ${name}`, { id: product?.id });
+    return json({ ok: true, product, price }, 201);
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
+}
+
+export async function handleCreateAccountItem(request, env, kind) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const name = clean(body.name, 120);
+  if (!name) return badRequest('Enter a name.');
+
+  const locationId = ghl.locationFor(env, user);
+  try {
+    let created;
+    if (kind === 'tags') {
+      created = await ghl.createTag(env, locationId, name);
+    } else if (kind === 'custom-values') {
+      const value = clean(body.value, 2000);
+      if (!value) return badRequest('Enter a value.');
+      created = await ghl.createCustomValue(env, locationId, { name, value });
+    } else if (kind === 'custom-fields') {
+      created = await ghl.createCustomField(env, locationId, {
+        name,
+        dataType: oneOf(body.dataType, ['TEXT', 'LARGE_TEXT', 'NUMERICAL', 'PHONE', 'MONETORY', 'DATE', 'CHECKBOX']).toUpperCase(),
+      });
+    } else {
+      return badRequest('Unknown item type.');
+    }
+    await db.logActivity(env, user.id, `account.${kind}`, `Added ${name}`, { kind });
+    return json({ ok: true, created }, 201);
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
+}

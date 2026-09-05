@@ -70,9 +70,20 @@ export async function handleProduction(request, env) {
   const months = Math.min(Math.max(Number(url.searchParams.get('months')) || 12, 1), 36);
   const since = isoDay(-months * 31);
 
-  const [byMonth, stats] = await Promise.all([
+  const [byMonth, stats, cashflow, payStats] = await Promise.all([
     db.productionByMonth(env, user.id, since),
     db.bookingStats(env, user.id),
+    db.paymentsByMonth(env, user.id, since),
+    db.paymentStats(env, user.id, { today: isoDay(0), soonThrough: isoDay(30) }),
   ]);
-  return json({ months, since, byMonth, stats });
+
+  // Collection rate: of everything that has already fallen due, how much has
+  // actually been posted. A low number here is the early warning that a
+  // booking is about to be cancelled by its supplier.
+  const dueSoFar = (payStats.collectedCents || 0) + (payStats.overdueCents || 0);
+  const collectionRate = dueSoFar > 0
+    ? Math.round((payStats.collectedCents / dueSoFar) * 1000) / 10
+    : null;
+
+  return json({ months, since, byMonth, stats, cashflow, payments: payStats, collectionRate });
 }

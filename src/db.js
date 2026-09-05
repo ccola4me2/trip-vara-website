@@ -575,3 +575,26 @@ export async function bookingBalances(env, userId) {
   ).bind(userId).all();
   return results || [];
 }
+
+/**
+ * Client payments grouped by the month they are due, split into what has been
+ * posted and what is still outstanding.
+ *
+ * Reports previously answered only "what did I sell". This answers "what is
+ * landing when", which is the question that decides whether a booking survives
+ * its supplier deadline.
+ */
+export async function paymentsByMonth(env, userId, sinceDate) {
+  const { results } = await env.DB.prepare(
+    `SELECT substr(p.due_date, 1, 7) AS month,
+            COUNT(*) AS payments,
+            SUM(CASE WHEN p.paid_date IS NOT NULL THEN p.amount_cents ELSE 0 END) AS posted_cents,
+            SUM(CASE WHEN p.paid_date IS NULL THEN p.amount_cents ELSE 0 END) AS outstanding_cents
+       FROM booking_payments p
+       JOIN bookings b ON b.id = p.booking_id
+      WHERE p.user_id = ? AND p.due_date IS NOT NULL AND p.due_date >= ?
+        AND b.status IN ('quoted','booked','travelled')
+      GROUP BY month ORDER BY month ASC LIMIT 36`
+  ).bind(userId, sinceDate).all();
+  return results || [];
+}
