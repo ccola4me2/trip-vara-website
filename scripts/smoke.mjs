@@ -599,6 +599,82 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // -------------------------------------------------------- commission ------
+  step('Commission the agency is owed');
+
+  // Three trips: one home a fortnight, one home four months, one not yet gone.
+  // The point of the report is that they are not the same problem.
+  const recent = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Comm Recent ${stamp}`, supplier: 'Carnival', status: 'travelled',
+    departDate: isoDay(-21), returnDate: isoDay(-14), gross: '4000', commission: '400',
+  });
+  const stale = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Comm Stale ${stamp}`, supplier: 'Carnival', status: 'travelled',
+    departDate: isoDay(-130), returnDate: isoDay(-120), gross: '6000', commission: '600',
+  });
+  const future = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Comm Future ${stamp}`, supplier: 'Oceania', status: 'booked',
+    departDate: isoDay(60), returnDate: isoDay(70), gross: '9000', commission: '900',
+  });
+  for (const r of [recent, stale, future]) {
+    if (r.data?.booking?.id) cleanup('a commission reservation', () =>
+      call(advisor, 'DELETE', `/api/bookings/${r.data.booking.id}`));
+  }
+
+  const comm = await call(advisor, 'GET', '/api/commissions');
+  const find = (id) => (comm.data?.rows || []).find((r) => r.id === id);
+  check(find(recent.data.booking.id)?.bucket === 'd30',
+    'a trip home a fortnight ago is inside normal turnaround',
+    find(recent.data.booking.id)?.bucket);
+  check(find(stale.data.booking.id)?.bucket === 'older',
+    'one home four months ago is over ninety days',
+    find(stale.data.booking.id)?.bucket);
+  check(find(future.data.booking.id)?.bucket === 'travelling',
+    'and one that has not departed is not late at all',
+    find(future.data.booking.id)?.bucket);
+
+  // The distinction the whole report rests on: everything eventually due
+  // versus what can actually be claimed today.
+  check(comm.data.totals.owedCents - comm.data.totals.claimableCents >= 90000,
+    'claimable excludes trips that have not happened yet',
+    `${comm.data.totals.owedCents} owed, ${comm.data.totals.claimableCents} claimable`);
+
+  const carnival = (comm.data?.byVendor || []).find((v) => v.vendor === 'Carnival');
+  check(carnival && carnival.cents >= 100000, 'and it totals by vendor',
+    carnival && carnival.cents);
+
+  // Chasing happens one vendor statement at a time, so the update is a batch.
+  const marked = await call(advisor, 'POST', '/api/commissions/status', {
+    ids: [recent.data.booking.id, stale.data.booking.id], status: 'invoiced',
+  });
+  check(marked.data?.changed === 2, 'several move to invoiced at once', marked.data?.changed);
+
+  // An owner may read an associate's commission but not declare it paid, and
+  // the response says how many actually moved rather than how many were asked
+  // for, so a silent no-op is impossible.
+  const notTheirs = await call(admin, 'POST', '/api/commissions/status', {
+    ids: [recent.data.booking.id], status: 'paid',
+  });
+  check(notTheirs.data?.changed === 0 && notTheirs.data?.requested === 1,
+    'an owner cannot mark an associate\'s commission paid',
+    JSON.stringify(notTheirs.data));
+
+  const paidOff = await call(advisor, 'POST', '/api/commissions/status', {
+    ids: [stale.data.booking.id], status: 'paid',
+  });
+  check(paidOff.data?.changed === 1, 'and marking one paid works');
+  const after = await call(advisor, 'GET', '/api/commissions');
+  check(!(after.data?.rows || []).some((r) => r.id === stale.data.booking.id
+    && r.commission_status !== 'paid'), 'after which it stops being owed');
+  check(after.data.totals.lateCents < comm.data.totals.lateCents,
+    'and the over ninety days figure falls',
+    `${after.data.totals.lateCents} from ${comm.data.totals.lateCents}`);
+
+  const badStatus = await call(advisor, 'POST', '/api/commissions/status',
+    { ids: [recent.data.booking.id], status: 'nonsense' });
+  check(badStatus.status === 400, 'an unknown status is refused rather than defaulted',
+    `status ${badStatus.status}`);
+
   // ------------------------------------------------ the reservation record --
   step('One trip on one screen');
 

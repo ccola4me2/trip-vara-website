@@ -106,6 +106,7 @@ const NAV = [
       { href: '/app/reservations', label: 'Reservations' },
       { href: '/app/groups', label: 'Group space' },
       { href: '/app/payments', label: 'Payments Due' },
+      { href: '/app/commissions', label: 'Commission owed' },
       { href: '/app/billing', label: 'Invoices' },
       { href: '/app/catalog', label: 'Vendor products' },
     ],

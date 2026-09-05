@@ -12,6 +12,7 @@ import { listTasks } from './tasks.js';
 import { listGroups } from './groups.js';
 import { listCredits } from './credits.js';
 import { goalProgress } from './goals.js';
+import { BUCKETS } from './commissions.js';
 import * as ghl from './ghl.js';
 
 function isoDay(offsetDays = 0) {
@@ -116,6 +117,7 @@ export async function handleDashboard(request, env) {
     // is showing. A target you did not set is not your target.
     goal: await goalProgress(env, user, db.selfScope(user), Number(today.slice(0, 4)), today)
       .catch(() => null),
+    commission: await commissionSummary(env, scope, today).catch(() => null),
     credits: await listCredits(env, scope, { state: 'open', limit: 25 }).catch(() => []),
   });
 }
@@ -285,6 +287,24 @@ async function noticesFor(env, user, scope) {
     });
   }
 
+  const staleCommission = await env.DB.prepare(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(b.commission_cents), 0) AS cents FROM bookings b
+      WHERE ${db.scopeWhere(scope, 'b.user_id').sql}
+        AND b.status IN ('booked','travelled') AND b.commission_status != 'paid'
+        AND b.commission_cents > 0
+        AND COALESCE(b.return_date, b.depart_date) IS NOT NULL
+        AND COALESCE(b.return_date, b.depart_date) < ?`
+  ).bind(...db.scopeWhere(scope, 'b.user_id').binds, isoDay(-90)).first().catch(() => null);
+
+  if (staleCommission && staleCommission.n) {
+    out.push({
+      tone: 'urgent',
+      title: `Commission unpaid on ${staleCommission.n} trip${staleCommission.n === 1 ? '' : 's'} home over 90 days`,
+      detail: 'Money the agency has earned and not been paid. Vendors do not chase themselves.',
+      href: '/app/commissions', label: 'Open commission',
+    });
+  }
+
   if (undated && undated.n) {
     out.push({
       tone: 'warn',
@@ -313,4 +333,51 @@ async function noticesFor(env, user, scope) {
   }
 
   return out;
+}
+
+/**
+ * The commission panel's figures, without the row by row detail the page
+ * needs. Aged from the return date, because commission is earned when the
+ * client travels rather than when they book.
+ */
+async function commissionSummary(env, scope, today) {
+  const scoped = db.scopeWhere(scope, 'b.user_id');
+  const { results } = await env.DB.prepare(
+    `SELECT b.supplier, b.commission_cents,
+            COALESCE(b.return_date, b.depart_date) AS back
+       FROM bookings b
+      WHERE ${scoped.sql} AND b.status IN ('booked','travelled')
+        AND b.commission_status != 'paid' AND b.commission_cents > 0
+      LIMIT 1000`
+  ).bind(...scoped.binds).all();
+
+  const ageing = Object.fromEntries(BUCKETS.map((b) => [b.key, { cents: 0, count: 0 }]));
+  const vendors = {};
+  let owed = 0;
+  let claimable = 0;
+
+  for (const r of results || []) {
+    const days = r.back
+      ? Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${r.back}T00:00:00Z`)) / 86400000)
+      : null;
+    const key = days === null || days < 0 ? 'travelling'
+      : days <= 30 ? 'd30' : days <= 60 ? 'd60' : days <= 90 ? 'd90' : 'older';
+    ageing[key].cents += r.commission_cents || 0;
+    ageing[key].count += 1;
+    owed += r.commission_cents || 0;
+    if (key !== 'travelling') claimable += r.commission_cents || 0;
+
+    const vendor = r.supplier || 'Unrecorded vendor';
+    vendors[vendor] = vendors[vendor] || { vendor, cents: 0, count: 0 };
+    vendors[vendor].cents += r.commission_cents || 0;
+    vendors[vendor].count += 1;
+  }
+
+  return {
+    owedCents: owed,
+    claimableCents: claimable,
+    ageing,
+    buckets: BUCKETS,
+    byVendor: Object.values(vendors).sort((a, b) => b.cents - a.cents),
+  };
 }

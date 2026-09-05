@@ -302,6 +302,34 @@ const PANELS = {
     } },
   ], 'now'),
 
+  commission: () => widget('Commission owed', { href: '/app/commissions', label: 'All commission' }, [
+    { key: 'age', label: 'By age', render: () => {
+      const c = d.commission;
+      if (!c || !c.owedCents) return '<p class="wempty">Nothing outstanding.</p>';
+      return `<div style="padding:.8rem 1rem;">
+        <p style="font-size:.82rem;margin:0 0 .7rem;">Claimable now
+          <strong style="font-size:1.3rem;">${esc(money(c.claimableCents))}</strong></p>
+        ${c.buckets.map((b) => {
+          const a = c.ageing[b.key] || { cents: 0, count: 0 };
+          if (!a.count) return '';
+          const tone = b.key === 'older' ? 'color:var(--red-600);'
+            : b.key === 'd90' ? 'color:var(--amber-600);' : '';
+          return `<div class="stage-row"><span style="min-width:9rem;">${esc(b.label)}</span>
+            <span class="n" style="${tone}">${esc(money(a.cents))}
+              <span class="muted">${a.count}</span></span></div>`;
+        }).join('')}</div>`;
+    } },
+    { key: 'vendor', label: 'By vendor', render: () => {
+      const c = d.commission;
+      if (!c || !c.byVendor.length) return '<p class="wempty">Nothing outstanding.</p>';
+      const top = Math.max(...c.byVendor.map((v) => v.cents), 1);
+      return `<div style="padding:.6rem 0;">${c.byVendor.slice(0, 8).map((v) => `
+        <div class="stage-row"><span style="min-width:8.5rem;">${esc(v.vendor)}</span>
+          <span class="bar"><span style="width:${Math.round((v.cents / top) * 100)}%"></span></span>
+          <span class="n">${esc(money(v.cents))}</span></div>`).join('')}</div>`;
+    } },
+  ], 'age'),
+
   trend: () => widget('Production trend', { href: '/app/reports', label: 'Full report' }, [
     { key: 'gross', label: 'By month', render: () => trendBars('gross_cents') },
     { key: 'type', label: 'By type', render: () => breakdown(d.byType, TYPE_LABEL) },

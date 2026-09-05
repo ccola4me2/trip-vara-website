@@ -28,6 +28,7 @@ const PAGES = [
   ['public/app/groups.html', ['/api/groups']],
   ['public/app/credits.html', ['/api/credits?state=all', '/api/bookings']],
   ['public/app/goals.html', ['/api/goals']],
+  ['public/app/commissions.html', ['/api/commissions']],
   ['public/app/reservation.html', ['detail-record:/api/bookings']],
   ['public/app/tasks.html', ['/api/tasks?state=all', '/api/bookings']],
   ['public/app/billing.html', ['/api/billing']],

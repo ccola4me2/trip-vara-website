@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commission owed | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Commission owed</h1><p class="sub">What vendors owe the agency, and how long they have owed it.</p></div>
+      <span id="scope"></span>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="stats" class="stat-grid"></section>
+      <div class="notice notice-info">
+        Commission is earned when the client travels, so the clock starts on their return date. A trip
+        that has not departed is not late, however long ago it was sold.
+      </div>
+      <div class="split" style="margin-top:1.5rem;">
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>Waiting to be paid</h2>
+              <select id="status-filter" aria-label="Status" style="width:auto;">
+                <option value="">Pending and invoiced</option>
+                <option value="pending">Pending</option>
+                <option value="invoiced">Invoiced</option>
+                <option value="paid">Paid</option>
+              </select></div>
+            <div class="toolbar" style="padding:0 1.25rem;" id="bulk" hidden>
+              <span id="selected-count" class="muted"></span>
+              <button class="btn btn-ghost btn-sm" data-mark="invoiced">Mark invoiced</button>
+              <button class="btn btn-secondary btn-sm" data-mark="paid">Mark paid</button>
+              <button class="btn btn-ghost btn-sm" data-mark="pending">Back to pending</button>
+            </div>
+            <div id="rows"></div>
+          </section>
+        </div>
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>By age</h2></div>
+            <div class="card-pad" id="ageing"></div>
+          </section>
+          <section class="card" style="margin-top:1.5rem;">
+            <div class="card-head"><h2>By vendor</h2></div>
+            <div id="vendors"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, showError, mountScopePicker, advisorParam } from '/js/app.js';
+const ME = (await mountShell()).id;
+
+const err = document.getElementById('err');
+const statusFilter = document.getElementById('status-filter');
+const bulk = document.getElementById('bulk');
+let d = null;
+const chosen = new Set();
+
+const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
+const TONE = { pending: 'badge-navy', invoiced: 'badge-amber', paid: 'badge-green' };
+
+function ageLabel(r) {
+  if (r.daysSince === null) return 'no dates';
+  if (r.daysSince < 0) return `home in ${Math.abs(r.daysSince)}d`;
+  return `${r.daysSince}d since return`;
+}
+
+function render() {
+  const t = d.totals;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Claimable now</p>
+      <p class="value">${money(t.claimableCents)}</p>
+      <p class="meta">Clients home, commission unpaid</p></div>
+    <div class="stat"><p class="label">Over 90 days</p>
+      <p class="value" style="${t.lateCents ? 'color:var(--red-600);' : ''}">${money(t.lateCents)}</p>
+      <p class="meta">May quietly never arrive</p></div>
+    <div class="stat"><p class="label">Owed in total</p><p class="value">${money(t.owedCents)}</p>
+      <p class="meta">${t.owedCount} reservation${t.owedCount === 1 ? '' : 's'}, travelled or not</p></div>
+    <div class="stat"><p class="label">Received</p><p class="value">${money(t.paidCents)}</p>
+      <p class="meta">Marked paid</p></div>`;
+
+  document.getElementById('ageing').innerHTML = d.buckets.map((b) => {
+    const a = d.ageing[b.key] || { cents: 0, count: 0 };
+    const tone = b.key === 'older' ? 'color:var(--red-600);'
+      : b.key === 'd90' ? 'color:var(--amber-600);' : '';
+    return `<div class="row-between" style="padding:.45rem 0;border-bottom:1px solid var(--navy-100);">
+      <span><span class="t" style="font-size:.84rem;">${esc(b.label)}</span>
+        <span class="m">${esc(b.hint)}</span></span>
+      <span style="text-align:right;"><strong style="${tone}">${money(a.cents)}</strong>
+        <div class="muted" style="font-size:.72rem;">${a.count}</div></span></div>`;
+  }).join('');
+
+  document.getElementById('vendors').innerHTML = d.byVendor.length
+    ? `<ul class="rows">${d.byVendor.map((v) => `<li><div class="row-between">
+        <span><span class="t">${esc(v.vendor)}</span>
+          <span class="m">${v.count} reservation${v.count === 1 ? '' : 's'}${
+            v.oldestDays !== null && v.oldestDays > 0 ? ` · oldest ${v.oldestDays}d` : ''}</span></span>
+        <strong>${money(v.cents)}</strong></div></li>`).join('')}</ul>`
+    : '<p class="wempty">Nothing outstanding.</p>';
+
+  const rows = d.rows.filter((r) => (statusFilter.value
+    ? r.commission_status === statusFilter.value
+    : r.commission_status !== 'paid'));
+
+  document.getElementById('rows').innerHTML = rows.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th style="width:2rem;"></th><th>Client</th><th>Vendor</th><th>Home</th>
+          <th>Status</th><th class="num">Commission</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr>
+          <td>${r.user_id === ME
+            ? `<input type="checkbox" data-pick="${esc(r.id)}"${chosen.has(r.id) ? ' checked' : ''}
+                 aria-label="Select ${esc(r.client_name)}">`
+            : ''}</td>
+          <td><a class="name" href="/app/reservation?id=${esc(r.id)}">${esc(r.client_name)}</a>
+            <div class="muted">${esc(r.confirmation_number || '')}</div></td>
+          <td>${esc(r.supplier || '-')}</td>
+          <td>${esc(short(r.back))}<div class="muted" style="font-size:.72rem;">${esc(ageLabel(r))}</div></td>
+          <td><span class="badge ${TONE[r.commission_status]}">${esc(r.commission_status)}</span></td>
+          <td class="num">${money(r.commission_cents)}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty"><h3>Nothing here</h3><p>No commission in this state.</p></div>';
+
+  document.querySelectorAll('[data-pick]').forEach((box) => {
+    box.addEventListener('change', () => {
+      if (box.checked) chosen.add(box.dataset.pick); else chosen.delete(box.dataset.pick);
+      updateBulk();
+    });
+  });
+  updateBulk();
+}
+
+function updateBulk() {
+  bulk.hidden = chosen.size === 0;
+  document.getElementById('selected-count').textContent =
+    `${chosen.size} selected`;
+}
+
+document.querySelectorAll('[data-mark]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    if (!chosen.size) return;
+    btn.disabled = true;
+    try {
+      const res = await api('/api/commissions/status',
+        { method: 'POST', body: { ids: [...chosen], status: btn.dataset.mark } });
+      // Says what actually moved rather than what was asked for.
+      if (res.changed !== res.requested) {
+        err.innerHTML = `<div class="notice notice-info">${res.changed} of ${res.requested} updated.
+          The rest belong to another advisor.</div>`;
+      } else { err.innerHTML = ''; }
+      chosen.clear();
+      await load();
+    } catch (e) { showError(err, e); }
+    finally { btn.disabled = false; }
+  });
+});
+
+statusFilter.addEventListener('change', () => { chosen.clear(); render(); });
+
+async function load() {
+  try {
+    d = await api(`/api/commissions${advisorParam() ? '?' + advisorParam() : ''}`);
+    mountScopePicker(document.getElementById('scope'), d, load);
+    render();
+  } catch (e) { showError(err, e); }
+}
+
+await load();
+</script>
+</body></html>

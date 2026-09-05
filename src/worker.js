@@ -57,6 +57,7 @@ import {
   handleListCredits, handleCreateCredit, handleUpdateCredit, handleDeleteCredit,
 } from './credits.js';
 import { handleGetGoals, handleSaveGoals } from './goals.js';
+import { handleListCommissions, handleSetCommissionStatus } from './commissions.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
@@ -113,6 +114,7 @@ const PAGE_FILES = {
   '/app/groups': '/app/groups.html',
   '/app/credits': '/app/credits.html',
   '/app/goals': '/app/goals.html',
+  '/app/commissions': '/app/commissions.html',
   '/app/reservations': '/app/reservations.html',
   '/app/reservation': '/app/reservation.html',
   '/app/bookings': '/app/reservations.html',
@@ -339,6 +341,10 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/month' && method === 'GET') return handleMonth(request, env);
   if (path === '/api/goals' && method === 'GET') return handleGetGoals(request, env);
   if (path === '/api/goals' && method === 'PUT') return handleSaveGoals(request, env);
+  if (path === '/api/commissions' && method === 'GET') return handleListCommissions(request, env);
+  if (path === '/api/commissions/status' && method === 'POST') {
+    return handleSetCommissionStatus(request, env);
+  }
   if (path === '/api/reports/production' && method === 'GET') return handleProduction(request, env);
 
   // ---- admin ------------------------------------------------------------

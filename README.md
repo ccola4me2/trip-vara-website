@@ -47,6 +47,7 @@ tracking has value on its own.
 | `/app/groups` | Advisor | Group space: held cabins and option dates |
 | `/app/credits` | Advisor | Vendor credits a client holds, and when they lapse |
 | `/app/goals` | Advisor | Annual targets and whether you are on pace |
+| `/app/commissions` | Advisor | Commission owed, aged from the return date |
 | `/app/reservations` | Advisor | Reservation CRUD, vendor deadlines, commission |
 | `/app/reservation` | Advisor | One trip: schedule, tasks, credits, group |
 | `/app/billing` | Advisor | Invoices, transactions, reconciliation against reservations |
