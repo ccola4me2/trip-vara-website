@@ -599,6 +599,74 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // ------------------------------------------------------------- catalog ----
+  {
+  step('The sailing catalog');
+
+  const lines = await call(advisor, 'GET', '/api/catalog/lines');
+  check(lines.status === 200, 'the catalog answers', `status ${lines.status}`);
+
+  if (!lines.data?.ready) {
+    check(true, 'no catalog imported here, so the rest is skipped');
+    console.log('        (set CRUISEFEED_KEY and let the cron run to exercise this)');
+  } else {
+    const line = lines.data.lines[0];
+    check(line && line.name, 'with cruise lines that have upcoming sailings', line && line.name);
+
+    const ships = await call(advisor, 'GET', `/api/catalog/ships?line=${encodeURIComponent(line.name)}`);
+    check((ships.data?.ships || []).length > 0, 'and ships for a line', `${ships.data?.ships?.length}`);
+
+    const shipName = ships.data.ships[0].name;
+    const dates = await call(advisor, 'GET',
+      `/api/catalog/dates?ship=${encodeURIComponent(shipName)}&line=${encodeURIComponent(line.name)}`);
+    const sailing = (dates.data?.dates || [])[0];
+    check(sailing && sailing.depart_date && sailing.return_date,
+      'and departures with a return date, which is what a pasted list never has',
+      sailing && `${sailing.depart_date} to ${sailing.return_date}`);
+
+    // The reason the catalog is here: a reservation with a departure and no
+    // return, exactly as an import leaves it.
+    const half = await call(advisor, 'POST', '/api/bookings', {
+      clientName: `Catalog Client ${stamp}`, supplier: line.name,
+      productName: sailing.ship, departDate: sailing.depart_date, status: 'booked',
+    });
+    const halfId = half.data?.booking?.id;
+    if (halfId) cleanup('the catalog reservation', () =>
+      call(advisor, 'DELETE', `/api/bookings/${halfId}`));
+    check(half.data?.booking && !half.data.booking.return_date,
+      'a reservation can be created with no return date');
+
+    const suggested = await call(advisor, 'GET', '/api/catalog/suggest');
+    const mine = (suggested.data?.suggestions || []).find((x) => x.id === halfId);
+    check(mine && mine.fills.returnDate === sailing.return_date,
+      'the catalog offers the return date it knows', mine && JSON.stringify(mine.fills));
+
+    const applied = await call(advisor, 'POST', '/api/catalog/apply', { ids: [halfId] });
+    check(applied.data?.changed === 1, 'applying it fills the gap', JSON.stringify(applied.data));
+    const filled = await call(advisor, 'GET', `/api/bookings/${halfId}`);
+    check(filled.data?.booking?.return_date === sailing.return_date,
+      'and the reservation now carries a real return date',
+      filled.data?.booking?.return_date);
+
+    // Never overwrite. A date an advisor typed outranks anything a feed says,
+    // and a tool that quietly disagrees with its user stops being used.
+    await call(advisor, 'POST', `/api/bookings/${halfId}/quick`, { returnDate: isoDay(400) });
+    const again = await call(advisor, 'POST', '/api/catalog/apply', { ids: [halfId] });
+    const untouched = await call(advisor, 'GET', `/api/bookings/${halfId}`);
+    check(untouched.data?.booking?.return_date === isoDay(400),
+      'and a date already there is never overwritten',
+      `${untouched.data?.booking?.return_date} after ${JSON.stringify(again.data)}`);
+  }
+
+  const adminOnly = await call(advisor, 'GET', '/api/admin/catalog');
+  check(adminOnly.status === 403 || adminOnly.status === 401,
+    'the import status is for owners only', `status ${adminOnly.status}`);
+  const asOwner = await call(admin, 'GET', '/api/admin/catalog');
+  check(asOwner.status === 200 && typeof asOwner.data?.rows === 'number',
+    'who see how many rows are actually stored, not how many were sent',
+    JSON.stringify({ rows: asOwner.data?.rows, configured: asOwner.data?.configured }));
+  }
+
   // ----------------------------------------------------------- importing ----
   step('Bringing an existing book across');
 

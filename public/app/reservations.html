@@ -63,6 +63,19 @@
           </select></div>
       </div>
       <div class="field-row">
+        <div class="field" style="grid-column:1/-1;">
+          <label>Find the sailing</label>
+          <div class="toolbar" style="margin:0;" id="picker">
+            <select id="pick-line" aria-label="Cruise line" style="flex:1;min-width:0;">
+              <option value="">Pick a cruise line</option></select>
+            <select id="pick-ship" aria-label="Ship" style="flex:1;min-width:0;" disabled>
+              <option value="">Ship</option></select>
+            <select id="pick-date" aria-label="Departure" style="flex:1;min-width:0;" disabled>
+              <option value="">Departure</option></select>
+          </div>
+          <p class="field-hint" id="picker-hint">Optional. Picking a real sailing fills the vendor,
+            ship, dates and region below, spelled the way the vendor spells them.</p>
+        </div>
         <div class="field"><label for="supplier">Vendor</label>
           <input id="supplier" name="supplier" placeholder="Margaritaville at Sea"></div>
         <div class="field"><label for="productName">Ship or property</label>
@@ -264,10 +277,80 @@ onSubmit(form, async (values) => {
   await load();
 });
 
+/**
+ * The sailing picker: line, then ship, then departure.
+ *
+ * Filling the form from the catalog rather than from memory is the difference
+ * between one vendor in a report and three, and it is the only way to get a
+ * return date right without looking it up. Everything it sets can still be
+ * typed over: a chartered sailing or a private group will not be in a feed.
+ */
+const pickLine = document.getElementById('pick-line');
+const pickShip = document.getElementById('pick-ship');
+const pickDate = document.getElementById('pick-date');
+const pickerHint = document.getElementById('picker-hint');
+let dateRows = [];
+
+async function setUpPicker() {
+  let d;
+  try { d = await api('/api/catalog/lines'); } catch { d = null; }
+  if (!d || !d.ready || !d.lines.length) {
+    document.getElementById('picker').hidden = true;
+    pickerHint.textContent = 'The sailing catalog has not been imported yet, so type the details below.';
+    return;
+  }
+  pickLine.innerHTML = '<option value="">Pick a cruise line</option>'
+    + d.lines.map((l) => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
+}
+
+pickLine.addEventListener('change', async () => {
+  pickShip.innerHTML = '<option value="">Ship</option>';
+  pickDate.innerHTML = '<option value="">Departure</option>';
+  pickShip.disabled = true;
+  pickDate.disabled = true;
+  if (!pickLine.value) return;
+  const d = await api(`/api/catalog/ships?line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
+  if (!d || !d.ships.length) return;
+  pickShip.innerHTML = '<option value="">Ship</option>'
+    + d.ships.map((sh) => `<option value="${esc(sh.name)}">${esc(sh.name)}</option>`).join('');
+  pickShip.disabled = false;
+});
+
+pickShip.addEventListener('change', async () => {
+  pickDate.innerHTML = '<option value="">Departure</option>';
+  pickDate.disabled = true;
+  dateRows = [];
+  if (!pickShip.value) return;
+  const d = await api(`/api/catalog/dates?ship=${encodeURIComponent(pickShip.value)}`
+    + `&line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
+  if (!d || !d.dates.length) return;
+  dateRows = d.dates;
+  pickDate.innerHTML = '<option value="">Departure</option>'
+    + d.dates.map((r) => `<option value="${esc(r.depart_date)}">${esc(dateFmt(r.depart_date))}`
+      + `${r.nights ? ` · ${r.nights} nights` : ''}</option>`).join('');
+  pickDate.disabled = false;
+});
+
+pickDate.addEventListener('change', () => {
+  const row = dateRows.find((r) => r.depart_date === pickDate.value);
+  if (!row) return;
+  const set = (n, v) => { const el = form.elements[n]; if (el && v) el.value = v; };
+  set('supplier', row.cruise_line);
+  set('productName', row.ship);
+  set('destination', row.destination);
+  set('departDate', row.depart_date);
+  set('returnDate', row.return_date);
+  set('productType', 'cruise');
+  pickerHint.textContent = `Filled from ${row.cruise_line}: ${row.name || row.ship}. `
+    + 'Change anything below that is not right.';
+});
+
 // Only the advisor's own open groups: a reservation cannot be sold out of
 // somebody else's block.
 groups = await api('/api/groups?status=open')
   .then((g) => g.groups.filter((x) => x.user_id === ME)).catch(() => []);
+
+await setUpPicker();
 
 const params = new URLSearchParams(location.search);
 if (params.get('new')) openCreate();

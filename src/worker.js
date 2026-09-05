@@ -61,6 +61,11 @@ import { handleListCommissions, handleSetCommissionStatus } from './commissions.
 import { handleClientRecord, handleListClients, handleUpdateClient } from './clients.js';
 import { handlePreviewImport, handleRunImport } from './importer.js';
 import {
+  handleCatalogLines, handleCatalogShips, handleCatalogDates, handleCatalogStatus,
+  handleCatalogImport, handleCatalogSuggest, handleCatalogApply,
+} from './catalogapi.js';
+import { importCatalogStep } from './catalog.js';
+import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
 } from './automations.js';
@@ -151,6 +156,12 @@ export default {
     // Look for time based triggers, then advance whatever is due. Order
     // matters: scanning first means a payment that just came into range is
     // acted on in the same pass rather than waiting five more minutes.
+    // The catalog import is a no-op once the current monthly snapshot is fully
+    // imported, so running it on every tick costs one request a day and the
+    // catalog is never more than five minutes behind a new snapshot.
+    ctx.waitUntil(
+      importCatalogStep(env, { maxPages: 8 }).catch((e) => console.error('catalog import', e))
+    );
     ctx.waitUntil(
       scanTimeTriggers(env, locationFor(env, null))
         .catch((e) => console.error('time triggers', e))
@@ -356,6 +367,16 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/clients' && method === 'GET') return handleListClients(request, env);
   if (path === '/api/import/preview' && method === 'POST') return handlePreviewImport(request, env);
   if (path === '/api/import/reservations' && method === 'POST') return handleRunImport(request, env);
+
+  // The sailing catalog: a real vendor, ship and pair of dates, rather than
+  // whatever was typed.
+  if (path === '/api/catalog/lines' && method === 'GET') return handleCatalogLines(request, env);
+  if (path === '/api/catalog/ships' && method === 'GET') return handleCatalogShips(request, env);
+  if (path === '/api/catalog/dates' && method === 'GET') return handleCatalogDates(request, env);
+  if (path === '/api/catalog/suggest' && method === 'GET') return handleCatalogSuggest(request, env);
+  if (path === '/api/catalog/apply' && method === 'POST') return handleCatalogApply(request, env);
+  if (path === '/api/admin/catalog' && method === 'GET') return handleCatalogStatus(request, env);
+  if (path === '/api/admin/catalog' && method === 'POST') return handleCatalogImport(request, env);
   if (clientMatch && method === 'PUT') return handleUpdateClient(request, env, clientMatch[1]);
   if (path === '/api/commissions' && method === 'GET') return handleListCommissions(request, env);
   if (path === '/api/commissions/status' && method === 'POST') {

@@ -143,6 +143,34 @@ appears without anybody having to reset their dashboard.
 Quick links accept `http` and `https` only. A saved `javascript:` URL would be
 stored once and then clicked by its author on every later visit.
 
+## The sailing catalog
+
+A local copy of the CruiseFeed catalog, imported into D1 and read from there.
+The import loop is lifted from the CruiseShoppers portal, which has run it over
+about 75,000 rows; keeping the proven shape rather than writing a second one
+matters, because the awkward parts are not obvious. In particular `dedupe=true`
+is required for a bulk import: without it the API returns each sailing once per
+source, which inflates the near-term rows so much that paging by offset covers
+a fortnight of calendar and then stops.
+
+It needs the `CRUISEFEED_KEY` secret on the Worker. The cron calls it every
+five minutes and it does nothing at all once the current monthly snapshot is
+fully imported, so it costs about one request a day.
+
+Three things it buys:
+
+- A reservation can be built by picking a real sailing, so the vendor and ship
+  are spelled the way the vendor spells them. One row per vendor in a report
+  rather than three.
+- Real return dates. A pasted book of business carries a departure and no
+  return, because no back office puts one in a list.
+- Filling those gaps afterwards, matched on ship and departure date.
+
+The fill is offered, never applied on its own, and never overwrites a value
+that is already there. The match is a strong guess rather than a fact, and a
+date written in by software is indistinguishable afterwards from one an
+advisor confirmed.
+
 ## Who sees what
 
 Two kinds of account use the portal.

@@ -23,6 +23,11 @@
         A trip with no final payment date cannot be chased, and one with no cost cannot be counted.
         Type straight into the table: each change saves when you leave the box.
       </div>
+      <section class="card" id="catalog-card" hidden style="margin-bottom:1.25rem;">
+        <div class="card-head"><h2>The catalog can fill some of these</h2>
+          <button class="btn btn-primary btn-sm" id="apply-catalog">Fill them in</button></div>
+        <div id="catalog-body"></div>
+      </section>
       <div class="toolbar">
         <select id="filter" aria-label="What to show" style="width:auto;">
           <option value="any">Missing anything</option>
@@ -155,10 +160,54 @@ function render() {
 
 filter.addEventListener('change', render);
 
+/**
+ * What the sailing catalog knows that a pasted list did not carry.
+ *
+ * Offered rather than applied. The match is on ship and departure date, which
+ * is a strong guess and not a fact, and a date written in by software is
+ * indistinguishable afterwards from one an advisor confirmed.
+ */
+async function offerCatalog() {
+  let d;
+  try { d = await api('/api/catalog/suggest'); } catch { return; }
+  if (!d.ready || !d.suggestions.length) return;
+
+  document.getElementById('catalog-card').hidden = false;
+  document.getElementById('catalog-body').innerHTML = `
+    <p class="field-hint" style="padding:0 1.25rem;margin:0 0 .8rem;">
+      Matched on ship and departure date. Only empty fields are filled; nothing you have typed is
+      touched.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Client</th><th>Sailing</th><th>Departing</th><th>Will fill</th></tr></thead>
+      <tbody>${d.suggestions.map((sg) => `<tr>
+        <td><span class="name">${esc(sg.clientName)}</span></td>
+        <td>${esc(sg.ship)}<div class="muted">${esc(sg.line || '')}${
+          sg.itinerary ? ' · ' + esc(sg.itinerary) : ''}</div></td>
+        <td>${esc(dateFmt(sg.departDate))}</td>
+        <td>${Object.entries(sg.fills).map(([k, v]) =>
+          `<span class="badge badge-green">${esc(k === 'returnDate' ? 'returns ' + v : v)}</span>`
+        ).join(' ')}</td></tr>`).join('')}</tbody></table></div>`;
+
+  document.getElementById('apply-catalog').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const res = await api('/api/catalog/apply',
+        { method: 'POST', body: { ids: d.suggestions.map((sg) => sg.id) } });
+      note(`Filled ${res.changed}`);
+      const fresh = await api('/api/bookings');
+      all = fresh.bookings;
+      document.getElementById('catalog-card').hidden = true;
+      render();
+      await offerCatalog();
+    } catch (er) { showError(err, er); e.target.disabled = false; }
+  });
+}
+
 try {
   const d = await api('/api/bookings');
   all = d.bookings;
   render();
+  await offerCatalog();
 } catch (e) { showError(panel, e); }
 </script>
 </body></html>
