@@ -252,6 +252,47 @@ export async function mountShell({ admin = false } = {}) {
   return user;
 }
 
+/**
+ * Adds a reveal control to every password field on the page.
+ *
+ * Done in JS rather than in each page's markup so the four auth pages cannot
+ * drift apart, and so a new password field gets the control by existing. The
+ * input keeps its own id, name and autocomplete: only the type is toggled.
+ */
+export function enhancePasswordFields(root = document) {
+  const eye = 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Zm10 2.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z';
+  const eyeOff = 'M3 3l18 18M10.6 10.7a2.6 2.6 0 0 0 3.7 3.6M9.9 5.7A9.9 9.9 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5a17 17 0 0 1-3.3 4M6.5 7.6A16.6 16.6 0 0 0 2 12s3.6 6.5 10 6.5c1.2 0 2.2-.2 3.2-.5';
+
+  root.querySelectorAll('input[type="password"]').forEach((input) => {
+    if (input.closest('.pw')) return;
+    const wrap = document.createElement('span');
+    wrap.className = 'pw';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'pw-toggle';
+    button.setAttribute('aria-pressed', 'false');
+    button.setAttribute('aria-label', 'Show password');
+    button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${eye}"/></svg>`;
+
+    button.addEventListener('click', () => {
+      const shown = input.type === 'text';
+      input.type = shown ? 'password' : 'text';
+      button.setAttribute('aria-pressed', String(!shown));
+      button.setAttribute('aria-label', shown ? 'Show password' : 'Hide password');
+      button.querySelector('path').setAttribute('d', shown ? eye : eyeOff);
+      // Typing should carry on where it left off, not at the start.
+      const end = input.value.length;
+      input.focus();
+      try { input.setSelectionRange(end, end); } catch { /* not all types allow it */ }
+    });
+    wrap.appendChild(button);
+  });
+}
+
 /** Renders an error into a container, with a friendlier GHL setup case. */
 export function showError(container, err) {
   if (!container) return;

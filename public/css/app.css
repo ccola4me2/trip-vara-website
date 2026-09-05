@@ -267,21 +267,57 @@ dialog form { margin: 0; }
 .icon-btn:hover { color: var(--navy-800); }
 
 /* ------------------------------------------------------------ auth pages -- */
-.auth-wrap { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
-.auth-aside { background: var(--navy-900); color: #fff; padding: 3rem; display: flex; flex-direction: column; justify-content: center; }
-.auth-aside h2 { color: #fff; font-size: 1.9rem; max-width: 15em; }
-.auth-aside p { color: var(--navy-200); max-width: 30em; margin-top: 1rem; }
-.auth-aside ul { list-style: none; padding: 0; margin: 1.6rem 0 0; }
-.auth-aside li { color: var(--navy-100); padding-left: 1.1rem; position: relative; margin-bottom: .6rem; font-size: .92rem; }
-.auth-aside li::before { content: ""; position: absolute; left: 0; top: .58em; width: 6px; height: 6px; border-radius: 50%; background: var(--coral-400); }
-.auth-main { display: flex; align-items: center; justify-content: center; padding: 2rem; }
-.auth-card { width: 100%; max-width: 380px; }
-.auth-card .wordmark { margin-bottom: 1.8rem; }
-.auth-card h1 { margin-bottom: .4rem; }
-.auth-card .lede { color: var(--ink-500); margin-bottom: 1.6rem; }
-.auth-card .btn { width: 100%; }
-.auth-foot { margin-top: 1.3rem; font-size: .85rem; color: var(--ink-500); text-align: center; }
-@media (max-width: 900px) { .auth-wrap { grid-template-columns: 1fr; } .auth-aside { display: none; } }
+/* One centred card under the mark, the way a back office signs you in. The
+   marketing split that used to be here was hidden below 900px anyway, and a
+   list of features is not what someone signing in at 7am is reading. */
+.auth-page {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1.4rem;
+  padding: 2.5rem 1rem;
+}
+.auth-brand { display: flex; align-items: center; gap: .9rem; text-decoration: none; }
+.auth-brand img { width: 52px; height: 52px; }
+.auth-brand b {
+  display: block; font-size: 1.45rem; font-weight: 680; letter-spacing: .24em;
+  text-transform: uppercase; color: var(--navy-800); line-height: 1.1;
+}
+.auth-brand small {
+  display: block; font-size: .7rem; letter-spacing: .07em; color: var(--coral-500); margin-top: .25rem;
+}
+
+.auth-card {
+  width: 100%; max-width: 440px; background: #fff;
+  border: 1px solid var(--navy-100); border-radius: var(--radius);
+  overflow: hidden; box-shadow: 0 10px 30px rgba(15, 28, 43, .07);
+}
+.auth-card-head { background: var(--navy-900); padding: 1.7rem 2rem; text-align: center; }
+.auth-card-head h1 { color: #fff; font-size: 1.6rem; margin: 0; }
+.auth-card-head p { color: var(--navy-200); font-size: .88rem; margin: .5rem 0 0; }
+.auth-card-body { padding: 1.7rem 2rem 1.9rem; }
+.auth-card-body .btn { width: 100%; }
+.auth-foot { margin-top: 1.1rem; font-size: .85rem; color: var(--ink-500); text-align: center; }
+.auth-legal {
+  max-width: 440px; text-align: center; font-size: .74rem;
+  color: var(--ink-400); line-height: 1.7; margin: 0;
+}
+@media (max-width: 460px) {
+  .auth-card-head, .auth-card-body { padding-left: 1.25rem; padding-right: 1.25rem; }
+  .auth-brand img { width: 42px; height: 42px; }
+  .auth-brand b { font-size: 1.2rem; }
+}
+
+/* Password fields carry a reveal control. These passwords are ten characters
+   minimum and typed on phones, and the alternative to showing them is people
+   choosing shorter ones. */
+.pw { position: relative; display: block; }
+.pw input { padding-right: 3rem; }
+.pw-toggle {
+  position: absolute; top: 0; right: 0; height: 100%; width: 2.9rem;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; cursor: pointer; color: var(--ink-400);
+}
+.pw-toggle:hover { color: var(--navy-800); }
+.pw-toggle svg { width: 18px; height: 18px; }
 
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .toolbar { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }

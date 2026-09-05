@@ -9,23 +9,17 @@
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-<div class="auth-wrap">
-  <aside class="auth-aside">
-    <a class="wordmark on-dark" href="/"><img src="/logo-mark.svg" alt=""><span><b>TripVara</b><small>From first inquiry to welcome home.</small></span></a>
-    <h2 style="margin-top:2.5rem;">Your leads, pipeline and bookings in one place</h2>
-    <p>Everything from Trip Vara Tools, in an interface built for how travel actually gets sold.</p>
-    <ul>
-      <li>Every lead and contact, live from Trip Vara Tools</li>
-      <li>Pipeline board with real deal values</li>
-      <li>Bookings with deposits, final payment dates and commission</li>
-      <li>Production numbers that are actually yours</li>
-    </ul>
-  </aside>
-  <main class="auth-main">
-    <div class="auth-card">
-      <a class="wordmark" href="/"><img src="/logo-mark.svg" alt=""><span><b>TripVara</b><small>Advisor portal</small></span></a>
-      <h1>Sign in</h1>
-      <p class="lede">Welcome back.</p>
+<div class="auth-page">
+  <a class="auth-brand" href="/">
+    <img src="/logo-mark.svg" alt="">
+    <span><b>TripVara</b><small>From first inquiry to welcome home.</small></span>
+  </a>
+  <div class="auth-card">
+    <div class="auth-card-head">
+      <h1>Trip Vara Portal</h1>
+      <p>Enter your email address and password below to sign in.</p>
+    </div>
+    <div class="auth-card-body">
       <div class="notice notice-error" hidden></div>
       <div class="notice notice-info" id="suspended" hidden>This account has been suspended. Contact your administrator.</div>
       <form id="login-form" novalidate>
@@ -37,15 +31,21 @@
           <label for="password">Password</label>
           <input id="password" name="password" type="password" autocomplete="current-password" required>
         </div>
-        <button class="btn btn-primary" type="submit">Sign in</button>
+        <button class="btn btn-primary" type="submit">Sign in to Trip Vara</button>
       </form>
       <p class="auth-foot"><a href="/forgot-password">Forgot your password?</a></p>
       <p class="auth-foot">No account yet? <a href="/signup">Request access</a></p>
     </div>
-  </main>
+  </div>
+  <p class="auth-legal">&copy; 2026 Trip Vara. All rights reserved.<br>
+    <!-- Seller of travel registration numbers go here once issued. Nothing is
+         placed in this slot until the real numbers exist: a plausible looking
+         licence number is worse than none. -->
+  </p>
 </div>
 <script type="module">
-import { api, onSubmit } from '/js/app.js';
+import { api, onSubmit, enhancePasswordFields } from '/js/app.js';
+enhancePasswordFields();
 const params = new URLSearchParams(location.search);
 if (params.get('error') === 'suspended') document.getElementById('suspended').hidden = false;
 onSubmit(document.getElementById('login-form'), async (values) => {

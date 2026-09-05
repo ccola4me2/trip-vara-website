@@ -9,23 +9,17 @@
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-<div class="auth-wrap">
-  <aside class="auth-aside">
-    <a class="wordmark on-dark" href="/"><img src="/logo-mark.svg" alt=""><span><b>TripVara</b><small>From first inquiry to welcome home.</small></span></a>
-    <h2 style="margin-top:2.5rem;">Your leads, pipeline and bookings in one place</h2>
-    <p>Everything from Trip Vara Tools, in an interface built for how travel actually gets sold.</p>
-    <ul>
-      <li>Every lead and contact, live from Trip Vara Tools</li>
-      <li>Pipeline board with real deal values</li>
-      <li>Bookings with deposits, final payment dates and commission</li>
-      <li>Production numbers that are actually yours</li>
-    </ul>
-  </aside>
-  <main class="auth-main">
-    <div class="auth-card">
-      <a class="wordmark" href="/"><img src="/logo-mark.svg" alt=""><span><b>TripVara</b><small>Advisor portal</small></span></a>
+<div class="auth-page">
+  <a class="auth-brand" href="/">
+    <img src="/logo-mark.svg" alt="">
+    <span><b>TripVara</b><small>From first inquiry to welcome home.</small></span>
+  </a>
+  <div class="auth-card">
+    <div class="auth-card-head">
       <h1>Request access</h1>
-      <p class="lede">Accounts are approved by an administrator before they go live.</p>
+      <p>An administrator approves each account before it goes live.</p>
+    </div>
+    <div class="auth-card-body">
       <div class="notice notice-error" hidden></div>
       <form id="signup-form" novalidate>
         <div class="field-row">
@@ -63,10 +57,16 @@
       </form>
       <p class="auth-foot">Already have an account? <a href="/login">Sign in</a></p>
     </div>
-  </main>
+  </div>
+  <p class="auth-legal">&copy; 2026 Trip Vara. All rights reserved.<br>
+    <!-- Seller of travel registration numbers go here once issued. Nothing is
+         placed in this slot until the real numbers exist: a plausible looking
+         licence number is worse than none. -->
+  </p>
 </div>
 <script type="module">
-import { api, onSubmit } from '/js/app.js';
+import { api, onSubmit, enhancePasswordFields } from '/js/app.js';
+enhancePasswordFields();
 onSubmit(document.getElementById('signup-form'), async (values) => {
   if (values.password !== values.confirmPassword) {
     throw new Error('The two passwords do not match.');
