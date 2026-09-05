@@ -9,6 +9,7 @@
 
 import { json } from './util.js';
 import { requireUser } from './auth.js';
+import * as db from './db.js';
 import * as ghl from './ghl.js';
 
 const PER_GROUP = 6;
@@ -29,6 +30,11 @@ export async function handleSearch(request, env) {
 
   const term = like(q);
   const locationId = ghl.locationFor(env, user);
+  // Same rule as every other screen: an associate finds their own records,
+  // an owner finds the agency's.
+  const scope = db.scopeFor(env, user, request);
+  const bookingScope = db.scopeWhere(scope, 'b.user_id');
+  const paymentScope = db.scopeWhere(scope, 'p.user_id');
 
   const [clients, reservations, payments] = await Promise.all([
     env.DB.prepare(
@@ -39,15 +45,16 @@ export async function handleSearch(request, env) {
     ).bind(locationId, term, term, term, PER_GROUP).all().catch(() => ({ results: [] })),
 
     env.DB.prepare(
-      `SELECT id, client_name, supplier, product_name, destination, confirmation_number,
-              depart_date, status
-         FROM bookings
-        WHERE user_id = ?
-          AND (client_name LIKE ? ESCAPE '\\' OR supplier LIKE ? ESCAPE '\\'
-               OR product_name LIKE ? ESCAPE '\\' OR confirmation_number LIKE ? ESCAPE '\\'
-               OR destination LIKE ? ESCAPE '\\')
-        ORDER BY COALESCE(depart_date, '9999-12-31') ASC LIMIT ?`
-    ).bind(user.id, term, term, term, term, term, PER_GROUP).all().catch(() => ({ results: [] })),
+      `SELECT b.id, b.client_name, b.supplier, b.product_name, b.destination,
+              b.confirmation_number, b.depart_date, b.status
+         FROM bookings b
+        WHERE ${bookingScope.sql}
+          AND (b.client_name LIKE ? ESCAPE '\\' OR b.supplier LIKE ? ESCAPE '\\'
+               OR b.product_name LIKE ? ESCAPE '\\' OR b.confirmation_number LIKE ? ESCAPE '\\'
+               OR b.destination LIKE ? ESCAPE '\\')
+        ORDER BY COALESCE(b.depart_date, '9999-12-31') ASC LIMIT ?`
+    ).bind(...bookingScope.binds, term, term, term, term, term, PER_GROUP)
+     .all().catch(() => ({ results: [] })),
 
     // Worth its own group: chasing a payment usually starts from the client's
     // name, and the answer wanted is the date, not the reservation record.
@@ -55,11 +62,12 @@ export async function handleSearch(request, env) {
       `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date, p.paid_date,
               b.client_name, b.supplier
          FROM booking_payments p JOIN bookings b ON b.id = p.booking_id
-        WHERE p.user_id = ? AND p.paid_date IS NULL
+        WHERE ${paymentScope.sql} AND p.paid_date IS NULL
           AND (b.client_name LIKE ? ESCAPE '\\' OR b.supplier LIKE ? ESCAPE '\\'
                OR b.confirmation_number LIKE ? ESCAPE '\\')
         ORDER BY p.due_date ASC LIMIT ?`
-    ).bind(user.id, term, term, term, PER_GROUP).all().catch(() => ({ results: [] })),
+    ).bind(...paymentScope.binds, term, term, term, PER_GROUP)
+     .all().catch(() => ({ results: [] })),
   ]);
 
   const groups = [];

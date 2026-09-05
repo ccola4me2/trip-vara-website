@@ -70,18 +70,26 @@ export async function handleListBookings(request, env) {
 
   const url = new URL(request.url);
   const statusParam = url.searchParams.get('status');
-  const bookings = await db.listBookings(env, user.id, {
+  const scope = db.scopeFor(env, user, request);
+  const bookings = await db.listBookings(env, scope, {
     status: STATUSES.includes(statusParam) ? statusParam : undefined,
     search: clean(url.searchParams.get('q'), 80) || undefined,
     limit: url.searchParams.get('limit'),
   });
-  return json({ bookings, stats: await db.bookingStats(env, user.id) });
+  return json({
+    bookings,
+    stats: await db.bookingStats(env, scope),
+    scope: db.scopeLabel(scope, user),
+    advisors: await db.advisorOptions(env, user),
+  });
 }
 
 export async function handleGetBooking(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
-  const booking = await db.getBooking(env, id, user.id);
+  // Read scope, not write scope: an owner opening an advisor's reservation
+  // from search should see it. Editing it still goes through getBooking.
+  const booking = await db.getBookingInScope(env, id, db.scopeFor(env, user, request));
   return booking ? json({ booking }) : notFound('Booking not found.');
 }
 

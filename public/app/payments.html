@@ -14,7 +14,10 @@
   <div class="main">
     <header class="topbar">
       <div><h1>Payments Due</h1><p class="sub">Client payments to vendors. Chase a hard date before it passes, or the vendor cancels the reservation.</p></div>
-      <button class="btn btn-primary btn-sm" id="new-payment">Post a payment</button>
+      <div class="toolbar" style="margin:0;">
+        <span id="scope"></span>
+        <button class="btn btn-primary btn-sm" id="new-payment">Post a payment</button>
+      </div>
     </header>
     <div class="content">
       <div id="err"></div>
@@ -97,7 +100,8 @@
 </dialog>
 
 <script type="module">
-import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit } from '/js/app.js';
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit,
+         mountScopePicker, advisorParam } from '/js/app.js';
 await mountShell();
 
 const panel = document.getElementById('panel');
@@ -142,6 +146,8 @@ function statusOf(p, today) {
 }
 
 function render(d) {
+  // Named only when the list spans more than one advisor.
+  const showAdvisor = Boolean(d.scope && d.scope.all);
   data = d;
   const s = d.stats;
   statsEl.innerHTML = `
@@ -162,13 +168,14 @@ function render(d) {
       : '<div class="empty"><h3>Nothing outstanding</h3><p>Add a deposit amount and dates to a reservation, then build its schedule below.</p></div>';
   } else {
     panel.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Client</th><th>Trip</th><th>Type</th><th>Status</th>
-        <th class="num">Amount</th><th></th></tr></thead>
+      <thead><tr><th>Client</th>${showAdvisor ? '<th>Advisor</th>' : ''}<th>Trip</th><th>Type</th>
+        <th>Status</th><th class="num">Amount</th><th></th></tr></thead>
       <tbody>${d.payments.map((p) => {
         const st = statusOf(p, d.today);
         return `<tr>
           <td><span class="name">${esc(p.client_name)}</span>
             <div class="muted">${esc(p.depart_date ? 'Departs ' + dateFmt(p.depart_date) : '')}</div></td>
+          ${showAdvisor ? `<td class="muted">${esc(p.advisor_name || '-')}</td>` : ''}
           <td>${esc(p.product_name || p.supplier || '-')}
             <div class="muted">${esc(p.product_name && p.supplier ? p.supplier : '')}</div></td>
           <td><span class="badge ${p.payment_class === 'hard' ? 'badge-coral' : 'badge-navy'}">${
@@ -286,7 +293,11 @@ onSubmit(form, async (values) => {
 
 async function load() {
   panel.innerHTML = '<p class="spinner">Loading...</p>';
-  try { render(await api(`/api/payments?state=${state}${payClass ? `&class=${payClass}` : ''}`)); }
+  try {
+    const d = await api(`/api/payments?state=${state}${payClass ? `&class=${payClass}` : ''}${advisorParam() ? '&' + advisorParam() : ''}`);
+    mountScopePicker(document.getElementById('scope'), d, load);
+    render(d);
+  }
   catch (err) { statsEl.innerHTML = ''; showError(document.getElementById('err'), err); panel.innerHTML = ''; }
 }
 await load();

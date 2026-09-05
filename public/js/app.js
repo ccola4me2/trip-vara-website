@@ -400,6 +400,43 @@ export function enhancePasswordFields(root = document) {
   });
 }
 
+/**
+ * The advisor scope control, for screens that can show more than your own
+ * records. Renders nothing for an advisor associate, whose only scope is
+ * themselves, so the control never appears where it has no choices to offer.
+ *
+ * The choice lives in the URL rather than in memory, so it survives a refresh,
+ * can be linked to a colleague, and is visible in the address bar rather than
+ * being a hidden mode you have forgotten you are in.
+ */
+export function mountScopePicker(host, data, reload) {
+  if (!host) return;
+  const scope = data && data.scope;
+  if (!scope || !scope.canPick) { host.innerHTML = ''; return; }
+
+  const advisors = (data.advisors || []);
+  const current = scope.all ? 'all' : (scope.advisorId || 'all');
+  host.innerHTML = `<select aria-label="Whose records to show" style="width:auto;">
+    <option value="all"${current === 'all' ? ' selected' : ''}>All advisors</option>
+    ${advisors.map((a) => `<option value="${esc(a.id)}"${a.id === current ? ' selected' : ''}>
+      ${esc(a.name)}${a.role === 'admin' ? ' (owner)' : ''}</option>`).join('')}
+  </select>`;
+
+  host.querySelector('select').addEventListener('change', (e) => {
+    const url = new URL(location.href);
+    if (e.target.value === 'all') url.searchParams.delete('advisor');
+    else url.searchParams.set('advisor', e.target.value);
+    history.replaceState(null, '', url);
+    reload();
+  });
+}
+
+/** The advisor query string for the current URL, to pass through to the API. */
+export function advisorParam() {
+  const a = new URLSearchParams(location.search).get('advisor');
+  return a ? `advisor=${encodeURIComponent(a)}` : '';
+}
+
 /** Renders an error into a container, with a friendlier GHL setup case. */
 export function showError(container, err) {
   if (!container) return;

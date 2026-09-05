@@ -15,6 +15,7 @@
     <header class="topbar">
       <div><h1>Dashboard</h1><p class="sub" id="greeting">Loading...</p></div>
       <div class="toolbar" style="margin:0;">
+        <span id="scope"></span>
         <a class="btn btn-ghost btn-sm" href="/app/payments">Payments</a>
         <a class="btn btn-primary btn-sm" href="/app/reservations?new=1">New reservation</a>
       </div>
@@ -27,7 +28,8 @@
   </div>
 </div>
 <script type="module">
-import { api, mountShell, esc, money, dateFmt, timeAgo, daysUntil, showError } from '/js/app.js';
+import { api, mountShell, esc, money, dateFmt, timeAgo, daysUntil, showError,
+         mountScopePicker, advisorParam } from '/js/app.js';
 await mountShell();
 
 const widgetsEl = document.getElementById('widgets');
@@ -94,6 +96,7 @@ function paymentRows(list) {
 
 function build() {
   const s = d.stats;
+  const everyone = Boolean(d.scope && d.scope.all);
   const p = d.payStats;
 
   document.getElementById('greeting').textContent = `${d.user.name}, here is where things stand.`;
@@ -105,8 +108,9 @@ function build() {
       <p class="meta">${p.softCount} to chase before the deadline</p></div>
     <div class="stat"><p class="label">Active reservations</p><p class="value">${s.booked}</p>
       <p class="meta">${s.quoted} quoted, ${s.travelled} travelled</p></div>
-    <div class="stat"><p class="label">Your earnings</p><p class="value">${money(s.commissionCents)}</p>
-      <p class="meta">${money(s.commissionPaidCents)} paid to you</p></div>`;
+    <div class="stat"><p class="label">${everyone ? 'Agency earnings' : 'Your earnings'}</p>
+      <p class="value">${money(s.commissionCents)}</p>
+      <p class="meta">${money(s.commissionPaidCents)} paid out</p></div>`;
 
   if (d.ghlStatus === 'not_configured') showError(document.getElementById('ghl-state'), { code: 'not_configured' });
   else if (d.ghlStatus === 'error') document.getElementById('ghl-state').innerHTML =
@@ -172,7 +176,11 @@ const CUR_COLS = [
   { label: 'Conf #', cell: (r) => `<span class="muted">${esc(r.confirmation_number || '-')}</span>` },
 ];
 
-try { d = await api('/api/dashboard'); build(); }
+try {
+  d = await api(`/api/dashboard${advisorParam() ? '?' + advisorParam() : ''}`);
+  mountScopePicker(document.getElementById('scope'), d, () => location.reload());
+  build();
+}
 catch (err) { showError(document.getElementById('ghl-state'), err); }
 </script>
 </body></html>

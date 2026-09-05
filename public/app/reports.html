@@ -14,17 +14,24 @@
   <div class="main">
     <header class="topbar">
       <div><h1>Production</h1><p class="sub">Volume and commission by departure month.</p></div>
+      <div class="toolbar" style="margin:0;">
+      <span id="scope"></span>
       <select id="range" aria-label="Range" style="width:auto;">
         <option value="12">Last 12 months</option>
         <option value="24">Last 24 months</option>
         <option value="36">Last 36 months</option>
       </select>
+      </div>
     </header>
     <div class="content">
       <section id="stats" class="stat-grid"></section>
       <section class="card">
         <div class="card-head"><h2>Monthly production</h2></div>
         <div id="chart" class="card-pad"><p class="spinner">Loading...</p></div>
+      </section>
+      <section class="card" id="advisor-card" hidden>
+        <div class="card-head"><h2>By advisor</h2></div>
+        <div id="by-advisor"></div>
       </section>
       <section class="card">
         <div class="card-head"><h2>By month</h2></div>
@@ -39,7 +46,7 @@
   </div>
 </div>
 <script type="module">
-import { api, mountShell, esc, money, showError } from '/js/app.js';
+import { api, mountShell, esc, money, showError, mountScopePicker, advisorParam } from '/js/app.js';
 await mountShell();
 
 const chart = document.getElementById('chart');
@@ -55,18 +62,20 @@ function monthLabel(ym) {
 
 function render(data) {
   const s = data.stats;
+  const everyone = Boolean(data.scope && data.scope.all);
   const pay = data.payments || {};
   const rate = s.grossCents ? (s.commissionCents / s.grossCents) * 100 : 0;
   statsEl.innerHTML = `
     <div class="stat"><p class="label">Trips booked</p><p class="value">${money(s.grossCents)}</p>
       <p class="meta">Value of travel sold, not your revenue</p></div>
-    <div class="stat"><p class="label">Your earnings</p><p class="value">${money(s.commissionCents)}</p>
-      <p class="meta">${money(s.commissionPaidCents)} paid to you by vendors</p></div>
+    <div class="stat"><p class="label">${everyone ? 'Agency earnings' : 'Your earnings'}</p>
+      <p class="value">${money(s.commissionCents)}</p>
+      <p class="meta">${money(s.commissionPaidCents)} paid by vendors</p></div>
     <div class="stat"><p class="label">Effective rate</p><p class="value">${rate.toFixed(1)}%</p>
       <p class="meta">Commission as a share of trips booked</p></div>
     <div class="stat"><p class="label">Outstanding</p>
       <p class="value">${money(s.commissionCents - s.commissionPaidCents)}</p>
-      <p class="meta">Commission earned, not yet paid to you</p></div>
+      <p class="meta">Commission earned, not yet paid ${everyone ? 'out' : 'to you'}</p></div>
     <div class="stat"><p class="label">Collection rate</p>
       <p class="value">${data.collectionRate === null ? '—' : data.collectionRate + '%'}</p>
       <p class="meta">Of payments already due, how much was posted in time</p></div>
@@ -106,6 +115,27 @@ function render(data) {
     }).join('')}
   </div>`;
 
+  // Only an owner looking at more than themselves gets this, and only when
+  // there is more than one line to compare.
+  const rows = data.byAdvisor || [];
+  const card = document.getElementById('advisor-card');
+  card.hidden = !(data.scope && data.scope.all && rows.length > 1);
+  if (!card.hidden) {
+    const top = Math.max(...rows.map((r) => r.gross_cents || 0), 1);
+    document.getElementById('by-advisor').innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Advisor</th><th class="num">Reservations</th><th class="num">Volume</th>
+        <th class="num">Commission</th><th class="num">Paid to them</th><th>Share</th></tr></thead>
+      <tbody>${rows.map((r) => `<tr>
+        <td><span class="name">${esc(r.advisor_name)}</span>${r.role === 'admin' ? ' <span class="badge badge-navy">owner</span>' : ''}</td>
+        <td class="num">${r.bookings}</td>
+        <td class="num">${money(r.gross_cents)}</td>
+        <td class="num">${money(r.commission_cents)}</td>
+        <td class="num">${money(r.commission_paid_cents)}</td>
+        <td style="min-width:120px;"><span style="display:block;height:8px;border-radius:4px;background:var(--navy-100);">
+          <span style="display:block;height:8px;border-radius:4px;width:${Math.round(((r.gross_cents || 0) / top) * 100)}%;background:var(--coral-400);"></span>
+        </span></td></tr>`).join('')}</tbody></table></div>`;
+  }
+
   table.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Month</th><th class="num">Reservations</th><th class="num">Volume</th>
       <th class="num">Commission</th></tr></thead>
@@ -118,7 +148,11 @@ function render(data) {
 
 async function load() {
   chart.innerHTML = '<p class="spinner">Loading...</p>';
-  try { render(await api(`/api/reports/production?months=${range.value}`)); }
+  try {
+    const d = await api(`/api/reports/production?months=${range.value}${advisorParam() ? '&' + advisorParam() : ''}`);
+    mountScopePicker(document.getElementById('scope'), d, load);
+    render(d);
+  }
   catch (err) { showError(chart, err); }
 }
 range.addEventListener('change', load);

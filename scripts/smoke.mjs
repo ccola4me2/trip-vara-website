@@ -186,6 +186,99 @@ async function main() {
   const due = dash.data?.payStats || {};
   check(due.hardDueCents >= 50000, 'the dashboard counts the hard deadlines', due.hardDueCents);
 
+  // ------------------------------------------------ who can see what ------
+  step('An associate sees their own records; an owner sees the agency');
+
+  // The reservation above belongs to the associate, since the whole earlier
+  // section runs as them. The owner needs one of their own or "cannot see the
+  // owner's records" is a check that proves nothing. An earlier draft of this
+  // test compared the associate against their own reservation and reported a
+  // leak that was not there.
+  const ownerRes = await call(admin, 'POST', '/api/bookings', {
+    clientName: `Owner Client ${stamp}`, supplier: 'Virgin Voyages',
+    departDate: isoDay(210), gross: '8000', commission: '800', status: 'booked',
+  });
+  const ownerBookingId = ownerRes.data?.booking?.id;
+  if (ownerBookingId) {
+    cleanup('the owner reservation', () => call(admin, 'DELETE', `/api/bookings/${ownerBookingId}`));
+  }
+  check(ownerRes.status === 201 && ownerBookingId, 'the owner creates a reservation of their own');
+
+  // Now the associate's own.
+  const theirs = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Associate Client ${stamp}`, supplier: 'Royal Caribbean',
+    departDate: isoDay(200), gross: '3000', commission: '300', status: 'booked',
+  });
+  const theirBookingId = theirs.data?.booking?.id;
+  if (theirBookingId) {
+    cleanup('the associate reservation', () =>
+      call(advisor, 'DELETE', `/api/bookings/${theirBookingId}`));
+  }
+  check(theirs.status === 201 && theirBookingId, 'the associate creates a reservation');
+
+  const mine = await call(advisor, 'GET', '/api/bookings');
+  const mineIds = (mine.data?.bookings || []).map((b) => b.id);
+  check(mineIds.includes(theirBookingId) && !mineIds.includes(ownerBookingId),
+    'the associate sees their own reservation and not the owner\'s',
+    `${mineIds.length} reservation(s) visible`);
+  check(mine.data?.scope && mine.data.scope.canPick === false,
+    'and is offered no advisor picker', JSON.stringify(mine.data?.scope));
+
+  // The one that matters: an associate cannot widen their own scope by
+  // editing the query string.
+  const forged = await call(advisor, 'GET', `/api/bookings?advisor=${encodeURIComponent(created.id)}&advisor=all`);
+  const forgedIds = (forged.data?.bookings || []).map((b) => b.id);
+  check(!forgedIds.includes(ownerBookingId),
+    'and cannot widen their scope with ?advisor=', `${forgedIds.length} reservation(s)`);
+
+  const allRes = await call(admin, 'GET', '/api/bookings');
+  const allIds = (allRes.data?.bookings || []).map((b) => b.id);
+  check(allIds.includes(theirBookingId),
+    'the owner sees the associate\'s reservation', `${allIds.length} reservation(s)`);
+  const attributed = (allRes.data?.bookings || []).find((b) => b.id === theirBookingId);
+  check(attributed && attributed.advisor_name,
+    'attributed to whoever booked it', attributed && attributed.advisor_name);
+  check(allRes.data?.scope?.all === true && allRes.data.scope.canPick === true,
+    'with a picker to narrow it down', JSON.stringify(allRes.data?.scope));
+
+  const narrowed = await call(admin, 'GET', `/api/bookings?advisor=${encodeURIComponent(created.id)}`);
+  const narrowedIds = (narrowed.data?.bookings || []).map((b) => b.id);
+  check(narrowedIds.includes(theirBookingId) && !narrowedIds.includes(ownerBookingId),
+    'and narrowing to one advisor shows only theirs', `${narrowedIds.length} reservation(s)`);
+
+  // Seeing is not editing. This is the distinction the code keeps by using a
+  // separate scope for writes, and it is worth proving rather than assuming.
+  const ownerRead = await call(admin, 'GET', `/api/bookings/${theirBookingId}`);
+  check(ownerRead.status === 200, 'an owner can open an associate\'s reservation', `status ${ownerRead.status}`);
+  const ownerWrite = await call(admin, 'PUT', `/api/bookings/${theirBookingId}`,
+    { clientName: 'Should not apply' });
+  check(ownerWrite.status === 404, 'but cannot write to it', `status ${ownerWrite.status}`);
+  const stillTheirs = await call(advisor, 'GET', `/api/bookings/${theirBookingId}`);
+  check(stillTheirs.data?.booking?.client_name === `Associate Client ${stamp}`,
+    'and the record is unchanged', stillTheirs.data?.booking?.client_name);
+
+  const associateRead = await call(advisor, 'GET', `/api/bookings/${ownerBookingId}`);
+  check(associateRead.status === 404,
+    'an associate cannot open the owner\'s reservation', `status ${associateRead.status}`);
+
+  const report = await call(admin, 'GET', '/api/reports/production?months=12');
+  const lines = report.data?.byAdvisor || [];
+  check(lines.some((r) => r.user_id === created.id) && lines.length >= 2,
+    'combined reporting breaks down per advisor', `${lines.length} line(s)`);
+
+  const ownReport = await call(advisor, 'GET', '/api/reports/production?months=12');
+  const ownLines = ownReport.data?.byAdvisor || [];
+  check(ownLines.length === 1 && ownLines[0].user_id === created.id,
+    'an associate\'s report covers only themselves', `${ownLines.length} line(s)`);
+
+  const findAll = await call(admin, 'GET', `/api/search?q=Associate%20Client%20${stamp}`);
+  check((findAll.data?.groups || []).some((g) => g.items.length),
+    'the owner can find the associate\'s reservation in search');
+  const findMine = await call(advisor, 'GET', `/api/search?q=Owner%20Client%20${stamp}`);
+  check(!(findMine.data?.groups || []).some((g) => g.items.length),
+    'and search does not leak the owner\'s records to the associate',
+    JSON.stringify(findMine.data?.groups));
+
   // --------------------------------------------- form, submission, lead --
   step('A hosted form takes a submission');
   const formRes = await call(advisor, 'POST', '/api/myforms', {

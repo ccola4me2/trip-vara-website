@@ -117,6 +117,25 @@ The smoke test drives all three end to end against a local dev server in under
 a second, plus a reservation and the soft/hard schedule built from it. It
 cleans up after itself, including when it bails early.
 
+## Who sees what
+
+Two kinds of account use the portal.
+
+**An agency owner is an admin.** They see every advisor's reservations,
+payments and production, and every screen that can span more than one advisor
+carries a picker to narrow it down. Reports break down per advisor. An
+independent advisor working alone is also an admin, where "everyone" happens to
+be just them, so one code path covers both without a setting to get wrong.
+
+**An advisor associate sees their own records and nothing else.** No picker is
+offered, and `?advisor=` in the query string is ignored for them: the scope is
+derived from the signed in user, never from the request.
+
+Seeing is not editing. An owner can open an associate's reservation but cannot
+write to it. Reads use the visibility scope; every write uses `selfScope`, and
+keeping those two lookups separate is what stops them quietly becoming one
+permission. The smoke test asserts each of these from both sides.
+
 ## Deploying
 
 No Node or CLI required. Everything below is done in the Cloudflare dashboard,

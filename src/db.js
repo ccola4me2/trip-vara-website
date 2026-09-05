@@ -184,8 +184,98 @@ export async function consumeResetToken(env, tokenHash) {
 }
 
 // ---------------------------------------------------------------------------
+// Visibility
+// ---------------------------------------------------------------------------
+//
+// Two kinds of account use this portal.
+//
+//   An agency owner is an admin. They see every advisor's reservations,
+//   payments and production, and can break any report down by advisor. An
+//   independent advisor working alone is also an admin, where "everyone"
+//   happens to be just them, so the same code covers both without a setting.
+//
+//   An advisor associate sees their own records and nothing else.
+//
+// The scope is always derived from the signed in user. An advisor id in the
+// query string is honoured only when the caller is an admin, so asking for
+// someone else's data is not a matter of editing a URL.
+
+/** Resolves what the signed in user may see. */
+export function visibilityScope(env, user, advisorId = null) {
+  const locationId = user.ghl_location_id || env.GHL_DEFAULT_LOCATION_ID || '';
+  if (user.role !== 'admin') return { all: false, userId: user.id, locationId, self: true };
+  if (advisorId && advisorId !== 'all') {
+    return { all: false, userId: advisorId, locationId, self: advisorId === user.id };
+  }
+  return { all: true, locationId, self: false };
+}
+
+/** The scope for a request, honouring ?advisor= only for admins. */
+export function scopeFor(env, user, request) {
+  const advisorId = new URL(request.url).searchParams.get('advisor');
+  return visibilityScope(env, user, advisorId);
+}
+
+/**
+ * This user and no one else, whatever their role.
+ *
+ * Every write goes through one of these. An owner may see an advisor's
+ * reservation; that is not the same as writing to it, and using the viewing
+ * scope on a write is how the two would quietly become one permission.
+ */
+export function selfScope(user) {
+  return { all: false, userId: user.id, self: true };
+}
+
+/**
+ * How the UI should describe the current scope.
+ *
+ * Every screen that can show more than your own records says whose they are.
+ * A total that silently covers the whole agency looks exactly like a total
+ * that covers you, and the difference is the whole point of the number.
+ */
+export function scopeLabel(scope, user) {
+  if (scope.all) return { all: true, advisorId: null, label: 'All advisors', canPick: user.role === 'admin' };
+  if (scope.self) return { all: false, advisorId: user.id, label: 'Just me', canPick: user.role === 'admin' };
+  return { all: false, advisorId: scope.userId, label: 'One advisor', canPick: user.role === 'admin' };
+}
+
+/**
+ * The advisors an owner may narrow a screen to. Empty for an associate, whose
+ * only scope is themselves, so the picker never appears for them.
+ */
+export async function advisorOptions(env, user) {
+  if (user.role !== 'admin') return [];
+  const users = await listUsers(env, {});
+  return users
+    .filter((u) => u.status === 'active')
+    .map((u) => ({
+      id: u.id,
+      name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email,
+      role: u.role,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The scope as a WHERE fragment plus its binds. */
+export function scopeWhere(scope, column = 'user_id') {
+  if (!scope.all) return { sql: `${column} = ?`, binds: [scope.userId] };
+  // Every advisor bound to this agency. Written as a subquery rather than a
+  // list of ids so it stays one statement however many advisors there are,
+  // and so an advisor added mid-request cannot fall outside it.
+  return {
+    sql: `${column} IN (SELECT id FROM users WHERE COALESCE(ghl_location_id, ?) = ?)`,
+    binds: [scope.locationId, scope.locationId],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Bookings
 // ---------------------------------------------------------------------------
+// Falls back to the email so a row is never attributed to nobody.
+const ADVISOR_NAME =
+  "COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email) AS advisor_name";
+
 const BOOKING_COLUMNS = `
   id, user_id, ghl_contact_id, ghl_opportunity_id, client_name, supplier,
   product_type, product_name, destination, confirmation_number, depart_date,
@@ -193,20 +283,34 @@ const BOOKING_COLUMNS = `
   commission_cents, commission_status, status, notes, created_at, updated_at
 `;
 
-export async function listBookings(env, userId, { status, search, limit = 200 } = {}) {
-  const where = ['user_id = ?'];
-  const binds = [userId];
-  if (status) { where.push('status = ?'); binds.push(status); }
+// The same columns qualified, for the list query that joins users to name the
+// advisor. Spelled out rather than derived from the line above: `status` and
+// `id` exist on both tables, and an unqualified one is an error waiting to
+// happen rather than a clever saving.
+const BOOKING_COLUMNS_B = `
+  b.id, b.user_id, b.ghl_contact_id, b.ghl_opportunity_id, b.client_name, b.supplier,
+  b.product_type, b.product_name, b.destination, b.confirmation_number, b.depart_date,
+  b.return_date, b.deposit_due, b.final_payment_due, b.travellers, b.gross_cents,
+  b.deposit_cents, b.commission_cents, b.commission_status, b.status, b.notes,
+  b.created_at, b.updated_at
+`;
+
+export async function listBookings(env, scope, { status, search, limit = 200 } = {}) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+  const where = [scoped.sql];
+  const binds = [...scoped.binds];
+  if (status) { where.push('b.status = ?'); binds.push(status); }
   if (search) {
-    where.push('(client_name LIKE ? OR supplier LIKE ? OR product_name LIKE ? OR confirmation_number LIKE ?)');
+    where.push('(b.client_name LIKE ? OR b.supplier LIKE ? OR b.product_name LIKE ? OR b.confirmation_number LIKE ?)');
     const like = `%${search}%`;
     binds.push(like, like, like, like);
   }
   binds.push(Math.min(Number(limit) || 200, 500));
   const { results } = await env.DB.prepare(
-    `SELECT ${BOOKING_COLUMNS} FROM bookings
+    `SELECT ${BOOKING_COLUMNS_B}, ${ADVISOR_NAME}
+       FROM bookings b LEFT JOIN users u ON u.id = b.user_id
       WHERE ${where.join(' AND ')}
-      ORDER BY COALESCE(depart_date, '9999-12-31') ASC, created_at DESC
+      ORDER BY COALESCE(b.depart_date, '9999-12-31') ASC, b.created_at DESC
       LIMIT ?`
   ).bind(...binds).all();
   return results || [];
@@ -267,7 +371,8 @@ export async function deleteBooking(env, id, userId) {
 }
 
 /** Headline numbers for the dashboard and the reports page. */
-export async function bookingStats(env, userId) {
+export async function bookingStats(env, scope) {
+  const scoped = scopeWhere(scope);
   const row = await env.DB.prepare(
     `SELECT
        COUNT(*) AS total,
@@ -277,8 +382,8 @@ export async function bookingStats(env, userId) {
        SUM(CASE WHEN status IN ('booked','travelled') THEN gross_cents ELSE 0 END) AS gross_cents,
        SUM(CASE WHEN status IN ('booked','travelled') THEN commission_cents ELSE 0 END) AS commission_cents,
        SUM(CASE WHEN commission_status = 'paid' THEN commission_cents ELSE 0 END) AS commission_paid_cents
-     FROM bookings WHERE user_id = ?`
-  ).bind(userId).first();
+     FROM bookings WHERE ${scoped.sql}`
+  ).bind(...scoped.binds).first();
   return {
     total: row?.total || 0,
     booked: row?.booked || 0,
@@ -297,42 +402,94 @@ export async function bookingStats(env, userId) {
  * columns say when a deadline is, not whether it has been met, so a dashboard
  * built on them keeps showing money as due after it has been paid.
  */
-export async function upcomingPayments(env, userId, through) {
+export async function upcomingPayments(env, scope, through) {
+  const scoped = scopeWhere(scope, 'p.user_id');
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date,
             b.id AS booking_id, b.client_name, b.supplier, b.product_name,
             b.depart_date, b.status
        FROM booking_payments p
        JOIN bookings b ON b.id = p.booking_id
-      WHERE p.user_id = ?
+      WHERE ${scoped.sql}
         AND p.paid_date IS NULL
         AND p.due_date IS NOT NULL
         AND p.due_date <= ?
         AND b.status IN ('quoted','booked')
       ORDER BY p.due_date ASC
       LIMIT 50`
-  ).bind(userId, through).all();
+  ).bind(...scoped.binds, through).all();
   return results || [];
 }
 
 /** Gross and commission grouped by departure month, for the reports chart. */
-export async function productionByMonth(env, userId, sinceDate) {
+export async function productionByMonth(env, scope, sinceDate) {
+  const scoped = scopeWhere(scope);
   const { results } = await env.DB.prepare(
     `SELECT substr(depart_date, 1, 7) AS month,
             COUNT(*) AS bookings,
             SUM(gross_cents) AS gross_cents,
             SUM(commission_cents) AS commission_cents
        FROM bookings
-      WHERE user_id = ? AND depart_date IS NOT NULL AND depart_date >= ?
+      WHERE ${scoped.sql} AND depart_date IS NOT NULL AND depart_date >= ?
         AND status IN ('booked','travelled')
       GROUP BY month ORDER BY month ASC LIMIT 36`
-  ).bind(userId, sinceDate).all();
+  ).bind(...scoped.binds, sinceDate).all();
   return results || [];
 }
 
 // ---------------------------------------------------------------------------
 // Activity log
 // ---------------------------------------------------------------------------
+/**
+ * Production broken down by advisor, for an owner looking at the agency.
+ *
+ * Active advisors with nothing booked still appear, at zero. An owner asking
+ * who is producing needs to see the quiet ones, and a report that silently
+ * omits them answers a different question from the one being asked.
+ *
+ * A suspended advisor appears only if they produced something in the window.
+ * Their past production is real and belongs in the total, but a row of zeros
+ * for someone who no longer works here is noise, not information.
+ */
+export async function productionByAdvisor(env, scope, sinceDate) {
+  const scoped = scopeWhere(scope, 'u.id');
+  const { results } = await env.DB.prepare(
+    `SELECT u.id AS user_id, ${ADVISOR_NAME}, u.role, u.status,
+            COUNT(b.id) AS bookings,
+            COALESCE(SUM(b.gross_cents), 0) AS gross_cents,
+            COALESCE(SUM(b.commission_cents), 0) AS commission_cents,
+            COALESCE(SUM(CASE WHEN b.commission_status = 'paid' THEN b.commission_cents END), 0)
+              AS commission_paid_cents
+       FROM users u
+       LEFT JOIN bookings b
+         ON b.user_id = u.id
+        AND b.status IN ('booked','travelled')
+        AND b.depart_date IS NOT NULL AND b.depart_date >= ?
+      WHERE ${scoped.sql} AND u.status != 'pending'
+      GROUP BY u.id
+      HAVING u.status = 'active' OR COUNT(b.id) > 0
+      ORDER BY gross_cents DESC, advisor_name ASC`
+  ).bind(sinceDate, ...scoped.binds).all();
+  return results || [];
+}
+
+/**
+ * One reservation, readable by anyone whose scope covers it.
+ *
+ * Deliberately separate from getBooking, which stays scoped to the owner
+ * because every write goes through it. Seeing an advisor's reservation and
+ * editing it are different permissions, and merging the two lookups is how
+ * they would quietly become the same one.
+ */
+export async function getBookingInScope(env, id, scope) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+  return env.DB.prepare(
+    `SELECT ${BOOKING_COLUMNS_B}, ${ADVISOR_NAME}
+       FROM bookings b LEFT JOIN users u ON u.id = b.user_id
+      WHERE b.id = ? AND ${scoped.sql}`
+  ).bind(id, ...scoped.binds).first();
+}
+
 export async function logActivity(env, userId, kind, subject, meta = null) {
   try {
     await env.DB.prepare(
@@ -344,11 +501,14 @@ export async function logActivity(env, userId, kind, subject, meta = null) {
   }
 }
 
-export async function recentActivity(env, userId, limit = 15) {
+export async function recentActivity(env, scope, limit = 15) {
+  const scoped = scopeWhere(scope);
   const { results } = await env.DB.prepare(
-    `SELECT id, kind, subject, created_at FROM activity_log
-      WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
-  ).bind(userId, Math.min(Number(limit) || 15, 100)).all();
+    `SELECT a.id, a.kind, a.subject, a.created_at, ${ADVISOR_NAME}
+       FROM activity_log a LEFT JOIN users u ON u.id = a.user_id
+      WHERE ${scopeWhere(scope, 'a.user_id').sql}
+      ORDER BY a.created_at DESC LIMIT ?`
+  ).bind(...scoped.binds, Math.min(Number(limit) || 15, 100)).all();
   return results || [];
 }
 
@@ -477,9 +637,10 @@ const PAYMENT_COLUMNS = `
   p.due_date, p.paid_date, p.method, p.reference, p.notes, p.created_at, p.updated_at
 `;
 
-export async function listPayments(env, userId, { bookingId, state, paymentClass, limit = 300 } = {}) {
-  const where = ['p.user_id = ?'];
-  const binds = [userId];
+export async function listPayments(env, scope, { bookingId, state, paymentClass, limit = 300 } = {}) {
+  const scoped = scopeWhere(scope, 'p.user_id');
+  const where = [scoped.sql];
+  const binds = [...scoped.binds];
   if (bookingId) { where.push('p.booking_id = ?'); binds.push(bookingId); }
   if (state === 'outstanding') where.push('p.paid_date IS NULL');
   if (state === 'paid') where.push('p.paid_date IS NOT NULL');
@@ -487,9 +648,11 @@ export async function listPayments(env, userId, { bookingId, state, paymentClass
 
   const { results } = await env.DB.prepare(
     `SELECT ${PAYMENT_COLUMNS},
-            b.client_name, b.supplier, b.product_name, b.depart_date, b.status AS booking_status
+            b.client_name, b.supplier, b.product_name, b.depart_date, b.status AS booking_status,
+            ${ADVISOR_NAME}
        FROM booking_payments p
        JOIN bookings b ON b.id = p.booking_id
+       LEFT JOIN users u ON u.id = p.user_id
       WHERE ${where.join(' AND ')}
       ORDER BY COALESCE(p.due_date, '9999-12-31') ASC, p.created_at ASC
       LIMIT ?`
@@ -544,7 +707,8 @@ export async function deletePayment(env, id, userId) {
  * the one that gives them room to collect. Reporting the two as one number
  * hides the only distinction that matters.
  */
-export async function paymentStats(env, userId, { today, soonThrough }) {
+export async function paymentStats(env, scope, { today, soonThrough }) {
+  const scoped = scopeWhere(scope);
   const row = await env.DB.prepare(
     `SELECT
        SUM(CASE WHEN paid_date IS NOT NULL THEN amount_cents ELSE 0 END) AS posted,
@@ -565,9 +729,9 @@ export async function paymentStats(env, userId, { today, soonThrough }) {
        SUM(CASE WHEN paid_date IS NULL AND payment_class = 'hard'
                      AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ?
                 THEN 1 ELSE 0 END) AS hard_count
-     FROM booking_payments WHERE user_id = ?`
+     FROM booking_payments WHERE ${scoped.sql}`
   ).bind(today, today, today, soonThrough, today, soonThrough,
-         today, soonThrough, today, soonThrough, userId).first();
+         today, soonThrough, today, soonThrough, ...scoped.binds).first();
 
   return {
     postedCents: row?.posted || 0,
@@ -582,7 +746,8 @@ export async function paymentStats(env, userId, { today, soonThrough }) {
 }
 
 /** Per-booking balance: what it is worth, what came in, what is left. */
-export async function bookingBalances(env, userId) {
+export async function bookingBalances(env, scope) {
+  const scoped = scopeWhere(scope, 'b.user_id');
   const { results } = await env.DB.prepare(
     `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
             b.status, b.gross_cents, b.deposit_cents,
@@ -591,11 +756,11 @@ export async function bookingBalances(env, userId) {
             COUNT(p.id) AS payment_count
        FROM bookings b
        LEFT JOIN booking_payments p ON p.booking_id = b.id
-      WHERE b.user_id = ? AND b.status IN ('quoted','booked','travelled')
+      WHERE ${scoped.sql} AND b.status IN ('quoted','booked','travelled')
       GROUP BY b.id
       ORDER BY COALESCE(b.depart_date, '9999-12-31') ASC
       LIMIT 200`
-  ).bind(userId).all();
+  ).bind(...scoped.binds).all();
   return results || [];
 }
 
@@ -607,7 +772,8 @@ export async function bookingBalances(env, userId) {
  * landing when", which is the question that decides whether a booking survives
  * its supplier deadline.
  */
-export async function paymentsByMonth(env, userId, sinceDate) {
+export async function paymentsByMonth(env, scope, sinceDate) {
+  const scoped = scopeWhere(scope, 'p.user_id');
   const { results } = await env.DB.prepare(
     `SELECT substr(p.due_date, 1, 7) AS month,
             COUNT(*) AS payments,
@@ -615,10 +781,10 @@ export async function paymentsByMonth(env, userId, sinceDate) {
             SUM(CASE WHEN p.paid_date IS NULL THEN p.amount_cents ELSE 0 END) AS outstanding_cents
        FROM booking_payments p
        JOIN bookings b ON b.id = p.booking_id
-      WHERE p.user_id = ? AND p.due_date IS NOT NULL AND p.due_date >= ?
+      WHERE ${scoped.sql} AND p.due_date IS NOT NULL AND p.due_date >= ?
         AND b.status IN ('quoted','booked','travelled')
       GROUP BY month ORDER BY month ASC LIMIT 36`
-  ).bind(userId, sinceDate).all();
+  ).bind(...scoped.binds, sinceDate).all();
   return results || [];
 }
 
@@ -626,16 +792,17 @@ export async function paymentsByMonth(env, userId, sinceDate) {
  * Recent reservation activity: what was added or last touched.
  * Mirrors the widget an advisor is used to reading first thing.
  */
-export async function recentReservations(env, userId, { by = 'added', limit = 8 } = {}) {
+export async function recentReservations(env, scope, { by = 'added', limit = 8 } = {}) {
   const order = by === 'modified' ? 'b.updated_at DESC' : 'b.created_at DESC';
+  const scoped = scopeWhere(scope, 'b.user_id');
   const { results } = await env.DB.prepare(
     `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
             b.return_date, b.confirmation_number, b.status, b.gross_cents,
-            b.created_at, b.updated_at
-       FROM bookings b
-      WHERE b.user_id = ? AND b.status != 'cancelled'
+            b.created_at, b.updated_at, ${ADVISOR_NAME}
+       FROM bookings b LEFT JOIN users u ON u.id = b.user_id
+      WHERE ${scoped.sql} AND b.status != 'cancelled'
       ORDER BY ${order} LIMIT ?`
-  ).bind(userId, Math.min(Number(limit) || 8, 25)).all();
+  ).bind(...scoped.binds, Math.min(Number(limit) || 8, 25)).all();
   return results || [];
 }
 
@@ -643,7 +810,7 @@ export async function recentReservations(env, userId, { by = 'added', limit = 8 
  * Current reservation activity: departing soon, away right now, or just back.
  * Recently returned is the one that drives follow-up and reviews.
  */
-export async function currentReservations(env, userId, { view = 'upcoming', today, limit = 8 } = {}) {
+export async function currentReservations(env, scope, { view = 'upcoming', today, limit = 8 } = {}) {
   let clause;
   let order;
   if (view === 'traveling') {
@@ -656,13 +823,14 @@ export async function currentReservations(env, userId, { view = 'upcoming', toda
     clause = "b.depart_date >= ? AND ? IS NOT NULL";
     order = 'b.depart_date ASC';
   }
+  const scoped = scopeWhere(scope, 'b.user_id');
   const { results } = await env.DB.prepare(
     `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
-            b.return_date, b.confirmation_number, b.status
-       FROM bookings b
-      WHERE b.user_id = ? AND b.status IN ('booked','travelled') AND b.depart_date IS NOT NULL
+            b.return_date, b.confirmation_number, b.status, ${ADVISOR_NAME}
+       FROM bookings b LEFT JOIN users u ON u.id = b.user_id
+      WHERE ${scoped.sql} AND b.status IN ('booked','travelled') AND b.depart_date IS NOT NULL
         AND ${clause}
       ORDER BY ${order} LIMIT ?`
-  ).bind(userId, today, today, Math.min(Number(limit) || 8, 25)).all();
+  ).bind(...scoped.binds, today, today, Math.min(Number(limit) || 8, 25)).all();
   return results || [];
 }

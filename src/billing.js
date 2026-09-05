@@ -26,7 +26,7 @@ export async function handleBilling(request, env) {
     ghl.listInvoices(env, locationId, { limit }).catch((e) => ({ error: e })),
     ghl.listTransactions(env, locationId, { limit }).catch((e) => ({ error: e })),
     ghl.listSubscriptions(env, locationId, { limit }).catch(() => null),
-    db.bookingStats(env, user.id),
+    db.bookingStats(env, db.scopeFor(env, user, request)),
   ]);
 
   // If both CRM sources failed, that is a real failure worth surfacing.

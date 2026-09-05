@@ -28,14 +28,15 @@ export async function handlePayments(request, env) {
   const url = new URL(request.url);
   const state = oneOf(url.searchParams.get('state') || 'all', ['all', 'outstanding', 'paid']);
   const cls = url.searchParams.get('class');
+  const scope = db.scopeFor(env, user, request);
 
   const [payments, stats, balances] = await Promise.all([
-    db.listPayments(env, user.id, {
+    db.listPayments(env, scope, {
       state: state === 'all' ? undefined : state,
       paymentClass: CLASSES.includes(cls) ? cls : undefined,
     }),
-    db.paymentStats(env, user.id, { today: isoDay(0), soonThrough: isoDay(30) }),
-    db.bookingBalances(env, user.id),
+    db.paymentStats(env, scope, { today: isoDay(0), soonThrough: isoDay(30) }),
+    db.bookingBalances(env, scope),
   ]);
 
   return json({
@@ -49,6 +50,8 @@ export async function handlePayments(request, env) {
       unscheduled_cents: Math.max(0, (b.gross_cents || 0) - (b.paid_cents || 0) - (b.scheduled_cents || 0)),
     })),
     today: isoDay(0),
+    scope: db.scopeLabel(scope, user),
+    advisors: await db.advisorOptions(env, user),
   });
 }
 
@@ -169,7 +172,8 @@ export async function handleGenerateSchedule(request, env, bookingId) {
   const booking = await db.getBooking(env, bookingId, user.id);
   if (!booking) return notFound('Booking not found.');
 
-  const existing = await db.listPayments(env, user.id, { bookingId });
+  // Self scope: this reads in order to write, so it must not widen for an owner.
+  const existing = await db.listPayments(env, db.selfScope(user), { bookingId });
   const have = new Set(existing.map((p) => p.kind));
   const created = [];
 

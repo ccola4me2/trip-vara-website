@@ -59,6 +59,7 @@ constructor hasOwnProperty toString valueOf now random floor ceil round abs min 
 isArray fromEntries createElement className scrollTop scrollHeight isNaN isFinite
 isInteger parse stringify
 writeText clipboard currentTarget preventDefault stopPropagation replaceChildren
+replaceState pushState scrollIntoView setSelectionRange getSetCookie closest
 gridTemplateColumns cssText selectedOptions
 data detail error code redirect
 `.trim().split(/\s+/));

@@ -20,17 +20,19 @@ export async function handleDashboard(request, env) {
 
   const today = isoDay(0);
 
+  const scope = db.scopeFor(env, user, request);
+
   const [stats, payStats, payments, activity, recentAdded, recentModified,
          upcoming, traveling, returned] = await Promise.all([
-    db.bookingStats(env, user.id),
-    db.paymentStats(env, user.id, { today, soonThrough: isoDay(60) }),
-    db.upcomingPayments(env, user.id, isoDay(60)),
-    db.recentActivity(env, user.id, 8),
-    db.recentReservations(env, user.id, { by: 'added' }),
-    db.recentReservations(env, user.id, { by: 'modified' }),
-    db.currentReservations(env, user.id, { view: 'upcoming', today }),
-    db.currentReservations(env, user.id, { view: 'traveling', today }),
-    db.currentReservations(env, user.id, { view: 'returned', today }),
+    db.bookingStats(env, scope),
+    db.paymentStats(env, scope, { today, soonThrough: isoDay(60) }),
+    db.upcomingPayments(env, scope, isoDay(60)),
+    db.recentActivity(env, scope, 8),
+    db.recentReservations(env, scope, { by: 'added' }),
+    db.recentReservations(env, scope, { by: 'modified' }),
+    db.currentReservations(env, scope, { view: 'upcoming', today }),
+    db.currentReservations(env, scope, { view: 'traveling', today }),
+    db.currentReservations(env, scope, { view: 'returned', today }),
   ]);
 
   // Live pipeline, best effort. A CRM outage should cost one widget, not the
@@ -80,6 +82,8 @@ export async function handleDashboard(request, env) {
     pipeline,
     ghlStatus,
     today,
+    scope: db.scopeLabel(scope, user),
+    advisors: await db.advisorOptions(env, user),
   });
 }
 
@@ -91,11 +95,16 @@ export async function handleProduction(request, env) {
   const months = Math.min(Math.max(Number(url.searchParams.get('months')) || 12, 1), 36);
   const since = isoDay(-months * 31);
 
-  const [byMonth, stats, cashflow, payStats] = await Promise.all([
-    db.productionByMonth(env, user.id, since),
-    db.bookingStats(env, user.id),
-    db.paymentsByMonth(env, user.id, since),
-    db.paymentStats(env, user.id, { today: isoDay(0), soonThrough: isoDay(30), urgentThrough: isoDay(14) }),
+  const scope = db.scopeFor(env, user, request);
+
+  const [byMonth, stats, cashflow, payStats, byAdvisor] = await Promise.all([
+    db.productionByMonth(env, scope, since),
+    db.bookingStats(env, scope),
+    db.paymentsByMonth(env, scope, since),
+    db.paymentStats(env, scope, { today: isoDay(0), soonThrough: isoDay(30), urgentThrough: isoDay(14) }),
+    // An owner's combined report is only useful if it breaks down. An advisor
+    // sees a one row version of this, which is their own line.
+    db.productionByAdvisor(env, scope, since),
   ]);
 
   // Collection rate: of everything that has already fallen due, how much has
@@ -106,5 +115,10 @@ export async function handleProduction(request, env) {
     ? Math.round((payStats.postedCents / dueSoFar) * 1000) / 10
     : null;
 
-  return json({ months, since, byMonth, stats, cashflow, payments: payStats, collectionRate });
+  return json({
+    months, since, byMonth, stats, cashflow, payments: payStats, collectionRate,
+    byAdvisor,
+    scope: db.scopeLabel(scope, user),
+    advisors: await db.advisorOptions(env, user),
+  });
 }
