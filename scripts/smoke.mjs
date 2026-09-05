@@ -356,6 +356,56 @@ async function main() {
   check((detail.data?.logs || []).length >= 1,
     'leaving a log of what it did', `${(detail.data?.logs || []).length} log line(s)`);
 
+  // ------------------------------------------------- dashboard layout ------
+  step('The dashboard remembers how you arranged it');
+
+  const fresh = await call(advisor, 'GET', '/api/prefs/dashboard');
+  const panelIds = (fresh.data?.panels || []).map((p) => p.id);
+  check(fresh.status === 200 && panelIds.length >= 6,
+    'a new advisor gets the default layout', `${panelIds.length} panel(s)`);
+  check((fresh.data?.layout?.widgets || []).length === panelIds.length,
+    'covering every panel', `${(fresh.data?.layout?.widgets || []).length} in layout`);
+
+  const reordered = [...fresh.data.layout.widgets].reverse();
+  reordered[0].hidden = true;
+  const saved = await call(advisor, 'PUT', '/api/prefs/dashboard', {
+    layout: { widgets: reordered, links: [{ label: 'Vendor portal', href: 'https://example.com' }] },
+  });
+  check(saved.data?.layout?.widgets?.[0]?.id === reordered[0].id && saved.data.layout.widgets[0].hidden,
+    'a reordered layout with a hidden panel saves');
+
+  const reread = await call(advisor, 'GET', '/api/prefs/dashboard');
+  check(reread.data?.layout?.widgets?.[0]?.id === reordered[0].id,
+    'and comes back the same on the next visit');
+  check(reread.data?.layout?.links?.[0]?.href === 'https://example.com',
+    'along with their quick links');
+
+  // A layout is user supplied data that is later rendered back into a page,
+  // so what the server does with a hostile one matters more than what the
+  // form does. The form's checks are a message; these are the guarantee.
+  const hostile = await call(advisor, 'PUT', '/api/prefs/dashboard', {
+    layout: {
+      widgets: [{ id: 'notices' }, { id: 'made-up-panel' }, { id: 'notices' }],
+      links: [
+        { label: 'x', href: 'javascript:alert(1)' },
+        { label: 'y', href: 'data:text/html,hi' },
+        { label: 'fine', href: 'https://good.example' },
+      ],
+    },
+  });
+  const gotIds = (hostile.data?.layout?.widgets || []).map((w) => w.id);
+  check(!gotIds.includes('made-up-panel'), 'an unknown panel id is dropped', gotIds.join(', '));
+  check(gotIds.filter((x) => x === 'notices').length === 1, 'a duplicate is collapsed');
+  check(gotIds.length === panelIds.length, 'and the missing panels are put back');
+  const gotLinks = hostile.data?.layout?.links || [];
+  check(gotLinks.length === 1 && gotLinks[0].href === 'https://good.example',
+    'only http and https links survive', JSON.stringify(gotLinks));
+
+  const reset = await call(advisor, 'DELETE', '/api/prefs/dashboard');
+  check((reset.data?.layout?.widgets || []).length === panelIds.length &&
+    !(reset.data.layout.widgets[0] || {}).hidden,
+    'and reset puts the default back');
+
   // ---------------------------------------------------------------- tidy --
   step('Clean up');
   await runCleanups();

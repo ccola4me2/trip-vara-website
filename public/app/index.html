@@ -16,13 +16,26 @@
       <div><h1>Dashboard</h1><p class="sub" id="greeting">Loading...</p></div>
       <div class="toolbar" style="margin:0;">
         <span id="scope"></span>
-        <a class="btn btn-ghost btn-sm" href="/app/payments">Payments</a>
+        <button class="btn btn-ghost btn-sm" type="button" id="customise">Customise</button>
         <a class="btn btn-primary btn-sm" href="/app/reservations?new=1">New reservation</a>
       </div>
     </header>
     <div class="content">
       <section id="stats" class="stat-grid"></section>
       <section id="ghl-state"></section>
+      <section class="card customiser" id="customiser" hidden>
+        <div class="card-head"><h2>Your dashboard</h2>
+          <div class="toolbar" style="margin:0;">
+            <button class="btn btn-ghost btn-sm" type="button" id="reset-layout">Reset to default</button>
+            <button class="btn btn-primary btn-sm" type="button" id="done-customising">Done</button>
+          </div></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin:0 0 .9rem;">Drag a panel to move it. Untick one to take it off
+            your dashboard. Changes save as you make them, and follow you to any device you sign in on.</p>
+          <ul class="panel-list" id="panel-list"></ul>
+          <div id="links-editor"></div>
+        </div>
+      </section>
       <section class="widgets" id="widgets"></section>
     </div>
   </div>
@@ -34,6 +47,7 @@ await mountShell();
 
 const widgetsEl = document.getElementById('widgets');
 let d = null;
+let layout = { widgets: [], links: [] };
 
 const fmtShort = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
 
@@ -116,49 +130,107 @@ function build() {
   else if (d.ghlStatus === 'error') document.getElementById('ghl-state').innerHTML =
     '<div class="notice notice-error">Could not reach Trip Vara Tools just now. Reservation figures above are still accurate.</div>';
 
-  const byClass = (cls) => d.upcomingPayments.filter((x) =>
-    cls === 'past' ? x.due_date < d.today : (x.payment_class === cls && x.due_date >= d.today));
+  drawPanels();
+}
 
-  widgetsEl.replaceChildren(
-    widget('Payments Due', { href: '/app/payments', label: 'All payments' }, [
-      { key: 'soft', label: 'Soft', render: () => paymentRows(byClass('soft')) },
-      { key: 'hard', label: 'Hard', render: () => paymentRows(byClass('hard')) },
-      { key: 'past', label: 'Past Due', render: () => paymentRows(byClass('past')) },
-    ], 'soft'),
+// Module scope, because the panel builders below run outside build().
+const byClass = (cls) => d.upcomingPayments.filter((x) =>
+  cls === 'past' ? x.due_date < d.today : (x.payment_class === cls && x.due_date >= d.today));
 
-    widget('Recent Reservation Activity', { href: '/app/reservations', label: 'All reservations' }, [
-      { key: 'added', label: 'Last Added', render: () => reservationTable(d.reservations.added, RES_COLS) },
-      { key: 'modified', label: 'Last Modified', render: () => reservationTable(d.reservations.modified, RES_COLS) },
-    ], 'added'),
+// --------------------------------------------------------------- panels ---
+// One builder per panel id. The server holds the same list of ids and drops
+// anything it does not recognise, so a panel exists in exactly two places
+// rather than being spelled out again in the layout, the picker and the page.
+const PANELS = {
+  notices: () => widget('Notices', null, [
+    { key: 'all', label: 'All', render: () => d.notices.length
+      ? `<ul class="notice-list">${d.notices.map((n) => `<li class="tone-${esc(n.tone)}">
+          <div class="t">${esc(n.title)}</div>
+          <div class="m">${esc(n.detail)}</div>
+          <a href="${esc(n.href)}">${esc(n.label)}</a></li>`).join('')}</ul>`
+      : '<p class="wempty">Nothing needs you right now.</p>' },
+  ], 'all'),
 
-    widget('Current Reservation Activity', null, [
-      { key: 'upcoming', label: 'Upcoming Departures', render: () => reservationTable(d.current.upcoming, CUR_COLS) },
-      { key: 'traveling', label: 'Currently Travelling', render: () => reservationTable(d.current.traveling, CUR_COLS) },
-      { key: 'returned', label: 'Recently Returned', render: () => reservationTable(d.current.returned, CUR_COLS) },
-    ], 'upcoming'),
+  deadlines: () => widget('Deadlines', { href: '/app/payments', label: 'All payments' }, [
+    { key: 'soft', label: 'Reminders', render: () => paymentRows(byClass('soft')) },
+    { key: 'hard', label: 'Vendor dates', render: () => paymentRows(byClass('hard')) },
+    { key: 'past', label: 'Overdue', render: () => paymentRows(byClass('past')) },
+  ], 'soft'),
 
-    widget('Sales Opportunities', { href: '/app/pipeline', label: 'Pipeline' }, [
-      { key: 'active', label: 'Active', render: () => {
-        if (!d.pipeline) return '<p class="wempty">Pipeline unavailable.</p>';
-        if (!d.pipeline.openCount) return '<p class="wempty">No open opportunities.</p>';
-        const total = d.pipeline.openCount;
-        return `<p style="padding:.7rem 1rem 0;font-size:.82rem;">Total active:
-            <strong>${total}</strong> &middot; ${money(d.pipeline.openValue * 100)}</p>
-          ${d.pipeline.stages.map((st) => `<div class="stage-row">
-            <span style="min-width:8rem;">${esc(st.name)}</span>
-            <span class="bar"><span style="width:${Math.round((st.count / total) * 100)}%"></span></span>
-            <span class="n">${st.count} · ${Math.round((st.count / total) * 100)}%</span></div>`).join('')}`;
-      } },
-    ], 'active'),
+  bookings: () => widget('Latest bookings', { href: '/app/reservations', label: 'All reservations' }, [
+    { key: 'added', label: 'Newest', render: () => reservationTable(d.reservations.added, RES_COLS) },
+    { key: 'modified', label: 'Recently changed', render: () => reservationTable(d.reservations.modified, RES_COLS) },
+  ], 'added'),
 
-    widget('Recent Activity', null, [
-      { key: 'all', label: 'All', render: () => d.activity.length
-        ? `<ul class="rows">${d.activity.map((a) => `<li>
-            <div class="t" style="font-size:.82rem;">${esc(a.subject || a.kind)}</div>
-            <div class="m">${esc(timeAgo(a.created_at))}</div></li>`).join('')}</ul>`
-        : '' },
-    ], 'all'),
-  );
+  travelling: () => widget("Who's travelling", null, [
+    { key: 'upcoming', label: 'Leaving soon', render: () => reservationTable(d.current.upcoming, CUR_COLS) },
+    { key: 'traveling', label: 'Away now', render: () => reservationTable(d.current.traveling, CUR_COLS) },
+    { key: 'returned', label: 'Just back', render: () => reservationTable(d.current.returned, CUR_COLS) },
+  ], 'upcoming'),
+
+  deals: () => widget('Deals in play', { href: '/app/pipeline', label: 'Pipeline' }, [
+    { key: 'active', label: 'Open', render: () => {
+      if (!d.pipeline) return '<p class="wempty">Pipeline unavailable.</p>';
+      if (!d.pipeline.openCount) return '<p class="wempty">No open opportunities.</p>';
+      const total = d.pipeline.openCount;
+      return `<p style="padding:.7rem 1rem 0;font-size:.82rem;">Total open:
+          <strong>${total}</strong> &middot; ${money(d.pipeline.openValue * 100)}</p>
+        ${d.pipeline.stages.map((st) => `<div class="stage-row">
+          <span style="min-width:8rem;">${esc(st.name)}</span>
+          <span class="bar"><span style="width:${Math.round((st.count / total) * 100)}%"></span></span>
+          <span class="n">${st.count} · ${Math.round((st.count / total) * 100)}%</span></div>`).join('')}`;
+    } },
+  ], 'active'),
+
+  trend: () => widget('Production trend', { href: '/app/reports', label: 'Full report' }, [
+    { key: 'gross', label: 'Booked value', render: () => trendBars('gross_cents') },
+    { key: 'commission', label: 'Commission', render: () => trendBars('commission_cents') },
+  ], 'gross'),
+
+  links: () => widget('Quick links', null, [
+    { key: 'all', label: 'All', render: () => layout.links.length
+      ? `<ul class="rows">${layout.links.map((l) => `<li>
+          <a class="t" style="font-size:.85rem;" href="${esc(l.href)}"
+             target="_blank" rel="noopener noreferrer">${esc(l.label)}</a></li>`).join('')}</ul>`
+      : '<p class="wempty">Add your own shortcuts under Customise.</p>' },
+  ], 'all'),
+
+  activity: () => widget('Activity', null, [
+    { key: 'all', label: 'All', render: () => d.activity.length
+      ? `<ul class="rows">${d.activity.map((a) => `<li>
+          <div class="t" style="font-size:.82rem;">${esc(a.subject || a.kind)}</div>
+          <div class="m">${esc(timeAgo(a.created_at))}${a.advisor_name && everyoneNow()
+            ? ' · ' + esc(a.advisor_name) : ''}</div></li>`).join('')}</ul>`
+      : '' },
+  ], 'all'),
+};
+
+const everyoneNow = () => Boolean(d.scope && d.scope.all);
+
+function trendBars(field) {
+  const rows = d.trend || [];
+  if (!rows.length) return '<p class="wempty">No booked departures yet.</p>';
+  const max = Math.max(...rows.map((m) => m[field] || 0), 1);
+  return `<div class="trend">${rows.map((m) => `
+    <div class="trend-col" title="${esc(m.month)}: ${esc(money(m[field]))}">
+      <span class="trend-bar" style="height:${Math.max(Math.round(((m[field] || 0) / max) * 96), 2)}px"></span>
+      <span class="trend-label">${esc((m.month || '').slice(5))}</span>
+    </div>`).join('')}</div>
+    <p class="trend-foot">${esc(money(rows.reduce((n, m) => n + (m[field] || 0), 0)))} over
+      ${rows.length} month${rows.length === 1 ? '' : 's'}</p>`;
+}
+
+function drawPanels() {
+  const visible = layout.widgets.filter((w) => !w.hidden && PANELS[w.id]);
+  widgetsEl.replaceChildren(...visible.map((w) => {
+    const el = PANELS[w.id]();
+    el.dataset.panel = w.id;
+    return el;
+  }));
+  if (!visible.length) {
+    widgetsEl.innerHTML = `<div class="empty" style="grid-column:1/-1;">
+      <h3>Every panel is switched off</h3><p>Open Customise to put some back.</p></div>`;
+  }
 }
 
 const RES_COLS = [
@@ -176,8 +248,178 @@ const CUR_COLS = [
   { label: 'Conf #', cell: (r) => `<span class="muted">${esc(r.confirmation_number || '-')}</span>` },
 ];
 
+// ----------------------------------------------------------- customiser ---
+// Reordering is drag and drop with a keyboard equivalent beside it. Drag alone
+// would make the dashboard unarrangeable for anyone not using a mouse, and the
+// arrows cost four lines.
+function drawCustomiser() {
+  const list = document.getElementById('panel-list');
+  const byId = Object.fromEntries((d.panels || []).map((p) => [p.id, p]));
+
+  list.innerHTML = layout.widgets.map((w, i) => {
+    const meta = byId[w.id] || { title: w.id, hint: '' };
+    return `<li draggable="true" data-id="${esc(w.id)}" data-index="${i}">
+      <span class="grip" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/>
+          <circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/>
+          <circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
+      <label class="panel-name">
+        <input type="checkbox" data-toggle="${esc(w.id)}"${w.hidden ? '' : ' checked'}>
+        <span><b>${esc(meta.title)}</b><small>${esc(meta.hint || '')}</small></span>
+      </label>
+      <span class="move">
+        <button type="button" data-move="up" data-id="${esc(w.id)}" aria-label="Move ${esc(meta.title)} up"
+          ${i === 0 ? 'disabled' : ''}>&uarr;</button>
+        <button type="button" data-move="down" data-id="${esc(w.id)}" aria-label="Move ${esc(meta.title)} down"
+          ${i === layout.widgets.length - 1 ? 'disabled' : ''}>&darr;</button>
+      </span>
+    </li>`;
+  }).join('');
+
+  list.querySelectorAll('[data-toggle]').forEach((box) => {
+    box.addEventListener('change', () => {
+      const w = layout.widgets.find((x) => x.id === box.dataset.toggle);
+      if (w) w.hidden = !box.checked;
+      saveLayout();
+    });
+  });
+
+  list.querySelectorAll('[data-move]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const from = layout.widgets.findIndex((x) => x.id === btn.dataset.id);
+      const to = btn.dataset.move === 'up' ? from - 1 : from + 1;
+      if (from < 0 || to < 0 || to >= layout.widgets.length) return;
+      const [moved] = layout.widgets.splice(from, 1);
+      layout.widgets.splice(to, 0, moved);
+      saveLayout();
+      drawCustomiser();
+      // Keep the keyboard on the button that just moved, or arrowing a panel
+      // down the list means finding it again after every single step.
+      list.querySelector(`[data-move="${btn.dataset.move}"][data-id="${btn.dataset.id}"]`)?.focus();
+    });
+  });
+
+  let dragging = null;
+  list.querySelectorAll('li').forEach((li) => {
+    li.addEventListener('dragstart', (e) => {
+      dragging = li.dataset.id;
+      li.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      // Firefox will not start a drag without something on the transfer.
+      e.dataTransfer.setData('text/plain', li.dataset.id);
+    });
+    li.addEventListener('dragend', () => { li.classList.remove('dragging'); dragging = null; });
+    li.addEventListener('dragover', (e) => {
+      if (!dragging || dragging === li.dataset.id) return;
+      e.preventDefault();
+      li.classList.add('drop-target');
+    });
+    li.addEventListener('dragleave', () => li.classList.remove('drop-target'));
+    li.addEventListener('drop', (e) => {
+      e.preventDefault();
+      li.classList.remove('drop-target');
+      if (!dragging || dragging === li.dataset.id) return;
+      const from = layout.widgets.findIndex((x) => x.id === dragging);
+      const to = layout.widgets.findIndex((x) => x.id === li.dataset.id);
+      if (from < 0 || to < 0) return;
+      const [moved] = layout.widgets.splice(from, 1);
+      layout.widgets.splice(to, 0, moved);
+      saveLayout();
+      drawCustomiser();
+    });
+  });
+
+  drawLinksEditor();
+}
+
+function drawLinksEditor() {
+  const host = document.getElementById('links-editor');
+  host.innerHTML = `<h3 style="font-size:.85rem;margin:1.4rem 0 .5rem;">Quick links</h3>
+    <p class="field-hint" style="margin:0 0 .7rem;">Shortcuts to whatever you open every day: a vendor's
+      booking engine, a shared drive, a supplier portal. They appear in the Quick links panel.</p>
+    <ul class="rows" id="link-rows">${layout.links.map((l, i) => `<li>
+      <div class="row-between">
+        <span><span class="t" style="font-size:.85rem;">${esc(l.label)}</span>
+          <span class="m">${esc(l.href)}</span></span>
+        <button class="btn btn-ghost btn-sm" type="button" data-drop-link="${i}">Remove</button>
+      </div></li>`).join('')}</ul>
+    <div class="field-row" style="margin-top:.7rem;">
+      <div class="field" style="margin:0;"><label for="link-label">Name</label>
+        <input id="link-label" maxlength="40" placeholder="Vendor portal"></div>
+      <div class="field" style="margin:0;"><label for="link-href">Address</label>
+        <input id="link-href" type="url" placeholder="https://..."></div>
+    </div>
+    <p class="field-hint" id="link-error" style="color:var(--red-600);" hidden></p>
+    <button class="btn btn-secondary btn-sm" type="button" id="add-link" style="margin-top:.6rem;">Add link</button>`;
+
+  host.querySelectorAll('[data-drop-link]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      layout.links.splice(Number(btn.dataset.dropLink), 1);
+      saveLayout();
+      drawLinksEditor();
+      drawPanels();
+    });
+  });
+
+  host.querySelector('#add-link').addEventListener('click', () => {
+    const label = host.querySelector('#link-label').value.trim();
+    const href = host.querySelector('#link-href').value.trim();
+    const error = host.querySelector('#link-error');
+    // The same rule the server enforces, said here so it is a message rather
+    // than a link that silently disappears on save.
+    if (!label || !/^https?:\/\//i.test(href)) {
+      error.textContent = 'Give it a name and a web address starting with http:// or https://.';
+      error.hidden = false;
+      return;
+    }
+    error.hidden = true;
+    layout.links.push({ label, href });
+    saveLayout();
+    drawLinksEditor();
+    drawPanels();
+  });
+}
+
+/**
+ * Saves in the background and redraws immediately.
+ *
+ * A dashboard that waits on the network before it moves a panel feels broken,
+ * and the cost of being wrong is one panel in the wrong order until a reload.
+ * A failure says so rather than leaving you thinking it saved.
+ */
+let saveTimer = null;
+function saveLayout() {
+  drawPanels();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      const res = await api('/api/prefs/dashboard', { method: 'PUT', body: { layout } });
+      layout = res.layout;
+    } catch {
+      const box = document.getElementById('ghl-state');
+      box.innerHTML = '<div class="notice notice-error">Could not save your dashboard layout. '
+        + 'It will look right until you reload.</div>';
+    }
+  }, 300);
+}
+
+const customiser = document.getElementById('customiser');
+document.getElementById('customise').addEventListener('click', () => {
+  customiser.hidden = !customiser.hidden;
+  if (!customiser.hidden) { drawCustomiser(); customiser.scrollIntoView({ block: 'nearest' }); }
+});
+document.getElementById('done-customising').addEventListener('click', () => { customiser.hidden = true; });
+document.getElementById('reset-layout').addEventListener('click', async () => {
+  const res = await api('/api/prefs/dashboard', { method: 'DELETE' });
+  layout = res.layout;
+  drawCustomiser();
+  drawPanels();
+});
+
 try {
   d = await api(`/api/dashboard${advisorParam() ? '?' + advisorParam() : ''}`);
+  layout = d.layout;
   mountScopePicker(document.getElementById('scope'), d, () => location.reload());
   build();
 }

@@ -4,9 +4,10 @@
 // pipeline snapshot. A GHL outage degrades to booking-only numbers rather than
 // failing the whole dashboard, because the D1 half is still useful on its own.
 
-import { json } from './util.js';
+import { json, now } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
+import { readLayout, PANELS } from './prefs.js';
 import * as ghl from './ghl.js';
 
 function isoDay(offsetDays = 0) {
@@ -84,6 +85,10 @@ export async function handleDashboard(request, env) {
     today,
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),
+    layout: await readLayout(env, user.id),
+    panels: PANELS,
+    notices: await noticesFor(env, user, scope),
+    trend: await db.productionByMonth(env, scope, isoDay(-365)),
   });
 }
 
@@ -121,4 +126,97 @@ export async function handleProduction(request, env) {
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),
   });
+}
+
+/**
+ * Things that need a person to do something.
+ *
+ * The rule for what belongs here: a notice must be actionable and specific.
+ * "Nothing is wrong" is not a notice, and neither is a number you can already
+ * read off the panel above. Everything here either blocks work or is quietly
+ * costing money, and each one links to the screen where it gets fixed.
+ *
+ * A failed automation is the reason this panel exists. Until now a run that
+ * failed for good was visible only if you happened to open the Automations
+ * screen and notice a red count, which meant a revoked API key could go unseen
+ * for a week while follow ups silently stopped going out.
+ */
+async function noticesFor(env, user, scope) {
+  const out = [];
+  const isOwner = user.role === 'admin';
+
+  const scoped = db.scopeWhere(scope, 'b.user_id');
+  const [failed, pending, undated, pastDue] = await Promise.all([
+    env.DB.prepare(
+      `SELECT COUNT(*) AS n, MAX(r.last_error) AS last_error
+         FROM automation_runs r JOIN automations a ON a.id = r.automation_id
+        WHERE a.location_id = ? AND r.status = 'failed'
+          AND r.updated_at > ?`
+    ).bind(ghl.locationFor(env, user), now() - 7 * 86400).first().catch(() => null),
+
+    isOwner
+      ? env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE status = 'pending'").first().catch(() => null)
+      : Promise.resolve(null),
+
+    // A booked trip with no vendor deadline recorded is the quiet one. Nothing
+    // will warn anybody, because there is no date to warn about.
+    env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM bookings b
+        WHERE ${scoped.sql} AND b.status = 'booked' AND b.final_payment_due IS NULL`
+    ).bind(...scoped.binds).first().catch(() => null),
+
+    env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM booking_payments p
+        WHERE ${db.scopeWhere(scope, 'p.user_id').sql}
+          AND p.paid_date IS NULL AND p.payment_class = 'hard'
+          AND p.due_date IS NOT NULL AND p.due_date < ?`
+    ).bind(...db.scopeWhere(scope, 'p.user_id').binds, isoDay(0)).first().catch(() => null),
+  ]);
+
+  if (pastDue && pastDue.n) {
+    out.push({
+      tone: 'urgent',
+      title: `${pastDue.n} vendor deadline${pastDue.n === 1 ? '' : 's'} passed`,
+      detail: 'Confirm with the vendor whether the reservation still stands.',
+      href: '/app/payments', label: 'Open payments',
+    });
+  }
+
+  if (failed && failed.n) {
+    out.push({
+      tone: 'urgent',
+      title: `${failed.n} automation run${failed.n === 1 ? '' : 's'} failed this week`,
+      detail: failed.last_error || 'Open the automation to see why.',
+      href: '/app/automations', label: 'Open automations',
+    });
+  }
+
+  if (undated && undated.n) {
+    out.push({
+      tone: 'warn',
+      title: `${undated.n} booked trip${undated.n === 1 ? '' : 's'} with no final payment date`,
+      detail: 'Nothing can warn you about a deadline that was never recorded.',
+      href: '/app/reservations', label: 'Open reservations',
+    });
+  }
+
+  if (pending && pending.n) {
+    out.push({
+      tone: 'info',
+      title: `${pending.n} advisor${pending.n === 1 ? '' : 's'} waiting for approval`,
+      detail: 'They cannot sign in until someone approves them.',
+      href: '/admin/', label: 'Review',
+    });
+  }
+
+  if (isOwner && !env.RESEND_API_KEY) {
+    out.push({
+      tone: 'warn',
+      title: 'Email is not configured',
+      detail: 'Approvals, resets and automation emails cannot be sent until RESEND_API_KEY is set.',
+      href: '/app/settings', label: 'Settings',
+    });
+  }
+
+  return out;
 }

@@ -117,6 +117,22 @@ The smoke test drives all three end to end against a local dev server in under
 a second, plus a reservation and the soft/hard schedule built from it. It
 cleans up after itself, including when it bails early.
 
+## The dashboard
+
+Panels can be reordered and switched off per advisor, and the arrangement is
+stored server side so it follows them between a laptop and a phone. Reordering
+works by drag and by arrow buttons: drag alone would leave the dashboard
+unarrangeable for anyone not using a mouse.
+
+The panel catalogue lives in `src/prefs.js`, on the server, because a saved
+layout is user supplied data that gets rendered back into a page. Unknown ids
+are dropped rather than stored, duplicates collapse, and panels added in a
+later release are appended to everyone's layout on read, so a new panel
+appears without anybody having to reset their dashboard.
+
+Quick links accept `http` and `https` only. A saved `javascript:` URL would be
+stored once and then clicked by its author on every later visit.
+
 ## Who sees what
 
 Two kinds of account use the portal.

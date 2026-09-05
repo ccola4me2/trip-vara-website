@@ -41,6 +41,7 @@ import {
 } from './formbuilder.js';
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
 import { handleSearch } from './search.js';
+import { handleGetLayout, handleSaveLayout, handleResetLayout } from './prefs.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
@@ -287,6 +288,9 @@ async function routeApi(request, env, path, method) {
 
   // ---- dashboard and reports -------------------------------------------
   if (path === '/api/search' && method === 'GET') return handleSearch(request, env);
+  if (path === '/api/prefs/dashboard' && method === 'GET') return handleGetLayout(request, env);
+  if (path === '/api/prefs/dashboard' && method === 'PUT') return handleSaveLayout(request, env);
+  if (path === '/api/prefs/dashboard' && method === 'DELETE') return handleResetLayout(request, env);
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);
   if (path === '/api/reports/production' && method === 'GET') return handleProduction(request, env);
 

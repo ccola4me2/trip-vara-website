@@ -60,6 +60,8 @@ isArray fromEntries createElement className scrollTop scrollHeight isNaN isFinit
 isInteger parse stringify
 writeText clipboard currentTarget preventDefault stopPropagation replaceChildren
 replaceState pushState scrollIntoView setSelectionRange getSetCookie closest
+dataTransfer effectAllowed setData getData draggable insertBefore appendChild
+setTimeout clearTimeout requestSubmit
 gridTemplateColumns cssText selectedOptions
 data detail error code redirect
 `.trim().split(/\s+/));
