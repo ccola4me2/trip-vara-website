@@ -25,6 +25,7 @@ import {
   handleListBookings, handleGetBooking, handleBookingRecord, handleCreateBooking,
   handleUpdateBooking, handleQuickUpdate, handleDeleteBooking,
 } from './bookings.js';
+import { handleStatement } from './statement.js';
 import {
   handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
 } from './conversations.js';
@@ -206,6 +207,7 @@ async function routeApi(request, env, path, method) {
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const recordMatch = path.match(/^\/api\/bookings\/([^/]+)\/record$/);
   const quickMatch = path.match(/^\/api\/bookings\/([^/]+)\/quick$/);
+  const statementMatch = path.match(/^\/api\/bookings\/([^/]+)\/statement$/);
   const travellersMatch = path.match(/^\/api\/bookings\/([^/]+)\/travellers$/);
   const amenitiesMatch = path.match(/^\/api\/bookings\/([^/]+)\/amenities$/);
   const travellerMatch = path.match(/^\/api\/travellers\/([^/]+)$/);
@@ -280,6 +282,8 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/bookings' && method === 'POST') return handleCreateBooking(request, env);
   if (recordMatch && method === 'GET') return handleBookingRecord(request, env, recordMatch[1]);
   if (quickMatch && method === 'POST') return handleQuickUpdate(request, env, quickMatch[1]);
+  // What the client is told, which is a narrow subset of what the record holds.
+  if (statementMatch && method === 'POST') return handleStatement(request, env, statementMatch[1]);
 
   // The people on a reservation, and what the vendor has granted them.
   if (travellersMatch && method === 'POST') return handleAddTraveller(request, env, travellersMatch[1]);

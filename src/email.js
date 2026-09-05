@@ -13,7 +13,7 @@ import { PermanentError } from './util.js';
 const BRAND_NAVY = '#1b3a5f';
 const BRAND_CORAL = '#f1705b';
 
-function escapeHtml(s) {
+export function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
@@ -23,7 +23,13 @@ function appUrl(env) {
   return (env.APP_URL || 'https://tripvaratravel.com').replace(/\/$/, '');
 }
 
-function layout(env, { heading, body, cta }) {
+/**
+ * `footer` replaces the portal line at the bottom. Messages to advisors point
+ * at the portal; messages to their clients must not, because a client has no
+ * account there and being sent to a login screen by their travel agent is a
+ * small betrayal of who the message is from.
+ */
+export function layout(env, { heading, body, cta, footer }) {
   const url = appUrl(env);
   const button = cta
     ? `<tr><td style="padding:8px 0 24px;">
@@ -55,7 +61,8 @@ function layout(env, { heading, body, cta }) {
         </table>
       </td></tr>
       <tr><td style="border-top:1px solid #e4edf5;padding:18px 32px;font-size:12px;color:#5c7286;">
-        Trip Vara advisor portal &middot; <a href="${url}" style="color:${BRAND_NAVY};">${escapeHtml(url.replace(/^https?:\/\//, ''))}</a>
+        ${footer || `Trip Vara advisor portal &middot; <a href="${url}" style="color:${BRAND_NAVY};">${
+          escapeHtml(url.replace(/^https?:\/\//, ''))}</a>`}
       </td></tr>
     </table>
   </td></tr>
@@ -321,6 +328,40 @@ export async function sendAutomationEmail(env, to, subject, body) {
  * "balance due 26 September" and "the cruise line will cancel your booking on
  * 26 September" get very different response rates.
  */
+/**
+ * Sends an already-rendered message, and is honest about why it failed.
+ *
+ * The retry ladder above it treats a thrown Error as worth trying again and a
+ * PermanentError as not. A missing API key and a rejected address will fail
+ * exactly the same way on the tenth attempt as the first.
+ */
+export async function sendHtml(env, { to, replyTo, subject, html }) {
+  if (!env.RESEND_API_KEY) {
+    throw new PermanentError('Email is not configured: the RESEND_API_KEY secret is not set on the Worker.');
+  }
+  if (!to) throw new PermanentError('There is no address to send to.');
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || 'Trip Vara <noreply@tripvaratravel.com>',
+      to: [to],
+      ...(replyTo ? { reply_to: [replyTo] } : {}),
+      subject,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    const message = `Resend returned ${res.status}. ${detail.slice(0, 200)}`;
+    const transient = res.status === 429 || res.status >= 500;
+    throw transient ? new Error(message) : new PermanentError(message);
+  }
+  return { ok: true, subject };
+}
+
 export async function sendPaymentReminder(env, {
   to, replyTo, clientName, advisorName, agencyName,
   amountCents, dueDate, hard, tripName, vendor, confirmation,

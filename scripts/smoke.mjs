@@ -1411,6 +1411,111 @@ async function main() {
     'deleting the payment gives the credit back to the client');
   }
 
+  // ------------------------------------------------- client statement ------
+  {
+  step('What the client is told, and what they are not');
+
+  const st = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Statement ${stamp}`, supplier: 'Princess Cruises', status: 'booked',
+    productName: 'Alaska Inside Passage', confirmationNumber: `STMT-${stamp}`,
+    departDate: isoDay(200), returnDate: isoDay(207), commission: '137.91',
+    cabin: 'BA 620', cabinCategory: 'Balcony', itinerary: '7 Night Inside Passage',
+  });
+  const stId = st.data?.booking?.id;
+  if (stId) cleanup('the statement reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${stId}`));
+
+  await call(advisor, 'POST', `/api/bookings/${stId}/pricing`,
+    { kind: 'fare', amount: '2000', commissionable: true, commission: '137.91' });
+  await call(advisor, 'POST', `/api/bookings/${stId}/pricing`, { kind: 'taxes', amount: '318.55' });
+  await call(advisor, 'POST', `/api/bookings/${stId}/pricing`,
+    { kind: 'discount', label: 'Loyalty discount', amount: '100' });
+
+  await call(advisor, 'POST', `/api/bookings/${stId}/travellers`,
+    { name: 'Ruth Marlowe', passportNumber: 'X9Z7Q4471', passportExpiry: isoDay(2000), isLead: true });
+
+  await call(advisor, 'POST', `/api/bookings/${stId}/amenities`,
+    { description: 'Onboard credit', amount: '100', source: 'vendor', status: 'confirmed' });
+  await call(advisor, 'POST', `/api/bookings/${stId}/amenities`,
+    { description: 'Spa pass, still asking', source: 'vendor', status: 'requested' });
+
+  const dep = await call(advisor, 'POST', '/api/payments', {
+    bookingId: stId, kind: 'deposit', paymentClass: 'hard', amount: '500',
+    dueDate: isoDay(-30), paidDate: isoDay(-30),
+  });
+  await call(advisor, 'POST', `/api/payments/${dep.data.payment.id}/paid`,
+    { paidDate: isoDay(-30), paymentType: 'card', cardLast4: '9137' });
+  await call(advisor, 'POST', '/api/payments', {
+    bookingId: stId, kind: 'final', paymentClass: 'hard', amount: '1718.55', dueDate: isoDay(120),
+  });
+  // The advisor's own reminder, a week early, for the same money.
+  await call(advisor, 'POST', '/api/payments', {
+    bookingId: stId, kind: 'final', paymentClass: 'soft', amount: '1718.55', dueDate: isoDay(113),
+  });
+
+  const noAddress = await call(advisor, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
+  check(noAddress.data?.problem && noAddress.data?.clientId,
+    'a client with no email is named, with somewhere to go and fix it',
+    noAddress.data?.problem);
+  const refused = await call(advisor, 'POST', `/api/bookings/${stId}/statement`, {});
+  check(refused.status === 400, 'and sending is refused rather than half done',
+    `status ${refused.status}`);
+
+  const cl = await call(advisor, 'GET', `/api/clients?q=${encodeURIComponent(`Statement ${stamp}`)}`);
+  await call(advisor, 'PUT', `/api/clients/${cl.data.clients[0].id}`,
+    { name: `Statement ${stamp}`, email: `ruth-${stamp}@example.com` });
+
+  const prev = await call(advisor, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
+  const sm = prev.data?.statement || {};
+  check(prev.status === 200 && prev.data?.to === `ruth-${stamp}@example.com`,
+    'once an address is on file the preview is ready', prev.data?.to);
+
+  // 2000 + 318.55 - 100. A discount is stored positive and subtracted, the
+  // same way it is on the advisor's screen, so the two cannot drift apart.
+  check(sm.tripCents === 221855, 'the total is the breakdown, discount subtracted', sm.tripCents);
+  check(sm.paidCents === 50000 && sm.balanceCents === 171855,
+    'and the balance is the trip less what has arrived',
+    `${sm.paidCents} paid, ${sm.balanceCents} left`);
+
+  // The soft row is the advisor's private reminder for money already listed.
+  // A client seeing both reads it as owing the balance twice.
+  check(sm.due?.length === 1 && sm.due[0].amountCents === 171855,
+    'only the vendor\'s own date is shown, not the advisor\'s reminder',
+    JSON.stringify(sm.due));
+
+  check(sm.amenities?.length === 1 && sm.amenities[0].description === 'Onboard credit',
+    'what the vendor confirmed is included, what is still being asked for is not',
+    JSON.stringify(sm.amenities));
+  check(Array.isArray(sm.travellers) && sm.travellers[0] === 'Ruth Marlowe'
+    && typeof sm.travellers[0] === 'string',
+    'travellers are names, not records', JSON.stringify(sm.travellers));
+
+  // The boundary this module exists for. Everything below is a fact the
+  // reservation holds and the client must never receive.
+  const asText = JSON.stringify(prev.data);
+  check(!asText.includes('137.91') && !/commission/i.test(asText),
+    'no commission figure reaches the client, in the data or the words');
+  check(!asText.includes('X9Z7Q4471'), 'nor a passport number');
+  check(!asText.includes('9137'), 'nor the digits of a card');
+  check(!asText.includes(isoDay(113)), 'nor the advisor\'s private reminder date');
+
+  const html = prev.data?.html || '';
+  check(html.includes('Ruth Marlowe') && html.includes('2,218.55') && html.includes('1,718.55'),
+    'while the trip, the people and the money are all there');
+  check(html.includes('Loyalty discount') && !html.includes('Non-commissionable'),
+    'in the client\'s words rather than the agency\'s');
+
+  // The client has no account in the portal. Signing an email to them with a
+  // link to its login page is the software talking over the advisor.
+  check(!/advisor portal/i.test(html) && html.includes(ADVISOR_EMAIL),
+    'and it is signed by the advisor, not by the portal');
+
+  const notYours = await call(admin, 'POST', `/api/bookings/${stId}/statement`, { preview: true });
+  check(notYours.status === 404,
+    'and an owner cannot send a statement over an associate\'s name',
+    `status ${notYours.status}`);
+  }
+
   // ------------------------------------------------------------ targets -----
   step('Targets, and whether you are on course');
 

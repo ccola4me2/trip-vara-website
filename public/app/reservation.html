@@ -212,6 +212,15 @@
   </form>
 </dialog>
 
+<dialog id="statement-dlg" style="max-width:720px;">
+  <div class="card-head"><h2>Statement to the client</h2>
+    <button class="btn btn-ghost btn-sm" type="button" id="statement-close">Close</button></div>
+  <div class="card-pad" id="statement-body"></div>
+  <div class="card-foot">
+    <button class="btn btn-primary" type="button" id="statement-send" hidden>Send it</button>
+  </div>
+</dialog>
+
 <dialog id="chase">
   <div class="card-head"><h2>Chase this payment</h2>
     <button class="btn btn-ghost btn-sm" type="button" id="chase-close">Close</button></div>
@@ -389,8 +398,11 @@ function render() {
   ].filter(Boolean).join(' &middot; ');
 
   document.getElementById('actions').innerHTML = d.editable
-    ? `<a class="btn btn-ghost btn-sm" href="/app/reservations?focus=${esc(b.id)}">Edit reservation</a>`
+    ? `<button class="btn btn-ghost btn-sm" id="send-statement">Send statement</button>
+       <a class="btn btn-ghost btn-sm" href="/app/reservations?focus=${esc(b.id)}">Edit reservation</a>`
     : '<span class="muted">Another advisor\'s reservation</span>';
+  const sb = document.getElementById('send-statement');
+  if (sb) sb.addEventListener('click', statement);
 
   const left = daysUntil(b.final_payment_due);
   document.getElementById('money').innerHTML = `
@@ -591,6 +603,67 @@ async function chase(paymentId) {
     } finally { send.disabled = false; }
   };
 }
+
+/**
+ * The client's own copy of where their trip stands.
+ *
+ * Shown in an iframe rather than described, because a summary of an email is
+ * not the email. What the advisor reads here is the exact document that will
+ * arrive, and the point of reading it is to catch the thing that should not go
+ * out before it does.
+ */
+async function statement() {
+  const dlg = document.getElementById('statement-dlg');
+  const body = document.getElementById('statement-body');
+  const send = document.getElementById('statement-send');
+  dlg.showModal();
+  body.innerHTML = '<p class="spinner">Preparing...</p>';
+  send.hidden = true;
+
+  let p;
+  try {
+    p = await api(`/api/bookings/${encodeURIComponent(id)}/statement`,
+      { method: 'POST', body: { preview: true } });
+  } catch (e) { body.innerHTML = `<div class="notice notice-error">${esc(e.message)}</div>`; return; }
+
+  const s = p.statement;
+  if (p.problem) {
+    body.innerHTML = `<div class="notice notice-error">${esc(p.problem)}</div>
+      ${p.clientId ? `<p style="margin-top:.8rem;"><a class="btn btn-primary btn-sm"
+        href="/app/client?id=${esc(p.clientId)}">Add their email</a></p>` : ''}`;
+    return;
+  }
+
+  body.innerHTML = `
+    <dl class="pairs" style="margin-bottom:1rem;">
+      <dt>To</dt><dd>${esc(s.clientName)} &lt;${esc(p.to)}&gt;</dd>
+      <dt>Replies to</dt><dd>${esc(s.advisorEmail)}</dd>
+      <dt>Subject</dt><dd>${esc(p.subject)}</dd>
+    </dl>
+    <p class="muted" style="font-size:.8rem;margin:0 0 .6rem;">Commission, passport numbers, card
+      digits and your own reminder dates are not in this. Only the vendor's dates are.</p>
+    <iframe title="Statement preview" style="width:100%;height:26rem;border:1px solid var(--navy-100);
+      border-radius:.6rem;background:#fff;"></iframe>`;
+  // srcdoc as a property, never as markup: the email is HTML, and building it
+  // into an attribute is how it would escape into this page.
+  body.querySelector('iframe').srcdoc = p.html;
+
+  send.hidden = false;
+  send.onclick = async () => {
+    send.disabled = true;
+    try {
+      const res = await api(`/api/bookings/${encodeURIComponent(id)}/statement`,
+        { method: 'POST', body: {} });
+      dlg.close();
+      err.innerHTML = `<div class="notice notice-ok">Statement sent to ${esc(res.sentTo)}.</div>`;
+    } catch (e) {
+      body.innerHTML += `<div class="notice notice-error" style="margin-top:.8rem;">${esc(e.message)}</div>`;
+    } finally { send.disabled = false; }
+  };
+}
+
+document.getElementById('statement-close').addEventListener('click',
+  () => document.getElementById('statement-dlg').close());
 
 async function load() {
   try {
