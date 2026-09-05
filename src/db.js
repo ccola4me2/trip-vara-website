@@ -1018,7 +1018,8 @@ export async function crmCounts(env, locationId) {
 // ---------------------------------------------------------------------------
 const PAYMENT_COLUMNS = `
   p.id, p.booking_id, p.user_id, p.kind, p.payment_class, p.amount_cents,
-  p.due_date, p.paid_date, p.method, p.reference, p.notes, p.created_at, p.updated_at
+  p.due_date, p.paid_date, p.method, p.reference, p.notes, p.created_at, p.updated_at,
+  p.reminded_at, p.reminder_count
 `;
 
 export async function listPayments(env, scope, { bookingId, state, paymentClass, limit = 300 } = {}) {

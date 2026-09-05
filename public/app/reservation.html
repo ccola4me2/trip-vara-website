@@ -62,8 +62,17 @@
   </div>
 </div>
 
+<dialog id="chase">
+  <div class="card-head"><h2>Chase this payment</h2>
+    <button class="btn btn-ghost btn-sm" type="button" id="chase-close">Close</button></div>
+  <div class="card-pad" id="chase-body"></div>
+  <div class="card-foot">
+    <button class="btn btn-primary" type="button" id="chase-send" hidden>Send it</button>
+  </div>
+</dialog>
+
 <script type="module">
-import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit } from '/js/app.js';
+import { api, mountShell, esc, money, dateFmt, daysUntil, timeAgo, showError, onSubmit } from '/js/app.js';
 await mountShell();
 
 const id = new URLSearchParams(location.search).get('id') || '';
@@ -140,12 +149,19 @@ function render() {
               <div class="muted">${hard ? 'vendor deadline' : 'your reminder'}${
                 p.reference ? ' · ' + esc(p.reference) : ''}</div></td>
             <td class="num">${money(p.amount_cents)}</td>
-            <td class="num">${!p.paid_date && d.editable
-              ? `<button class="btn btn-ghost btn-sm" data-paid="${esc(p.id)}">Mark posted</button>` : ''}</td>
+            <td class="num">${!p.paid_date && d.editable ? `
+              <button class="btn btn-ghost btn-sm" data-remind="${esc(p.id)}">Chase</button>
+              <button class="btn btn-ghost btn-sm" data-paid="${esc(p.id)}">Mark posted</button>` : ''}
+              ${p.reminded_at ? `<div class="muted" style="font-size:.7rem;">chased ${
+                esc(timeAgo(p.reminded_at))}${p.reminder_count > 1 ? `, ${p.reminder_count} times` : ''}</div>` : ''}</td>
           </tr>`;
         }).join('')}</tbody></table></div>`
     : `<div class="empty"><h3>No schedule yet</h3>
         <p>Nothing will warn you about a payment that was never written down.</p></div>`;
+
+  document.querySelectorAll('[data-remind]').forEach((btn) => {
+    btn.addEventListener('click', () => chase(btn.dataset.remind));
+  });
 
   document.querySelectorAll('[data-paid]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -210,6 +226,66 @@ function render() {
   }
 }
 
+/**
+ * Preview, then send. Two requests, because an email to a client cannot be
+ * taken back and a button that sends one on its first click is a button people
+ * stop trusting. The preview is produced by the same handler that sends, so
+ * what is shown is what goes.
+ */
+async function chase(paymentId) {
+  const dlg = document.getElementById('chase');
+  const body = document.getElementById('chase-body');
+  const send = document.getElementById('chase-send');
+  dlg.showModal();
+  body.innerHTML = '<p class="spinner">Preparing...</p>';
+  send.hidden = true;
+
+  let p;
+  try {
+    p = await api(`/api/payments/${encodeURIComponent(paymentId)}/remind`,
+      { method: 'POST', body: { preview: true } });
+  } catch (e) { body.innerHTML = `<div class="notice notice-error">${esc(e.message)}</div>`; return; }
+
+  if (p.problem) {
+    body.innerHTML = `<div class="notice notice-error">${esc(p.problem)}</div>
+      ${p.clientId ? `<p style="margin-top:.8rem;"><a class="btn btn-primary btn-sm"
+        href="/app/client?id=${esc(p.clientId)}">Add their email</a></p>` : ''}`;
+    return;
+  }
+
+  const t = p.details;
+  body.innerHTML = `
+    ${p.alreadySent ? `<div class="notice notice-info">Already chased ${esc(timeAgo(p.alreadySent))}${
+      p.sentCount > 1 ? `, ${p.sentCount} times in all` : ''}.</div>` : ''}
+    <dl class="pairs" style="margin-bottom:1rem;">
+      <dt>To</dt><dd>${esc(t.clientName)} &lt;${esc(p.to)}&gt;</dd>
+      <dt>Replies to</dt><dd>${esc(t.replyTo)}</dd>
+      <dt>About</dt><dd>${esc(money(t.amountCents))} due ${esc(dateFmt(t.dueDate))}</dd>
+    </dl>
+    <div class="notice" style="background:var(--navy-50);border:1px solid var(--navy-100);">
+      <p style="margin:0 0 .6rem;"><strong>${esc(t.hard
+        ? `Final payment for ${[t.tripName, t.vendor].filter(Boolean).join(' with ') || 'your trip'} is due ${dateFmt(t.dueDate)}`
+        : `A reminder about your balance for ${[t.tripName, t.vendor].filter(Boolean).join(' with ') || 'your trip'}`)}</strong></p>
+      <p style="margin:0;font-size:.85rem;color:var(--ink-500);">${esc(t.hard
+        ? `States the balance, the date, and that the vendor may cancel the booking if it passes unpaid.`
+        : `States the balance and that it will be due shortly, with plenty of notice.`)}
+        Signed by you, replies come to you.</p>
+    </div>`;
+  send.hidden = false;
+  send.onclick = async () => {
+    send.disabled = true;
+    try {
+      const res = await api(`/api/payments/${encodeURIComponent(paymentId)}/remind`,
+        { method: 'POST', body: {} });
+      dlg.close();
+      err.innerHTML = `<div class="notice notice-ok">Reminder sent to ${esc(res.sentTo)}.</div>`;
+      await load();
+    } catch (e) {
+      body.innerHTML += `<div class="notice notice-error" style="margin-top:.8rem;">${esc(e.message)}</div>`;
+    } finally { send.disabled = false; }
+  };
+}
+
 async function load() {
   try {
     d = await api(`/api/bookings/${encodeURIComponent(id)}/record`);
@@ -223,6 +299,9 @@ onSubmit(document.getElementById('task-form'), async (values) => {
   document.getElementById('task-form').reset();
   await load();
 });
+
+document.getElementById('chase-close').addEventListener('click',
+  () => document.getElementById('chase').close());
 
 if (!id) err.innerHTML = '<div class="notice notice-error">No reservation was named in the address.</div>';
 else await load();

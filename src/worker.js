@@ -31,7 +31,7 @@ import {
 import { handleListCalendar, handleCreateAppointment } from './calendar.js';
 import { handleBilling, handleCreateInvoice, handleSendInvoice } from './billing.js';
 import {
-  handlePayments, handleCreatePayment, handleUpdatePayment,
+  handlePayments, handleCreatePayment, handlePaymentReminder, handleUpdatePayment,
   handleMarkPaid, handleDeletePayment, handleGenerateSchedule, handleSetBookingStatus,
 } from './payments.js';
 import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
@@ -193,6 +193,7 @@ async function routeApi(request, env, path, method) {
   const autoMatch = path.match(/^\/api\/automations\/(?!run$)([^/]+)$/);
   const payMatch = path.match(/^\/api\/payments\/([^/]+)$/);
   const payPaidMatch = path.match(/^\/api\/payments\/([^/]+)\/paid$/);
+  const payRemindMatch = path.match(/^\/api\/payments\/([^/]+)\/remind$/);
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
   const bookingStatusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
@@ -306,6 +307,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/payments' && method === 'GET') return handlePayments(request, env);
   if (path === '/api/payments' && method === 'POST') return handleCreatePayment(request, env);
   if (payPaidMatch && method === 'POST') return handleMarkPaid(request, env, payPaidMatch[1]);
+  if (payRemindMatch && method === 'POST') return handlePaymentReminder(request, env, payRemindMatch[1]);
   if (payMatch && method === 'PUT') return handleUpdatePayment(request, env, payMatch[1]);
   if (payMatch && method === 'DELETE') return handleDeletePayment(request, env, payMatch[1]);
   if (scheduleMatch && method === 'POST') {

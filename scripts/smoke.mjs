@@ -659,6 +659,78 @@ async function main() {
   check((clientMade.data?.clients || []).some((c) => c.name === 'Manuel Montoro'),
     'and importing creates the client records too');
 
+  // ------------------------------------------------------------- chasing ----
+  // Braced, so the names inside belong to this section. Everything above
+  // shares one function scope, and adding a section has twice collided with a
+  // `const` three hundred lines away. New sections get a block.
+  {
+  step('Chasing a client about a payment');
+
+  const chaseTrip = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Chase Client ${stamp}`, supplier: 'Cunard', status: 'booked',
+    departDate: isoDay(90), gross: '6000', deposit: '600',
+    depositDue: isoDay(5), finalPaymentDue: isoDay(45),
+  });
+  const chaseId = chaseTrip.data?.booking?.id;
+  if (chaseId) cleanup('the chase reservation', () => call(advisor, 'DELETE', `/api/bookings/${chaseId}`));
+  await call(advisor, 'POST', `/api/bookings/${chaseId}/schedule`, {});
+  const chaseRecord = await call(advisor, 'GET', `/api/bookings/${chaseId}/record`);
+  const chasePayment = (chaseRecord.data?.payments || []).find((p) => p.kind === 'final' && p.payment_class === 'hard');
+  check(chasePayment, 'there is a balance to chase');
+
+  // Without an address the answer is the fix, not a failure: the email goes on
+  // the client record, and saying so is more use than "send failed".
+  const noEmail = await call(advisor, 'POST', `/api/payments/${chasePayment.id}/remind`, { preview: true });
+  check(noEmail.data?.problem && noEmail.data?.clientId,
+    'a client with no email is named, with somewhere to go and fix it',
+    noEmail.data?.problem);
+  const refusedSend = await call(advisor, 'POST', `/api/payments/${chasePayment.id}/remind`, {});
+  check(refusedSend.status === 400, 'and sending is refused rather than half done',
+    `status ${refusedSend.status}`);
+
+  const clients2 = await call(advisor, 'GET', `/api/clients?q=${encodeURIComponent(`Chase Client ${stamp}`)}`);
+  const chaseClient = (clients2.data?.clients || [])[0];
+  await call(advisor, 'PUT', `/api/clients/${chaseClient.id}`, {
+    name: `Chase Client ${stamp}`, email: `chase-${stamp}@example.com`,
+  });
+
+  const ready = await call(advisor, 'POST', `/api/payments/${chasePayment.id}/remind`, { preview: true });
+  check(ready.data?.to === `chase-${stamp}@example.com` && !ready.data.problem,
+    'once an address is on file the preview is ready', ready.data?.to);
+  check(ready.data?.details?.hard === true && ready.data.details.amountCents === 540000,
+    'and it carries the real balance and says it is a vendor deadline',
+    JSON.stringify({ hard: ready.data?.details?.hard, amount: ready.data?.details?.amountCents }));
+  check(ready.data?.details?.replyTo === ADVISOR_EMAIL,
+    'replies come back to the advisor, not to the software', ready.data?.details?.replyTo);
+  check(ready.data?.alreadySent === null, 'and nothing has been sent yet');
+
+  // A send that fails must not record a reminder. An advisor who believes a
+  // client was chased when they were not is worse off than one who knows they
+  // were not, and this is the case that happens: email misconfigured.
+  const attempted = await call(advisor, 'POST', `/api/payments/${chasePayment.id}/remind`, {});
+  const after = await call(advisor, 'POST', `/api/payments/${chasePayment.id}/remind`, { preview: true });
+  if (attempted.status === 200) {
+    check(after.data?.alreadySent, 'a sent reminder is remembered', after.data?.alreadySent);
+    check(after.data?.sentCount === 1, 'and counted', after.data?.sentCount);
+  } else {
+    check(after.data?.alreadySent === null,
+      'a send that failed records nothing, so nobody thinks a client was chased',
+      `send said ${attempted.status}, alreadySent ${after.data?.alreadySent}`);
+    console.log('        (email is not configured here, so the send itself cannot be exercised)');
+  }
+
+  // Chasing money that has arrived is the kind of message that loses a client.
+  const paidOne = (chaseRecord.data?.payments || []).find((p) => p.kind === 'deposit');
+  await call(advisor, 'POST', `/api/payments/${paidOne.id}/paid`, {});
+  const chasePaid = await call(advisor, 'POST', `/api/payments/${paidOne.id}/remind`, { preview: true });
+  check(chasePaid.status === 400, 'a payment already posted cannot be chased',
+    `status ${chasePaid.status}`);
+
+  const notYourPayment = await call(admin, 'POST', `/api/payments/${chasePayment.id}/remind`, { preview: true });
+  check(notYourPayment.status === 404, 'and an owner cannot chase on an associate\'s behalf',
+    `status ${notYourPayment.status}`);
+  }
+
   // -------------------------------------------------- filling in the gaps ---
   step('Filling in what an import could not carry');
 

@@ -136,7 +136,7 @@ export async function handleBookingRecord(request, env, id) {
   const [payments, tasks, credits, group] = await Promise.all([
     env.DB.prepare(
       `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date, p.paid_date,
-              p.method, p.reference, p.notes
+              p.method, p.reference, p.notes, p.reminded_at, p.reminder_count
          FROM booking_payments p
         WHERE p.booking_id = ? AND ${payScope.sql}
         ORDER BY COALESCE(p.due_date, '9999-12-31') ASC`

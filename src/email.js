@@ -308,3 +308,74 @@ export async function sendAutomationEmail(env, to, subject, body) {
   }
   return { ok: true };
 }
+
+/**
+ * A payment reminder, sent to the client by their advisor.
+ *
+ * Written as the advisor rather than as the software: the client has a
+ * relationship with a person, and a message that reads like a system
+ * notification invites being ignored. The reply-to is the advisor's own
+ * address for the same reason.
+ *
+ * The deadline is stated as a date and as what happens after it, because
+ * "balance due 26 September" and "the cruise line will cancel your booking on
+ * 26 September" get very different response rates.
+ */
+export async function sendPaymentReminder(env, {
+  to, replyTo, clientName, advisorName, agencyName,
+  amountCents, dueDate, hard, tripName, vendor, confirmation,
+}) {
+  if (!env.RESEND_API_KEY) {
+    throw new PermanentError('Email is not configured: the RESEND_API_KEY secret is not set on the Worker.');
+  }
+  if (!to) throw new PermanentError('That client has no email address on file.');
+
+  const money = (cents) => `$${((cents || 0) / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })}`;
+  const when = new Date(`${dueDate}T00:00:00Z`).toLocaleDateString('en-US', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+
+  const trip = [tripName, vendor].filter(Boolean).join(' with ') || 'your trip';
+  const subject = hard
+    ? `Final payment for ${trip} is due ${when}`
+    : `A reminder about your balance for ${trip}`;
+
+  const lines = [
+    `Hello ${clientName || 'there'},`,
+    hard
+      ? `This is a reminder that the balance of ${money(amountCents)} for ${trip} is due on ${when}. `
+        + `This date is set by the vendor, and the booking may be cancelled if it passes unpaid.`
+      : `Just a friendly note that the balance of ${money(amountCents)} for ${trip} will be due shortly. `
+        + `I like to give plenty of notice so nothing is rushed.`,
+    confirmation ? `Your confirmation number is ${confirmation}.` : '',
+    'If you have already sent this, please ignore this note. Otherwise reply here and I will take care of it.',
+    `Thank you,\n${advisorName || 'Your travel advisor'}${agencyName ? `\n${agencyName}` : ''}`,
+  ].filter(Boolean);
+
+  const html = layout(env, {
+    heading: hard ? 'Payment due' : 'A gentle reminder',
+    body: lines.map((p) => `<p style="margin:0 0 14px;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join(''),
+  });
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || 'Trip Vara <noreply@tripvaratravel.com>',
+      to: [to],
+      ...(replyTo ? { reply_to: [replyTo] } : {}),
+      subject,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    const message = `Resend returned ${res.status}. ${detail.slice(0, 200)}`;
+    const transient = res.status === 429 || res.status >= 500;
+    throw transient ? new Error(message) : new PermanentError(message);
+  }
+  return { ok: true, subject };
+}

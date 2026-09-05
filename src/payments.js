@@ -11,6 +11,7 @@
 
 import { json, badRequest, notFound, uid, now, clean, cleanDate, toCents, oneOf, readJson } from './util.js';
 import { requireUser } from './auth.js';
+import { sendPaymentReminder } from './email.js';
 import * as db from './db.js';
 import * as ghl from './ghl.js';
 
@@ -86,6 +87,80 @@ function parsePayment(body) {
       notes: clean(body.notes, 500),
     },
   };
+}
+
+/**
+ * Chase a client about a payment, and remember that you did.
+ *
+ * Preview first, send second, as two separate requests. An email to a client
+ * is not undoable, and a button that sends one on its first click is a button
+ * people learn to be afraid of. The preview returns exactly what would be
+ * sent, from the same call that sends it.
+ */
+export async function handlePaymentReminder(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const payment = await db.getPayment(env, id, user.id);
+  if (!payment) return notFound('Payment not found.');
+  if (payment.paid_date) return badRequest('That payment has already been posted.');
+
+  const booking = await db.getBooking(env, payment.booking_id, user.id);
+  if (!booking) return notFound('Reservation not found.');
+
+  const client = booking.client_id
+    ? await db.getClient(env, db.selfScope(user), { id: booking.client_id })
+    : await db.getClient(env, db.selfScope(user), { name: booking.client_name });
+
+  const body = await readJson(request);
+  const to = client && client.email;
+
+  const details = {
+    to,
+    replyTo: user.email,
+    clientName: (client && client.name) || booking.client_name,
+    advisorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email,
+    agencyName: user.agency_name || '',
+    amountCents: payment.amount_cents,
+    dueDate: payment.due_date,
+    hard: payment.payment_class === 'hard',
+    tripName: booking.product_name || '',
+    vendor: booking.supplier || '',
+    confirmation: booking.confirmation_number || '',
+  };
+
+  if (body.preview) {
+    return json({
+      preview: true,
+      to: to || null,
+      // Named rather than left as a failed send: the fix is on the client
+      // record, and saying so is more use than an error.
+      problem: to ? null : 'That client has no email address on file.',
+      clientId: client ? client.id : null,
+      details,
+      alreadySent: payment.reminded_at || null,
+      sentCount: payment.reminder_count || 0,
+    });
+  }
+
+  if (!to) return badRequest('That client has no email address on file.');
+
+  try {
+    await sendPaymentReminder(env, details);
+  } catch (e) {
+    return badRequest(String((e && e.message) || e).slice(0, 300));
+  }
+
+  await env.DB.prepare(
+    `UPDATE booking_payments SET reminded_at = ?, reminder_count = reminder_count + 1, updated_at = ?
+      WHERE id = ? AND user_id = ?`
+  ).bind(now(), now(), id, user.id).run();
+
+  await db.logActivity(env, user.id, 'payment.remind',
+    `Reminded ${details.clientName} about ${details.hard ? 'a vendor deadline' : 'a balance'}`,
+    { paymentId: id, bookingId: booking.id });
+
+  return json({ ok: true, sentTo: to });
 }
 
 export async function handleCreatePayment(request, env) {

@@ -32,7 +32,8 @@ const PAGES = [
   ['public/app/client.html', ['detail-client:/api/bookings']],
   ['public/app/clients.html', ['/api/clients']],
   ['public/app/complete.html', ['/api/bookings']],
-  ['public/app/reservation.html', ['detail-record:/api/bookings']],
+  ['public/app/reservation.html', ['detail-record:/api/bookings',
+    'post:|/api/payments?state=outstanding|/api/payments/{id}/remind']],
   ['public/app/tasks.html', ['/api/tasks?state=all', '/api/bookings']],
   ['public/app/billing.html', ['/api/billing']],
   ['public/app/reports.html', ['/api/reports/production?months=12']],
@@ -197,6 +198,30 @@ async function main() {
     let skipped = null;
 
     for (let endpoint of endpoints) {
+      if (endpoint.startsWith('post:')) {
+        // A POST that answers with data rather than performing an action: the
+        // reminder preview is the case. Without this the checker sees a page
+        // reading fields no GET returns and calls it a mismatch, which is the
+        // checker being wrong rather than the page.
+        const [, listPath, itemPath] = endpoint.split('|');
+        const listRes = await fetch(BASE + listPath, { headers: { Cookie: cookie } });
+        if (!listRes.ok) continue;
+        const list = await listRes.json();
+        const first = Object.values(list).find((v) => Array.isArray(v) && v.length)?.[0];
+        if (!first || !first.id) continue;
+        const r = await fetch(BASE + itemPath.replace('{id}', first.id), {
+          method: 'POST',
+          headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preview: true }),
+        });
+        if (!r.ok) { skipped = `${itemPath} returned ${r.status}`; continue; }
+        called += 1;
+        const payload = await r.json();
+        collectKeys(payload, have);
+        if (!hasSampleRows(payload)) sampled = false;
+        for (const name of emptyCollections(payload)) empties.add(name);
+        continue;
+      }
       if (endpoint.startsWith('detail-client:')) {
         // The client record is keyed on a name rather than an id.
         const listRes = await fetch(BASE + endpoint.replace(/^detail-client:/, ''), { headers: { Cookie: cookie } });
