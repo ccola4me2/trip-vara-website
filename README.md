@@ -43,6 +43,7 @@ tracking has value on its own.
 | `/app/contact` | Advisor | One contact: details, notes, tasks, deals |
 | `/app/pipeline` | Advisor | Sales opportunities: board, drag between stages, create deals |
 | `/app/calendar` | Advisor | Upcoming appointments, book new ones |
+| `/app/tasks` | Advisor | The advisor's own working list |
 | `/app/reservations` | Advisor | Reservation CRUD, vendor deadlines, commission |
 | `/app/billing` | Advisor | Invoices, transactions, reconciliation against reservations |
 | `/app/reports` | Advisor | Production by departure month |

@@ -151,6 +151,12 @@ const PANELS = {
       : '<p class="wempty">Nothing needs you right now.</p>' },
   ], 'all'),
 
+  tasks: () => widget('To do', { href: '/app/tasks', label: 'All tasks' }, [
+    { key: 'due', label: 'Due', render: () => taskRows(openTasks().filter((t) => t.due_date && t.due_date <= d.today)) },
+    { key: 'soon', label: 'Coming up', render: () => taskRows(openTasks().filter((t) => t.due_date && t.due_date > d.today)) },
+    { key: 'someday', label: 'No date', render: () => taskRows(openTasks().filter((t) => !t.due_date)) },
+  ], 'due'),
+
   deadlines: () => widget('Deadlines', { href: '/app/payments', label: 'All payments' }, [
     { key: 'soft', label: 'Reminders', render: () => paymentRows(byClass('soft')) },
     { key: 'hard', label: 'Vendor dates', render: () => paymentRows(byClass('hard')) },
@@ -206,6 +212,31 @@ const PANELS = {
 };
 
 const everyoneNow = () => Boolean(d.scope && d.scope.all);
+const openTasks = () => (d.tasks || []).filter((t) => !t.done_at);
+
+/**
+ * Tasks tick off in place. Going to another screen and back to record that you
+ * rang somebody is how a task list stops being used by the second week.
+ */
+function taskRows(list) {
+  if (!list.length) return '';
+  return `<ul class="rows task-rows">${list.map((t) => {
+    const late = t.due_date && t.due_date < d.today;
+    return `<li>
+      <label class="task-tick">
+        <input type="checkbox" data-task="${esc(t.id)}">
+        <span>
+          <span class="t" style="font-size:.84rem;">${esc(t.title)}</span>
+          <span class="m">${[
+            t.due_date ? `<span class="${late ? 'late' : ''}">${esc(fmtShort(t.due_date))}</span>` : 'no date',
+            t.priority === 'high' ? '<span class="badge badge-coral">high</span>' : '',
+            t.booking_client ? esc(t.booking_client) : '',
+            everyoneNow() && t.advisor_name ? esc(t.advisor_name) : '',
+          ].filter(Boolean).join(' &middot; ')}</span>
+        </span>
+      </label></li>`;
+  }).join('')}</ul>`;
+}
 
 function trendBars(field) {
   const rows = d.trend || [];
@@ -227,6 +258,25 @@ function drawPanels() {
     el.dataset.panel = w.id;
     return el;
   }));
+  // Delegated, because a widget redraws its body whenever a tab is clicked and
+  // per checkbox listeners would be lost the first time that happened.
+  widgetsEl.querySelectorAll('[data-panel="tasks"]').forEach((panel) => {
+    panel.addEventListener('change', async (e) => {
+      const box = e.target.closest('[data-task]');
+      if (!box) return;
+      box.disabled = true;
+      try {
+        await api(`/api/tasks/${encodeURIComponent(box.dataset.task)}`,
+          { method: 'PUT', body: { done: box.checked } });
+        const t = (d.tasks || []).find((x) => x.id === box.dataset.task);
+        if (t) t.done_at = box.checked ? Math.floor(Date.now() / 1000) : null;
+        drawPanels();
+      } catch {
+        box.checked = !box.checked;
+        box.disabled = false;
+      }
+    });
+  });
   if (!visible.length) {
     widgetsEl.innerHTML = `<div class="empty" style="grid-column:1/-1;">
       <h3>Every panel is switched off</h3><p>Open Customise to put some back.</p></div>`;

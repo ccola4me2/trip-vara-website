@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>To do | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>To do</h1><p class="sub">Your working list. Chase calls, deposits, documents, anything.</p></div>
+      <div class="toolbar" style="margin:0;">
+        <span id="scope"></span>
+        <button class="btn btn-primary btn-sm" id="add">Add a task</button>
+      </div>
+    </header>
+    <div class="content">
+      <section id="stats" class="stat-grid"></section>
+      <div class="tabs" id="tabs">
+        <button class="tab" data-state="open" aria-selected="true">Open</button>
+        <button class="tab" data-state="done" aria-selected="false">Done</button>
+        <button class="tab" data-state="all" aria-selected="false">Everything</button>
+      </div>
+      <section class="card" id="panel"><p class="spinner">Loading tasks...</p></section>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <form id="task-form" method="dialog">
+    <div class="card-head"><h2 id="dlg-title">Add a task</h2>
+      <button class="btn btn-ghost btn-sm" type="button" id="close">Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="title">Task</label>
+        <input id="title" name="title" maxlength="200" required placeholder="Ring the Barnabys about their deposit"></div>
+      <div class="field-row">
+        <div class="field"><label for="dueDate">Due</label>
+          <input id="dueDate" name="dueDate" type="date">
+          <p class="field-hint">Leave blank for someday.</p></div>
+        <div class="field"><label for="priority">Priority</label>
+          <select id="priority" name="priority">
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+            <option value="low">Low</option>
+          </select></div>
+      </div>
+      <div class="field"><label for="bookingId">Reservation <span style="font-weight:400;color:var(--ink-400);">(optional)</span></label>
+        <select id="bookingId" name="bookingId"></select></div>
+      <div class="field"><label for="notes">Notes</label>
+        <textarea id="notes" name="notes" maxlength="2000"></textarea></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="delete" hidden>Delete</button>
+      <button class="btn btn-primary" type="submit">Save task</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, dateFmt, showError, onSubmit,
+         mountScopePicker, advisorParam } from '/js/app.js';
+const ME = (await mountShell()).id;
+
+const panel = document.getElementById('panel');
+const dlg = document.getElementById('dlg');
+const form = document.getElementById('task-form');
+const deleteBtn = document.getElementById('delete');
+let editingId = null;
+let cache = [];
+let today = new Date().toISOString().slice(0, 10);
+let state = 'open';
+let reservations = [];
+
+const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '');
+
+function render(d) {
+  cache = d.tasks;
+  today = d.today;
+  const showAdvisor = Boolean(d.scope && d.scope.all);
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Overdue</p>
+      <p class="value" style="${d.counts.overdue ? 'color:var(--red-600);' : ''}">${d.counts.overdue}</p>
+      <p class="meta">Past their date</p></div>
+    <div class="stat"><p class="label">Due today</p><p class="value">${d.counts.today}</p>
+      <p class="meta">On the list for today</p></div>
+    <div class="stat"><p class="label">Open</p><p class="value">${d.counts.open}</p>
+      <p class="meta">Everything not yet done</p></div>`;
+
+  if (!d.tasks.length) {
+    panel.innerHTML = `<div class="empty"><h3>Nothing on the list</h3>
+      <p>Add a task to keep track of a call, a deposit or a document.</p></div>`;
+    return;
+  }
+
+  panel.innerHTML = `<ul class="rows task-rows">${d.tasks.map((t) => {
+    const late = !t.done_at && t.due_date && t.due_date < today;
+    const mine = t.user_id === ME;
+    return `<li class="${t.done_at ? 'done' : ''}">
+      <div class="row-between">
+        <label class="task-tick">
+          <input type="checkbox" data-task="${esc(t.id)}"${t.done_at ? ' checked' : ''}${mine ? '' : ' disabled'}>
+          <span>
+            <span class="t">${esc(t.title)}</span>
+            <span class="m">${[
+              t.due_date ? `<span class="${late ? 'late' : ''}">${esc(short(t.due_date))}</span>`
+                         : '<span class="muted">no date</span>',
+              t.priority === 'high' ? '<span class="badge badge-coral">high</span>' : '',
+              t.priority === 'low' ? '<span class="badge badge-navy">low</span>' : '',
+              t.booking_client ? `${esc(t.booking_client)}${t.booking_supplier ? ' &middot; ' + esc(t.booking_supplier) : ''}` : '',
+              showAdvisor && t.advisor_name ? esc(t.advisor_name) : '',
+            ].filter(Boolean).join(' &middot; ')}</span>
+            ${t.notes ? `<span class="m">${esc(t.notes)}</span>` : ''}
+          </span>
+        </label>
+        ${mine ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(t.id)}">Edit</button>`
+               : '<span class="muted">view only</span>'}
+      </div></li>`;
+  }).join('')}</ul>`;
+
+  panel.querySelectorAll('[data-task]').forEach((box) => {
+    box.addEventListener('change', async () => {
+      box.disabled = true;
+      try { await api(`/api/tasks/${encodeURIComponent(box.dataset.task)}`,
+        { method: 'PUT', body: { done: box.checked } }); await load(); }
+      catch (err) { box.checked = !box.checked; box.disabled = false; showError(panel, err); }
+    });
+  });
+  panel.querySelectorAll('[data-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => openEdit(cache.find((t) => t.id === btn.dataset.edit)));
+  });
+}
+
+function fillReservations(selected) {
+  document.getElementById('bookingId').innerHTML =
+    `<option value="">Not linked to a reservation</option>` +
+    reservations.map((b) => `<option value="${esc(b.id)}"${b.id === selected ? ' selected' : ''}>
+      ${esc(b.client_name)}${b.supplier ? ' — ' + esc(b.supplier) : ''}</option>`).join('');
+}
+
+function openCreate() {
+  editingId = null;
+  form.reset();
+  document.getElementById('dlg-title').textContent = 'Add a task';
+  deleteBtn.hidden = true;
+  form.querySelector('.notice-error').hidden = true;
+  fillReservations('');
+  dlg.showModal();
+}
+
+function openEdit(t) {
+  if (!t) return;
+  editingId = t.id;
+  document.getElementById('dlg-title').textContent = 'Edit task';
+  deleteBtn.hidden = false;
+  form.querySelector('.notice-error').hidden = true;
+  form.elements.title.value = t.title;
+  form.elements.dueDate.value = t.due_date || '';
+  form.elements.priority.value = t.priority || 'normal';
+  form.elements.notes.value = t.notes || '';
+  fillReservations(t.booking_id || '');
+  dlg.showModal();
+}
+
+async function load() {
+  try {
+    const q = [`state=${state}`, advisorParam()].filter(Boolean).join('&');
+    const d = await api(`/api/tasks?${q}`);
+    mountScopePicker(document.getElementById('scope'), d, load);
+    render(d);
+  } catch (err) { showError(panel, err); }
+}
+
+document.getElementById('add').addEventListener('click', openCreate);
+document.getElementById('close').addEventListener('click', () => dlg.close());
+
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-state]');
+  if (!tab) return;
+  state = tab.dataset.state;
+  document.querySelectorAll('#tabs .tab').forEach((t) =>
+    t.setAttribute('aria-selected', String(t === tab)));
+  load();
+});
+
+deleteBtn.addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Delete this task?')) return;
+  await api(`/api/tasks/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
+  dlg.close();
+  await load();
+});
+
+onSubmit(form, async (values) => {
+  const path = editingId ? `/api/tasks/${encodeURIComponent(editingId)}` : '/api/tasks';
+  await api(path, { method: editingId ? 'PUT' : 'POST', body: values });
+  dlg.close();
+  await load();
+});
+
+// The reservation picker needs the advisor's own reservations, which is a
+// different question from whose tasks are on screen.
+reservations = await api('/api/bookings').then((d) => d.bookings.filter((b) => b.user_id === ME))
+  .catch(() => []);
+await load();
+</script>
+</body></html>

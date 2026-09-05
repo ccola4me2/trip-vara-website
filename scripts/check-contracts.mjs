@@ -25,6 +25,7 @@ const PAGES = [
   ['public/app/index.html', ['/api/dashboard']],
   ['public/app/payments.html', ['/api/payments?state=all']],
   ['public/app/reservations.html', ['/api/bookings']],
+  ['public/app/tasks.html', ['/api/tasks?state=all', '/api/bookings']],
   ['public/app/billing.html', ['/api/billing']],
   ['public/app/reports.html', ['/api/reports/production?months=12']],
   ['public/app/leads.html', ['/api/leads']],

@@ -356,6 +356,52 @@ async function main() {
   check((detail.data?.logs || []).length >= 1,
     'leaving a log of what it did', `${(detail.data?.logs || []).length} log line(s)`);
 
+  // ------------------------------------------------------------- tasks ------
+  step('The task list');
+
+  const t1 = await call(advisor, 'POST', '/api/tasks',
+    { title: `Ring the client ${stamp}`, dueDate: isoDay(-2), priority: 'high' });
+  const t2 = await call(advisor, 'POST', '/api/tasks', { title: `Send documents ${stamp}`, dueDate: isoDay(3) });
+  const t3 = await call(advisor, 'POST', '/api/tasks', { title: `Someday idea ${stamp}` });
+  const taskId = t1.data?.task?.id;
+  check(t1.status === 201 && taskId, 'a task is created', `status ${t1.status}`);
+  if (taskId) cleanup('the tasks', async () => {
+    for (const t of [t1, t2, t3]) {
+      if (t.data?.task?.id) await call(advisor, 'DELETE', `/api/tasks/${t.data.task.id}`);
+    }
+  });
+
+  // oneOf falls back to the first entry of its list, so a list ordered wrongly
+  // silently promotes every task. This shipped that way for about ten minutes.
+  check(t2.data?.task?.priority === 'normal',
+    'a task with no priority given is normal, not high', t2.data?.task?.priority);
+
+  const open = await call(advisor, 'GET', '/api/tasks?state=open');
+  check(open.data?.counts?.overdue >= 1 && open.data.counts.open >= 3,
+    'overdue and open are counted', JSON.stringify(open.data?.counts));
+  const order = (open.data?.tasks || []).map((t) => t.title);
+  check(order.indexOf(`Ring the client ${stamp}`) < order.indexOf(`Someday idea ${stamp}`),
+    'dated tasks sort above undated ones');
+
+  const ticked = await call(advisor, 'PUT', `/api/tasks/${taskId}`, { done: true });
+  check(ticked.data?.task?.done_at, 'ticking one off records when');
+  const stillOpen = await call(advisor, 'GET', '/api/tasks?state=open');
+  check(!(stillOpen.data?.tasks || []).some((t) => t.id === taskId),
+    'and it leaves the open list');
+  const done = await call(advisor, 'GET', '/api/tasks?state=done');
+  check((done.data?.tasks || []).some((t) => t.id === taskId), 'but is still on the done list');
+
+  const notMine = await call(admin, 'PUT', `/api/tasks/${taskId}`, { done: false });
+  check(notMine.status === 404, 'an owner cannot tick off an associate\'s task', `status ${notMine.status}`);
+  const ownerSees = await call(admin, 'GET', '/api/tasks?state=all');
+  check((ownerSees.data?.tasks || []).some((t) => t.id === taskId),
+    'though they can see it in the agency list');
+
+  const foreign = await call(advisor, 'POST', '/api/tasks',
+    { title: 'Linked to someone else', bookingId: ownerBookingId });
+  check(foreign.status === 400,
+    'and a task cannot be linked to another advisor\'s reservation', `status ${foreign.status}`);
+
   // ------------------------------------------------- dashboard layout ------
   step('The dashboard remembers how you arranged it');
 

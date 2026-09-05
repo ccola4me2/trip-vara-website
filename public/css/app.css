@@ -556,6 +556,15 @@ tbody tr[data-href] { cursor: pointer; }
 .trend-label { font-size: .62rem; color: var(--ink-400); margin-top: .3rem; }
 .trend-foot { font-size: .76rem; color: var(--ink-500); padding: .5rem 1rem .9rem; margin: 0; }
 
+/* Tasks */
+.task-rows .task-tick { display: flex; align-items: flex-start; gap: .6rem; margin: 0; cursor: pointer; font-weight: 400; }
+.task-rows .task-tick input { width: auto; flex: none; margin-top: .2rem; }
+.task-rows .t { display: block; font-size: .88rem; font-weight: 600; color: var(--navy-800); }
+.task-rows .m { display: block; font-size: .76rem; color: var(--ink-500); margin-top: .15rem; }
+.task-rows .m .late { color: var(--red-600); font-weight: 650; }
+.task-rows li.done .t { text-decoration: line-through; color: var(--ink-400); }
+.task-rows li.done .task-tick { cursor: pointer; }
+
 /* The customiser */
 .panel-list { list-style: none; margin: 0; padding: 0; }
 .panel-list li {

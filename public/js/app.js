@@ -111,6 +111,7 @@ const NAV = [
   },
   {
     hub: 'Client', icon: I.people, items: [
+      { href: '/app/tasks', label: 'To do' },
       { href: '/app/leads', label: 'Clients' },
       { href: '/app/pipeline', label: 'Sales opportunities' },
       { href: '/app/inbox', label: 'Messages' },

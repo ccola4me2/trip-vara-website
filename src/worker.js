@@ -42,6 +42,14 @@ import {
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
 import { handleSearch } from './search.js';
 import { handleGetLayout, handleSaveLayout, handleResetLayout } from './prefs.js';
+// Aliased: leads.js already exports handleCreateTask for the CRM's own
+// contact tasks, which are a different thing from an advisor's working list.
+import {
+  handleListTasks as handleListMyTasks,
+  handleCreateTask as handleCreateMyTask,
+  handleUpdateTask as handleUpdateMyTask,
+  handleDeleteTask as handleDeleteMyTask,
+} from './tasks.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
@@ -94,6 +102,7 @@ const PAGE_FILES = {
   '/app/library': '/app/library.html',
   '/app/account': '/app/account.html',
   '/app/pipeline': '/app/pipeline.html',
+  '/app/tasks': '/app/tasks.html',
   '/app/reservations': '/app/reservations.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
@@ -166,6 +175,7 @@ async function routeApi(request, env, path, method) {
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
   const bookingStatusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
+  const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
 
   // ---- auth -------------------------------------------------------------
   if (path === '/api/auth/signup' && method === 'POST') return handleSignup(request, env);
@@ -288,6 +298,12 @@ async function routeApi(request, env, path, method) {
 
   // ---- dashboard and reports -------------------------------------------
   if (path === '/api/search' && method === 'GET') return handleSearch(request, env);
+
+  // Tasks: the advisor's own working list, not the CRM's.
+  if (path === '/api/tasks' && method === 'GET') return handleListMyTasks(request, env);
+  if (path === '/api/tasks' && method === 'POST') return handleCreateMyTask(request, env);
+  if (myTaskMatch && method === 'PUT') return handleUpdateMyTask(request, env, myTaskMatch[1]);
+  if (myTaskMatch && method === 'DELETE') return handleDeleteMyTask(request, env, myTaskMatch[1]);
   if (path === '/api/prefs/dashboard' && method === 'GET') return handleGetLayout(request, env);
   if (path === '/api/prefs/dashboard' && method === 'PUT') return handleSaveLayout(request, env);
   if (path === '/api/prefs/dashboard' && method === 'DELETE') return handleResetLayout(request, env);

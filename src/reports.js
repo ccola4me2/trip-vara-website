@@ -8,6 +8,7 @@ import { json, now } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { readLayout, PANELS } from './prefs.js';
+import { listTasks } from './tasks.js';
 import * as ghl from './ghl.js';
 
 function isoDay(offsetDays = 0) {
@@ -89,6 +90,7 @@ export async function handleDashboard(request, env) {
     panels: PANELS,
     notices: await noticesFor(env, user, scope),
     trend: await db.productionByMonth(env, scope, isoDay(-365)),
+    tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
   });
 }
 

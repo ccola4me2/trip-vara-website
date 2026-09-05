@@ -16,7 +16,9 @@ import * as ghl from './ghl.js';
 
 const KINDS = ['deposit', 'installment', 'final', 'refund'];
 const CLASSES = ['hard', 'soft'];
-const METHODS = ['card', 'ach', 'check', 'cash', 'transfer', 'other'];
+// 'other' leads because it is the fallback: recording a payment as being on a
+// card when nobody said so is inventing a detail, not choosing a default.
+const METHODS = ['other', 'card', 'ach', 'check', 'cash', 'transfer'];
 
 const isoDay = (offsetDays = 0) =>
   new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);

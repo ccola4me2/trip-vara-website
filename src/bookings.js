@@ -12,7 +12,11 @@ import * as ghl from './ghl.js';
 import { fireTrigger } from './automations.js';
 
 const PRODUCT_TYPES = ['cruise', 'resort', 'package', 'air', 'other'];
-const STATUSES = ['booked', 'quoted', 'travelled', 'cancelled'];
+// oneOf falls back to the first entry, so this order decides what a
+// reservation created without a status becomes. Quoted, not booked: a
+// reservation that nobody said was booked should not quietly land in
+// production totals and commission owed.
+const STATUSES = ['quoted', 'booked', 'travelled', 'cancelled'];
 const COMMISSION_STATUSES = ['pending', 'invoiced', 'paid'];
 
 /** Shared parse and validate for create and update. */
