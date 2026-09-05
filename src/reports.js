@@ -113,6 +113,7 @@ export async function handleDashboard(request, env) {
     tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
     groups: await listGroups(env, scope, { status: 'open', limit: 12 }).catch(() => []),
     rebook: await db.rebookCandidates(env, scope, { today, limit: 12 }).catch(() => []),
+    pinned: await db.listClients(env, scope, { pinnedOnly: true, limit: 12 }).catch(() => []),
     // Always the reader's own target, whatever scope the rest of the screen
     // is showing. A target you did not set is not your target.
     goal: await goalProgress(env, user, db.selfScope(user), Number(today.slice(0, 4)), today)

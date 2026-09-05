@@ -330,6 +330,20 @@ const PANELS = {
     } },
   ], 'age'),
 
+  pinned: () => widget('Pinned clients', { href: '/app/clients', label: 'All clients' }, [
+    { key: 'all', label: 'Pinned', render: () => {
+      const rows = d.pinned || [];
+      if (!rows.length) return '<p class="wempty">Pin a client and they appear here.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Contact</th><th>Next trip</th><th class="num">Lifetime</th></tr></thead>
+        <tbody>${rows.map((c) => `<tr>
+          <td><a class="name" href="/app/client?id=${esc(c.id)}">${esc(c.name)}</a></td>
+          <td class="muted">${esc(c.phone || c.email || '-')}</td>
+          <td>${c.next_date ? esc(fmtShort(c.next_date)) : '<span class="muted">nothing booked</span>'}</td>
+          <td class="num">${esc(money(c.lifetime_cents))}</td></tr>`).join('')}</tbody></table></div>`;
+    } },
+  ], 'all'),
+
   trend: () => widget('Production trend', { href: '/app/reports', label: 'Full report' }, [
     { key: 'gross', label: 'By month', render: () => trendBars('gross_cents') },
     { key: 'type', label: 'By type', render: () => breakdown(d.byType, TYPE_LABEL) },

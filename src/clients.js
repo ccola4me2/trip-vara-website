@@ -1,29 +1,59 @@
-// Everything about one client, assembled from what this portal owns.
+// Clients as records: who they are, what they have bought, what they are owed.
 //
-// Deliberately built from reservations rather than from the CRM mirror. The
-// CRM knows who someone is; this knows what they have bought, what they are
-// owed, and when they last travelled, and it keeps working when the upstream
-// API does not. A client who has never been synced but has three trips on file
-// is still a client.
+// Built from this portal's own data rather than from the CRM mirror. The CRM
+// knows who someone is; this knows what they have bought, what they are owed
+// and when they last travelled, and it keeps working when the upstream API
+// does not. A client who has never been synced but has three trips on file is
+// still a client.
 //
-// Reservations are joined on the client's name, which is the only key both
-// sides reliably share: a trip is often entered before the CRM record exists.
-// That is a real weakness and worth stating plainly rather than hiding: two
-// people with the same name would be merged here.
+// A client record is created as a side effect of taking a reservation or
+// recording a credit, so nobody has to maintain a list of people before they
+// can do the work. Contact details are added afterwards, when there is a
+// reason to.
 
-import { json, notFound, clean } from './util.js';
+import { json, badRequest, notFound, clean, oneOf, uid, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
+
+export async function handleListClients(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const url = new URL(request.url);
+  const scope = db.scopeFor(env, user, request);
+  const clients = await db.listClients(env, scope, {
+    query: clean(url.searchParams.get('q'), 80),
+    pinnedOnly: url.searchParams.get('pinned') === '1',
+  });
+
+  return json({
+    clients,
+    stats: {
+      total: clients.length,
+      pinned: clients.filter((c) => c.pinned_at).length,
+      // Somebody who has travelled and has nothing ahead of them. The same
+      // question the dashboard asks, answerable from this list too.
+      lapsed: clients.filter((c) => c.last_date && !c.next_date).length,
+      lifetimeCents: clients.reduce((n, c) => n + (c.lifetime_cents || 0), 0),
+    },
+    scope: db.scopeLabel(scope, user),
+    advisors: await db.advisorOptions(env, user),
+  });
+}
 
 export async function handleClientRecord(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
   const url = new URL(request.url);
+  const id = clean(url.searchParams.get('id'), 64);
   const name = clean(url.searchParams.get('name'), 120);
-  if (!name) return notFound('No client was named.');
+  if (!id && !name) return notFound('No client was named.');
 
   const scope = db.scopeFor(env, user, request);
+  const client = await db.getClient(env, scope, { id, name });
+  if (!client) return notFound('Client not found.');
+
   const bScope = db.scopeWhere(scope, 'b.user_id');
   const cScope = db.scopeWhere(scope, 'c.user_id');
   const tScope = db.scopeWhere(scope, 't.user_id');
@@ -38,40 +68,33 @@ export async function handleClientRecord(request, env) {
               COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email)
                 AS advisor_name
          FROM bookings b LEFT JOIN users u ON u.id = b.user_id
-        WHERE ${bScope.sql} AND b.client_name = ?
+        WHERE ${bScope.sql} AND b.client_id = ?
         ORDER BY COALESCE(b.depart_date, '9999-12-31') DESC LIMIT 200`
-    ).bind(...bScope.binds, name).all().catch(() => ({ results: [] })),
+    ).bind(...bScope.binds, client.id).all().catch(() => ({ results: [] })),
 
     env.DB.prepare(
       `SELECT c.id, c.vendor, c.kind, c.amount_cents, c.expires_on, c.used_on, c.reference
-         FROM client_credits c WHERE ${cScope.sql} AND c.client_name = ?
+         FROM client_credits c WHERE ${cScope.sql} AND c.client_id = ?
         ORDER BY COALESCE(c.expires_on, '9999-12-31') ASC`
-    ).bind(...cScope.binds, name).all().catch(() => ({ results: [] })),
+    ).bind(...cScope.binds, client.id).all().catch(() => ({ results: [] })),
 
     env.DB.prepare(
       `SELECT t.id, t.title, t.due_date, t.priority, t.done_at
          FROM tasks t JOIN bookings b ON b.id = t.booking_id
-        WHERE ${tScope.sql} AND b.client_name = ?
+        WHERE ${tScope.sql} AND b.client_id = ?
         ORDER BY t.done_at IS NOT NULL ASC, COALESCE(t.due_date, '9999-12-31') ASC LIMIT 50`
-    ).bind(...tScope.binds, name).all().catch(() => ({ results: [] })),
+    ).bind(...tScope.binds, client.id).all().catch(() => ({ results: [] })),
   ]);
 
   const rows = bookings.results || [];
-  if (!rows.length) return notFound('No reservations for that client.');
-
   const counted = rows.filter((b) => b.status === 'booked' || b.status === 'travelled');
   const past = counted.filter((b) => (b.return_date || b.depart_date) < today);
   const upcoming = counted.filter((b) => (b.return_date || b.depart_date) >= today);
   const liveCredits = (credits.results || []).filter((c) => !c.used_on);
 
-  // The contact id is taken from whichever reservation carries one, so a
-  // client linked to the CRM on any trip is linked here.
-  const contactId = rows.map((b) => b.ghl_contact_id).find(Boolean) || null;
-
   return json({
     client: {
-      name,
-      contactId,
+      ...client,
       trips: counted.length,
       lifetimeCents: counted.reduce((n, b) => n + (b.gross_cents || 0), 0),
       commissionCents: counted.reduce((n, b) => n + (b.commission_cents || 0), 0),
@@ -79,15 +102,52 @@ export async function handleClientRecord(request, env) {
       lastTravelled: past.length ? (past[0].return_date || past[0].depart_date) : null,
       // The one thing an advisor wants to know before they ring: is anything
       // already on the books.
-      nextDeparture: upcoming.length
-        ? upcoming[upcoming.length - 1].depart_date : null,
+      nextDeparture: upcoming.length ? upcoming[upcoming.length - 1].depart_date : null,
       vendors: [...new Set(counted.map((b) => b.supplier).filter(Boolean))],
       creditCents: liveCredits.reduce((n, c) => n + (c.amount_cents || 0), 0),
     },
     bookings: rows,
     credits: credits.results || [],
     tasks: tasks.results || [],
+    editable: client.user_id === user.id,
     today,
     scope: db.scopeLabel(scope, user),
   });
+}
+
+export async function handleUpdateClient(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+
+  // Pinning is its own shape: it happens from a list, constantly, and should
+  // not require sending a whole client back to say "this one matters today".
+  if (Object.prototype.hasOwnProperty.call(body, 'pinned')) {
+    const res = await env.DB.prepare(
+      'UPDATE clients SET pinned_at = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+    ).bind(body.pinned ? now() : null, now(), id, user.id).run();
+    if (!res.meta || res.meta.changes === 0) return notFound('Client not found.');
+    return json({ ok: true });
+  }
+
+  const name = clean(body.name, 120);
+  if (!name) return badRequest('A client needs a name.');
+
+  // The name is the key reservations were matched on before this table
+  // existed, so renaming has to carry them along or the trips would be
+  // orphaned from the person who took them.
+  const res = await env.DB.prepare(
+    `UPDATE clients SET name = ?, email = ?, phone = ?, notes = ?, updated_at = ?
+      WHERE id = ? AND user_id = ?`
+  ).bind(name, clean(body.email, 160) || null, clean(body.phone, 40) || null,
+         clean(body.notes, 4000) || null, now(), id, user.id).run();
+  if (!res.meta || res.meta.changes === 0) return notFound('Client not found.');
+
+  await env.DB.prepare('UPDATE bookings SET client_name = ? WHERE client_id = ? AND user_id = ?')
+    .bind(name, id, user.id).run().catch(() => {});
+  await env.DB.prepare('UPDATE client_credits SET client_name = ? WHERE client_id = ? AND user_id = ?')
+    .bind(name, id, user.id).run().catch(() => {});
+
+  return json({ ok: true, client: await db.getClient(env, db.selfScope(user), { id }) });
 }

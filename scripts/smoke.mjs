@@ -629,7 +629,33 @@ async function main() {
   if (clientCredit.data?.credit?.id) cleanup('the client credit', () =>
     call(advisor, 'DELETE', `/api/credits/${clientCredit.data.credit.id}`));
 
-  const rec2 = await call(advisor, 'GET', `/api/client?name=${encodeURIComponent(who)}`);
+  // A client record appears as a side effect of taking a reservation, so
+  // nobody has to keep a list of people before they can do the work.
+  const clientList = await call(advisor, 'GET', `/api/clients?q=${encodeURIComponent(who)}`);
+  const madeClient = (clientList.data?.clients || []).find((c) => c.name === who);
+  check(madeClient, 'booking someone creates their client record', madeClient && madeClient.id);
+  check(madeClient && madeClient.trips === 3 && madeClient.lifetime_cents === 1200000,
+    'with trips and lifetime value counted on the list too',
+    madeClient && `${madeClient.trips} trips, ${madeClient.lifetime_cents}`);
+
+  // Contact details are what turn "worth a call" into a call.
+  const detailed = await call(advisor, 'PUT', `/api/clients/${madeClient.id}`, {
+    name: who, phone: '+1 555 0142', email: 'repeat@example.com', notes: 'Prefers a balcony.',
+  });
+  check(detailed.data?.client?.phone === '+1 555 0142', 'a phone number can be recorded',
+    detailed.data?.client?.phone);
+
+  const pinnedClient = await call(advisor, 'PUT', `/api/clients/${madeClient.id}`, { pinned: true });
+  check(pinnedClient.status === 200, 'and a client can be pinned');
+  const onlyPinned = await call(advisor, 'GET', '/api/clients?pinned=1');
+  check((onlyPinned.data?.clients || []).some((c) => c.id === madeClient.id),
+    'which filters the list');
+
+  const notTheirClient = await call(admin, 'PUT', `/api/clients/${madeClient.id}`, { pinned: false });
+  check(notTheirClient.status === 404, 'an owner cannot pin an associate\'s client',
+    `status ${notTheirClient.status}`);
+
+  const rec2 = await call(advisor, 'GET', `/api/client?id=${madeClient.id}`);
   const cl = rec2.data?.client;
   check(rec2.status === 200 && cl?.name === who, 'the client record loads', `status ${rec2.status}`);
 
@@ -645,6 +671,15 @@ async function main() {
     'and last travelled is the most recent one behind', cl.lastTravelled);
   check(cl.creditCents === 15000, 'unused credit is carried on the record', cl.creditCents);
   check(cl.vendors.length === 3, 'along with every vendor they have used', cl.vendors.join(', '));
+
+  const renamed = `Renamed Client ${stamp}`;
+  await call(advisor, 'PUT', `/api/clients/${madeClient.id}`, { name: renamed });
+  const afterRename = await call(advisor, 'GET', `/api/client?id=${madeClient.id}`);
+  check(afterRename.data?.client?.name === renamed && afterRename.data.bookings.length === 4,
+    'renaming a client carries their reservations along',
+    `${afterRename.data?.client?.name}, ${afterRename.data?.bookings?.length} trips`);
+  check((afterRename.data?.bookings || []).every((b) => b.client_name === renamed),
+    'and the name on each reservation follows');
 
   const noSuch = await call(advisor, 'GET', '/api/client?name=Nobody%20At%20All');
   check(noSuch.status === 404, 'a client with no trips is a 404', `status ${noSuch.status}`);

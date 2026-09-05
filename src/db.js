@@ -280,7 +280,8 @@ const BOOKING_COLUMNS = `
   id, user_id, ghl_contact_id, ghl_opportunity_id, client_name, supplier,
   product_type, product_name, destination, confirmation_number, depart_date,
   return_date, deposit_due, final_payment_due, travellers, gross_cents, deposit_cents,
-  commission_cents, commission_status, status, notes, group_id, created_at, updated_at
+  commission_cents, commission_status, status, notes, group_id, client_id,
+  created_at, updated_at
 `;
 
 // The same columns qualified, for the list query that joins users to name the
@@ -292,7 +293,7 @@ const BOOKING_COLUMNS_B = `
   b.product_type, b.product_name, b.destination, b.confirmation_number, b.depart_date,
   b.return_date, b.deposit_due, b.final_payment_due, b.travellers, b.gross_cents,
   b.deposit_cents, b.commission_cents, b.commission_status, b.status, b.notes,
-  b.group_id, b.created_at, b.updated_at
+  b.group_id, b.client_id, b.created_at, b.updated_at
 `;
 
 export async function listBookings(env, scope, { status, search, limit = 200 } = {}) {
@@ -331,15 +332,15 @@ export async function createBooking(env, userId, f) {
         product_type, product_name, destination, confirmation_number,
         depart_date, return_date, deposit_due, final_payment_due, travellers,
         gross_cents, deposit_cents, commission_cents, commission_status, status, notes,
-        group_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        group_id, client_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, userId, f.ghlContactId || null, f.ghlOpportunityId || null,
     f.clientName, f.supplier || null, f.productType, f.productName || null,
     f.destination || null, f.confirmationNumber || null,
     f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
     f.travellers, f.grossCents, f.depositCents || 0, f.commissionCents, f.commissionStatus,
-    f.status, f.notes || null, f.groupId || null, ts, ts
+    f.status, f.notes || null, f.groupId || null, f.clientId || null, ts, ts
   ).run();
   return getBooking(env, id, userId);
 }
@@ -351,14 +352,14 @@ export async function updateBooking(env, id, userId, f) {
        product_type = ?, product_name = ?, destination = ?, confirmation_number = ?,
        depart_date = ?, return_date = ?, deposit_due = ?, final_payment_due = ?,
        travellers = ?, gross_cents = ?, deposit_cents = ?, commission_cents = ?, commission_status = ?,
-       status = ?, notes = ?, group_id = ?, updated_at = ?
+       status = ?, notes = ?, group_id = ?, client_id = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(
     f.ghlContactId || null, f.ghlOpportunityId || null, f.clientName, f.supplier || null,
     f.productType, f.productName || null, f.destination || null, f.confirmationNumber || null,
     f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
     f.travellers, f.grossCents, f.depositCents || 0, f.commissionCents, f.commissionStatus,
-    f.status, f.notes || null, f.groupId || null, now(), id, userId
+    f.status, f.notes || null, f.groupId || null, f.clientId || null, now(), id, userId
   ).run();
   if (!res.meta || res.meta.changes === 0) return null;
   return getBooking(env, id, userId);
@@ -756,6 +757,91 @@ export async function salesMix(env, scope, { from, to }) {
     repeatClients: repeat?.n || 0,
     totalClients: clients,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Clients
+// ---------------------------------------------------------------------------
+//
+// A reservation still carries client_name, because that is what people type
+// and what vendors put on a confirmation. resolveClient turns that name into a
+// record, creating one the first time it is seen. Nothing in the forms had to
+// change: the record appears as a side effect of doing the work.
+
+const CLIENT_COLUMNS = `
+  c.id, c.user_id, c.name, c.email, c.phone, c.notes, c.ghl_contact_id,
+  c.pinned_at, c.created_at, c.updated_at
+`;
+
+/** The client record for a name, made if it is new. Null for a blank name. */
+export async function resolveClient(env, userId, name, { ghlContactId } = {}) {
+  const clean = String(name || '').trim().slice(0, 120);
+  if (!clean) return null;
+
+  const existing = await env.DB.prepare(
+    'SELECT id, ghl_contact_id FROM clients WHERE user_id = ? AND name = ?'
+  ).bind(userId, clean).first().catch(() => null);
+
+  if (existing) {
+    // A reservation that knows the CRM contact teaches the client record,
+    // which is how a locally created client eventually gets linked up.
+    if (ghlContactId && !existing.ghl_contact_id) {
+      await env.DB.prepare('UPDATE clients SET ghl_contact_id = ?, updated_at = ? WHERE id = ?')
+        .bind(ghlContactId, now(), existing.id).run().catch(() => {});
+    }
+    return existing.id;
+  }
+
+  const id = uid();
+  const ts = now();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO clients (id, user_id, name, ghl_contact_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(id, userId, clean, ghlContactId || null, ts, ts).run();
+
+  // Re-read rather than trusting the insert: two requests naming the same new
+  // client at once would otherwise leave one of them holding an id that lost
+  // the race and was ignored.
+  const row = await env.DB.prepare(
+    'SELECT id FROM clients WHERE user_id = ? AND name = ?'
+  ).bind(userId, clean).first();
+  return row ? row.id : null;
+}
+
+export async function listClients(env, scope, { query, pinnedOnly, limit = 300 } = {}) {
+  const scoped = scopeWhere(scope, 'c.user_id');
+  const where = [scoped.sql];
+  const binds = [...scoped.binds];
+  if (pinnedOnly) where.push('c.pinned_at IS NOT NULL');
+  if (query) {
+    where.push('(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)');
+    const like = `%${query}%`;
+    binds.push(like, like, like);
+  }
+
+  const { results } = await env.DB.prepare(
+    `SELECT ${CLIENT_COLUMNS},
+            (SELECT COUNT(*) FROM bookings b WHERE b.client_id = c.id
+              AND b.status IN ('booked','travelled')) AS trips,
+            (SELECT COALESCE(SUM(b.gross_cents), 0) FROM bookings b WHERE b.client_id = c.id
+              AND b.status IN ('booked','travelled')) AS lifetime_cents,
+            (SELECT MAX(COALESCE(b.return_date, b.depart_date)) FROM bookings b
+              WHERE b.client_id = c.id AND b.status IN ('booked','travelled')) AS last_date,
+            (SELECT MIN(b.depart_date) FROM bookings b WHERE b.client_id = c.id
+              AND b.status IN ('quoted','booked') AND b.depart_date >= date('now')) AS next_date
+       FROM clients c
+      WHERE ${where.join(' AND ')}
+      ORDER BY c.pinned_at IS NULL ASC, c.pinned_at ASC, lifetime_cents DESC
+      LIMIT ?`
+  ).bind(...binds, Math.min(Number(limit) || 300, 500)).all();
+  return results || [];
+}
+
+export async function getClient(env, scope, { id, name }) {
+  const scoped = scopeWhere(scope, 'c.user_id');
+  const sql = `SELECT ${CLIENT_COLUMNS} FROM clients c
+                WHERE ${scoped.sql} AND ${id ? 'c.id = ?' : 'c.name = ?'} LIMIT 1`;
+  return env.DB.prepare(sql).bind(...scoped.binds, id || name).first().catch(() => null);
 }
 
 export async function logActivity(env, userId, kind, subject, meta = null) {

@@ -39,7 +39,7 @@ tracking has value on its own.
 | `/pending` | Public | Shown while an account awaits approval |
 | `/app/` | Advisor | Dashboard: numbers, payments due, activity |
 | `/app/inbox` | Advisor | Messages: SMS and email threads, with a composer |
-| `/app/leads` | Advisor | Clients: everyone in the book of business |
+| `/app/leads` | Advisor | CRM contacts, live from the upstream account |
 | `/app/contact` | Advisor | One contact: details, notes, tasks, deals |
 | `/app/pipeline` | Advisor | Sales opportunities: board, drag between stages, create deals |
 | `/app/calendar` | Advisor | Upcoming appointments, book new ones |
@@ -50,6 +50,7 @@ tracking has value on its own.
 | `/app/commissions` | Advisor | Commission owed, aged from the return date |
 | `/app/reservations` | Advisor | Reservation CRUD, vendor deadlines, commission |
 | `/app/reservation` | Advisor | One trip: schedule, tasks, credits, group |
+| `/app/clients` | Advisor | Everyone who has booked or holds a credit |
 | `/app/client` | Advisor | One client: trips, lifetime value, credits |
 | `/app/billing` | Advisor | Invoices, transactions, reconciliation against reservations |
 | `/app/reports` | Advisor | Production by departure month |

@@ -14,7 +14,7 @@
   <div class="main">
     <header class="topbar">
       <div>
-        <a class="back-link" href="/app/reservations">&larr; All reservations</a>
+        <a class="back-link" href="/app/clients">&larr; All clients</a>
         <h1 id="name">Loading...</h1>
         <p class="sub" id="sub"></p>
       </div>
@@ -22,7 +22,11 @@
     </header>
     <div class="content">
       <div id="err"></div>
-      <section id="stats" class="stat-grid"></section>
+      <section class="card" id="contact-card">
+        <div class="card-head"><h2>Contact</h2><span id="contact-actions"></span></div>
+        <div class="card-pad" id="contact"></div>
+      </section>
+      <section id="stats" class="stat-grid" style="margin-top:1.5rem;"></section>
       <div class="split" style="margin-top:1.5rem;">
         <div>
           <section class="card">
@@ -51,11 +55,14 @@
 </div>
 
 <script type="module">
-import { api, mountShell, esc, money, dateFmt, daysUntil, showError } from '/js/app.js';
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit } from '/js/app.js';
 await mountShell();
 
-const name = new URLSearchParams(location.search).get('name') || '';
+const params = new URLSearchParams(location.search);
+const id = params.get('id') || '';
+const name = params.get('name') || '';
 const err = document.getElementById('err');
+let editing = false;
 
 const short = (iso) => (iso ? dateFmt(iso) : '-');
 const STATUS_TONE = { quoted: 'badge-navy', booked: 'badge-green', travelled: 'badge-navy', cancelled: 'badge-red' };
@@ -67,9 +74,24 @@ function render(d) {
     ? `Next trip ${short(c.nextDeparture)}`
     : (c.lastTravelled ? `Last travelled ${short(c.lastTravelled)}, nothing booked` : 'Nothing travelled yet');
 
-  document.getElementById('actions').innerHTML = c.contactId
-    ? `<a class="btn btn-ghost btn-sm" href="/app/contact?id=${esc(c.contactId)}">CRM record</a>`
-    : '';
+  document.getElementById('actions').innerHTML = [
+    d.editable
+      ? `<button class="btn btn-ghost btn-sm" id="pin">${c.pinned_at ? 'Pinned' : 'Pin'}</button>`
+      : '',
+    c.ghl_contact_id
+      ? `<a class="btn btn-ghost btn-sm" href="/app/contact?id=${esc(c.ghl_contact_id)}">CRM record</a>`
+      : '',
+  ].filter(Boolean).join('');
+
+  const pinBtn = document.getElementById('pin');
+  if (pinBtn) pinBtn.addEventListener('click', async () => {
+    pinBtn.disabled = true;
+    try { await api(`/api/clients/${encodeURIComponent(c.id)}`,
+      { method: 'PUT', body: { pinned: !c.pinned_at } }); await load(); }
+    catch (e) { showError(err, e); pinBtn.disabled = false; }
+  });
+
+  drawContact(d);
 
   document.getElementById('stats').innerHTML = `
     <div class="stat"><p class="label">Lifetime value</p><p class="value">${money(c.lifetimeCents)}</p>
@@ -123,11 +145,75 @@ function render(d) {
     : '<span class="muted">None recorded.</span>';
 }
 
-if (!name) {
+/**
+ * Contact details, shown as a card and edited in place.
+ *
+ * This is the part that makes "worth a call" mean anything. The portal could
+ * previously tell you a client was overdue a call without holding a number to
+ * ring them on, which is a report rather than a tool.
+ */
+function drawContact(d) {
+  const c = d.client;
+  const box = document.getElementById('contact');
+  const actions = document.getElementById('contact-actions');
+
+  if (!editing) {
+    actions.innerHTML = d.editable
+      ? '<button class="btn btn-ghost btn-sm" id="edit-contact">Edit</button>' : '';
+    box.innerHTML = (c.phone || c.email || c.notes)
+      ? `<dl class="pairs">
+          ${c.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></dd>` : ''}
+          ${c.email ? `<dt>Email</dt><dd><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></dd>` : ''}
+          ${c.notes ? `<dt>Notes</dt><dd>${esc(c.notes)}</dd>` : ''}
+        </dl>`
+      : '<p class="muted" style="margin:0;font-size:.86rem;">No phone or email on file yet.</p>';
+    const edit = document.getElementById('edit-contact');
+    if (edit) edit.addEventListener('click', () => { editing = true; drawContact(d); });
+    return;
+  }
+
+  actions.innerHTML = '';
+  box.innerHTML = `<form id="contact-form">
+    <div class="notice notice-error" hidden></div>
+    <div class="field"><label for="cname">Name</label>
+      <input id="cname" name="name" maxlength="120" required value="${esc(c.name)}">
+      <p class="field-hint">Renaming carries their reservations and credits along with them.</p></div>
+    <div class="field-row">
+      <div class="field"><label for="cphone">Phone</label>
+        <input id="cphone" name="phone" type="tel" maxlength="40" value="${esc(c.phone || '')}"></div>
+      <div class="field"><label for="cemail">Email</label>
+        <input id="cemail" name="email" type="email" maxlength="160" value="${esc(c.email || '')}"></div>
+    </div>
+    <div class="field"><label for="cnotes">Notes</label>
+      <textarea id="cnotes" name="notes" maxlength="4000">${esc(c.notes || '')}</textarea></div>
+    <div class="toolbar" style="margin:0;">
+      <button class="btn btn-primary btn-sm" type="submit">Save</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="cancel-contact">Cancel</button>
+    </div>
+  </form>`;
+
+  document.getElementById('cancel-contact').addEventListener('click', () => {
+    editing = false; drawContact(d);
+  });
+  onSubmit(document.getElementById('contact-form'), async (values) => {
+    await api(`/api/clients/${encodeURIComponent(c.id)}`, { method: 'PUT', body: values });
+    editing = false;
+    await load();
+  });
+}
+
+async function load() {
+  try {
+    const query = id ? `id=${encodeURIComponent(id)}` : `name=${encodeURIComponent(name)}`;
+    render(await api(`/api/client?${query}`));
+    err.innerHTML = '';
+  } catch (e) { showError(err, e); }
+}
+
+if (!id && !name) {
   err.innerHTML = '<div class="notice notice-error">No client was named in the address.</div>';
 } else {
-  try { render(await api(`/api/client?name=${encodeURIComponent(name)}`)); }
-  catch (e) { showError(err, e); }
+  await load();
 }
 </script>
 </body></html>

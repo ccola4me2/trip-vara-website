@@ -116,14 +116,15 @@ export async function handleCreateCredit(request, env) {
     return badRequest('That reservation is not yours.');
   }
 
+  const clientId = await db.resolveClient(env, user.id, fields.clientName);
   const id = uid();
   const ts = now();
   await env.DB.prepare(
-    `INSERT INTO client_credits (id, user_id, client_name, contact_id, vendor, kind,
+    `INSERT INTO client_credits (id, user_id, client_name, client_id, contact_id, vendor, kind,
        reference, amount_cents, issued_on, expires_on, used_on, booking_id, notes,
        created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id, user.id, fields.clientName, fields.contactId, fields.vendor, fields.kind,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, user.id, fields.clientName, clientId, fields.contactId, fields.vendor, fields.kind,
          fields.reference, fields.amountCents, fields.issuedOn, fields.expiresOn,
          fields.usedOn, fields.bookingId, fields.notes, ts, ts).run();
 
@@ -142,12 +143,13 @@ export async function handleUpdateCredit(request, env, id) {
     return badRequest('That reservation is not yours.');
   }
 
+  const clientId = await db.resolveClient(env, user.id, fields.clientName);
   const res = await env.DB.prepare(
-    `UPDATE client_credits SET client_name = ?, contact_id = ?, vendor = ?, kind = ?,
+    `UPDATE client_credits SET client_name = ?, client_id = ?, contact_id = ?, vendor = ?, kind = ?,
        reference = ?, amount_cents = ?, issued_on = ?, expires_on = ?, used_on = ?,
        booking_id = ?, notes = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
-  ).bind(fields.clientName, fields.contactId, fields.vendor, fields.kind, fields.reference,
+  ).bind(fields.clientName, clientId, fields.contactId, fields.vendor, fields.kind, fields.reference,
          fields.amountCents, fields.issuedOn, fields.expiresOn, fields.usedOn,
          fields.bookingId, fields.notes, now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Credit not found.');

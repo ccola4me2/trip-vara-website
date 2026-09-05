@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clients | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Clients</h1><p class="sub">Everyone who has booked or holds a credit, built from your own records.</p></div>
+      <span id="scope"></span>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="stats" class="stat-grid"></section>
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Name, email or phone" style="min-width:240px;">
+        <label style="display:flex;align-items:center;gap:.4rem;font-weight:400;">
+          <input type="checkbox" id="pinned-only" style="width:auto;"> Pinned only</label>
+      </div>
+      <section class="card" id="panel"><p class="spinner">Loading clients...</p></section>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, showError, mountScopePicker, advisorParam } from '/js/app.js';
+const ME = (await mountShell()).id;
+
+const panel = document.getElementById('panel');
+const err = document.getElementById('err');
+const q = document.getElementById('q');
+const pinnedOnly = document.getElementById('pinned-only');
+let timer = null;
+
+const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
+
+function render(d) {
+  const s = d.stats;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Clients</p><p class="value">${s.total}</p>
+      <p class="meta">${s.pinned} pinned</p></div>
+    <div class="stat"><p class="label">Nothing booked</p>
+      <p class="value" style="${s.lapsed ? 'color:var(--amber-600);' : ''}">${s.lapsed}</p>
+      <p class="meta">Travelled with you, nothing ahead</p></div>
+    <div class="stat"><p class="label">Lifetime value</p><p class="value">${money(s.lifetimeCents)}</p>
+      <p class="meta">Across everyone listed</p></div>`;
+
+  if (!d.clients.length) {
+    panel.innerHTML = `<div class="empty"><h3>No clients yet</h3>
+      <p>A client record appears the first time you take a reservation for them.</p></div>`;
+    return;
+  }
+
+  panel.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th style="width:2rem;"></th><th>Client</th><th>Contact</th><th>Last trip</th>
+      <th>Next trip</th><th class="num">Trips</th><th class="num">Lifetime</th></tr></thead>
+    <tbody>${d.clients.map((c) => `<tr>
+      <td>${c.user_id === ME
+        ? `<button type="button" class="pin${c.pinned_at ? ' on' : ''}" data-pin="${esc(c.id)}"
+             aria-pressed="${Boolean(c.pinned_at)}" aria-label="${c.pinned_at ? 'Unpin' : 'Pin'} ${esc(c.name)}">
+             <svg viewBox="0 0 24 24" width="14" height="14" fill="${c.pinned_at ? 'currentColor' : 'none'}"
+               stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true">
+               <path d="M9 3h6l-1 6 4 3v2H6v-2l4-3-1-6Zm3 11v7"/></svg></button>`
+        : ''}</td>
+      <td><a class="name" href="/app/client?id=${esc(c.id)}">${esc(c.name)}</a></td>
+      <td>${[c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '',
+             c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '']
+            .filter(Boolean).join('<br>') || '<span class="muted">none on file</span>'}</td>
+      <td>${esc(short(c.last_date))}</td>
+      <td>${c.next_date ? esc(short(c.next_date)) : '<span class="muted">nothing booked</span>'}</td>
+      <td class="num">${c.trips}</td>
+      <td class="num">${money(c.lifetime_cents)}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+
+  panel.querySelectorAll('[data-pin]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const on = btn.classList.contains('on');
+      btn.disabled = true;
+      try { await api(`/api/clients/${encodeURIComponent(btn.dataset.pin)}`,
+        { method: 'PUT', body: { pinned: !on } }); await load(); }
+      catch (e) { showError(err, e); btn.disabled = false; }
+    });
+  });
+}
+
+async function load() {
+  try {
+    const params = [];
+    if (q.value.trim()) params.push(`q=${encodeURIComponent(q.value.trim())}`);
+    if (pinnedOnly.checked) params.push('pinned=1');
+    if (advisorParam()) params.push(advisorParam());
+    const d = await api(`/api/clients${params.length ? '?' + params.join('&') : ''}`);
+    mountScopePicker(document.getElementById('scope'), d, load);
+    render(d);
+  } catch (e) { showError(panel, e); }
+}
+
+q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+pinnedOnly.addEventListener('change', load);
+await load();
+</script>
+</body></html>

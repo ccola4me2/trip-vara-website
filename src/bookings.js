@@ -194,6 +194,10 @@ export async function handleCreateBooking(request, env) {
   const { fields, error } = parseBooking(await readJson(request));
   if (error) return badRequest(error);
 
+  // The client record is created as a side effect of booking, so nobody has
+  // to maintain a separate list of people before they can take a reservation.
+  fields.clientId = await db.resolveClient(env, user.id, fields.clientName,
+    { ghlContactId: fields.ghlContactId });
   const booking = await db.createBooking(env, user.id, fields);
   await db.logActivity(env, user.id, 'booking.create',
     `Added booking for ${booking.client_name}`, { id: booking.id });
@@ -216,6 +220,8 @@ export async function handleUpdateBooking(request, env, id) {
   const { fields, error } = parseBooking(await readJson(request));
   if (error) return badRequest(error);
 
+  fields.clientId = await db.resolveClient(env, user.id, fields.clientName,
+    { ghlContactId: fields.ghlContactId });
   const booking = await db.updateBooking(env, id, user.id, fields);
   if (!booking) return notFound('Booking not found.');
   await db.logActivity(env, user.id, 'booking.update',

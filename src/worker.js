@@ -58,7 +58,7 @@ import {
 } from './credits.js';
 import { handleGetGoals, handleSaveGoals } from './goals.js';
 import { handleListCommissions, handleSetCommissionStatus } from './commissions.js';
-import { handleClientRecord } from './clients.js';
+import { handleClientRecord, handleListClients, handleUpdateClient } from './clients.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
@@ -119,6 +119,7 @@ const PAGE_FILES = {
   '/app/reservations': '/app/reservations.html',
   '/app/reservation': '/app/reservation.html',
   '/app/client': '/app/client.html',
+  '/app/clients': '/app/clients.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
   '/app/settings': '/app/settings.html',
@@ -194,6 +195,7 @@ async function routeApi(request, env, path, method) {
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
+  const clientMatch = path.match(/^\/api\/clients\/([^/]+)$/);
 
   // ---- auth -------------------------------------------------------------
   if (path === '/api/auth/signup' && method === 'POST') return handleSignup(request, env);
@@ -344,6 +346,8 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/goals' && method === 'GET') return handleGetGoals(request, env);
   if (path === '/api/goals' && method === 'PUT') return handleSaveGoals(request, env);
   if (path === '/api/client' && method === 'GET') return handleClientRecord(request, env);
+  if (path === '/api/clients' && method === 'GET') return handleListClients(request, env);
+  if (clientMatch && method === 'PUT') return handleUpdateClient(request, env, clientMatch[1]);
   if (path === '/api/commissions' && method === 'GET') return handleListCommissions(request, env);
   if (path === '/api/commissions/status' && method === 'POST') {
     return handleSetCommissionStatus(request, env);
