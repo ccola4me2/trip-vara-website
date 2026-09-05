@@ -533,28 +533,46 @@ export async function deletePayment(env, id, userId) {
   return Boolean(res.meta && res.meta.changes > 0);
 }
 
-/** The numbers the payments page leads with. */
-export async function paymentStats(env, userId, { soonThrough, today }) {
+/**
+ * The numbers the payments page leads with.
+ *
+ * Framed around cancellation, not debt. A missed final payment does not become
+ * an overdue invoice an agency can chase; the supplier cancels the booking. So
+ * what matters is how long is left before that happens, and separately which
+ * bookings have already passed their date and need checking with the supplier.
+ */
+export async function paymentStats(env, userId, { today, soonThrough, urgentThrough }) {
   const row = await env.DB.prepare(
     `SELECT
-       SUM(CASE WHEN paid_date IS NOT NULL THEN amount_cents ELSE 0 END) AS collected,
+       SUM(CASE WHEN paid_date IS NOT NULL THEN amount_cents ELSE 0 END) AS posted,
        SUM(CASE WHEN paid_date IS NULL THEN amount_cents ELSE 0 END) AS outstanding,
+       -- Already past its date. The booking is probably gone and needs
+       -- confirming with the supplier rather than chasing the client.
        SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
-                THEN amount_cents ELSE 0 END) AS overdue,
+                THEN amount_cents ELSE 0 END) AS past_due,
+       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
+                THEN 1 ELSE 0 END) AS past_due_count,
+       -- Inside the window where a final payment will cancel the booking.
+       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL
+                     AND due_date >= ? AND due_date <= ? AND kind = 'final'
+                THEN amount_cents ELSE 0 END) AS at_risk,
+       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL
+                     AND due_date >= ? AND due_date <= ? AND kind = 'final'
+                THEN 1 ELSE 0 END) AS at_risk_count,
        SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL
                      AND due_date >= ? AND due_date <= ?
-                THEN amount_cents ELSE 0 END) AS due_soon,
-       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
-                THEN 1 ELSE 0 END) AS overdue_count
+                THEN amount_cents ELSE 0 END) AS due_soon
      FROM booking_payments WHERE user_id = ?`
-  ).bind(today, today, soonThrough, today, userId).first();
+  ).bind(today, today, today, urgentThrough, today, urgentThrough, today, soonThrough, userId).first();
 
   return {
-    collectedCents: row?.collected || 0,
+    postedCents: row?.posted || 0,
     outstandingCents: row?.outstanding || 0,
-    overdueCents: row?.overdue || 0,
+    pastDueCents: row?.past_due || 0,
+    pastDueCount: row?.past_due_count || 0,
+    atRiskCents: row?.at_risk || 0,
+    atRiskCount: row?.at_risk_count || 0,
     dueSoonCents: row?.due_soon || 0,
-    overdueCount: row?.overdue_count || 0,
   };
 }
 

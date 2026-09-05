@@ -29,7 +29,9 @@ export async function handlePayments(request, env) {
 
   const [payments, stats, balances] = await Promise.all([
     db.listPayments(env, user.id, { state: state === 'all' ? undefined : state }),
-    db.paymentStats(env, user.id, { today: isoDay(0), soonThrough: isoDay(30) }),
+    db.paymentStats(env, user.id, {
+      today: isoDay(0), soonThrough: isoDay(30), urgentThrough: isoDay(14),
+    }),
     db.bookingBalances(env, user.id),
   ]);
 
@@ -192,4 +194,50 @@ export async function handleGenerateSchedule(request, env, bookingId) {
   await db.logActivity(env, user.id, 'payment.schedule',
     `Built a payment schedule for ${booking.client_name}`, { bookingId });
   return json({ ok: true, created }, 201);
+}
+
+
+/**
+ * Set a booking's status.
+ *
+ * Exists because of what happens when a final payment date passes unpaid: the
+ * supplier cancels the booking. The portal cannot know that happened, so the
+ * payments page offers the advisor a way to record it once they have checked,
+ * rather than leaving a dead booking counted as live revenue forever.
+ */
+export async function handleSetBookingStatus(request, env, bookingId) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const status = oneOf(body.status, ['booked', 'quoted', 'travelled', 'cancelled']);
+
+  const booking = await db.getBooking(env, bookingId, user.id);
+  if (!booking) return notFound('Booking not found.');
+
+  const updated = await db.updateBooking(env, bookingId, user.id, {
+    ghlContactId: booking.ghl_contact_id,
+    ghlOpportunityId: booking.ghl_opportunity_id,
+    clientName: booking.client_name,
+    supplier: booking.supplier,
+    productType: booking.product_type,
+    productName: booking.product_name,
+    destination: booking.destination,
+    confirmationNumber: booking.confirmation_number,
+    departDate: booking.depart_date,
+    returnDate: booking.return_date,
+    depositDue: booking.deposit_due,
+    finalPaymentDue: booking.final_payment_due,
+    travellers: booking.travellers,
+    grossCents: booking.gross_cents,
+    depositCents: booking.deposit_cents,
+    commissionCents: booking.commission_cents,
+    commissionStatus: booking.commission_status,
+    status,
+    notes: booking.notes,
+  });
+
+  await db.logActivity(env, user.id, 'booking.status',
+    `Marked ${booking.client_name} ${status}`, { bookingId, status });
+  return json({ ok: true, booking: updated });
 }

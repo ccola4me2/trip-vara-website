@@ -74,13 +74,20 @@ try {
       <thead><tr><th>Client</th><th>Trip</th><th>Due</th><th class="num">Amount</th></tr></thead>
       <tbody>${pay.map((p) => {
         const left = daysUntil(p.due_date);
-        const tone = left === null ? 'badge-navy' : left < 0 ? 'badge-red' : left <= 14 ? 'badge-amber' : 'badge-navy';
+        const isFinal = p.kind === 'final';
+        const tone = left === null ? 'badge-navy'
+          : left < 0 ? 'badge-red'
+          : isFinal && left <= 14 ? 'badge-red'
+          : left <= 14 ? 'badge-amber' : 'badge-navy';
         return `<tr>
           <td><span class="name">${esc(p.client_name)}</span>
             <div class="muted">${esc(KIND[p.kind] || p.kind)}</div></td>
           <td>${esc(p.product_name || p.supplier || '')}<div class="muted">${esc(p.depart_date ? 'Departs ' + dateFmt(p.depart_date) : '')}</div></td>
           <td>${esc(dateFmt(p.due_date))}<div><span class="badge ${tone}">${
-            left === null ? '' : left < 0 ? `${Math.abs(left)}d overdue` : `in ${left}d`}</span></div></td>
+            left === null ? ''
+              : left < 0 ? (isFinal ? 'past due, may be cancelled' : 'past due')
+              : isFinal ? `cancels in ${left}d`
+              : `in ${left}d`}</span></div></td>
           <td class="num">${money(p.amount_cents)}</td></tr>`;
       }).join('')}</tbody></table></div>`
     : '<div class="empty"><h3>Nothing due</h3><p>No client payments fall due in the next 60 days.</p></div>';

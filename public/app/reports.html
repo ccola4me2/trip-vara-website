@@ -69,10 +69,10 @@ function render(data) {
       <p class="meta">Commission earned, not yet paid to you</p></div>
     <div class="stat"><p class="label">Collection rate</p>
       <p class="value">${data.collectionRate === null ? '—' : data.collectionRate + '%'}</p>
-      <p class="meta">Of payments already due, how much is posted</p></div>
-    <div class="stat"><p class="label">Overdue</p>
-      <p class="value" style="${pay.overdueCents ? 'color:var(--red-600);' : ''}">${money(pay.overdueCents || 0)}</p>
-      <p class="meta">${pay.overdueCount || 0} client payment${pay.overdueCount === 1 ? '' : 's'} late</p></div>`;
+      <p class="meta">Of payments already due, how much was posted in time</p></div>
+    <div class="stat"><p class="label">Past due date</p>
+      <p class="value" style="${pay.pastDueCents ? 'color:var(--red-600);' : ''}">${money(pay.pastDueCents || 0)}</p>
+      <p class="meta">${pay.pastDueCount || 0} booking${pay.pastDueCount === 1 ? '' : 's'} to confirm with the supplier</p></div>`;
 
   const cf = data.cashflow || [];
   document.getElementById('cashflow').innerHTML = cf.length

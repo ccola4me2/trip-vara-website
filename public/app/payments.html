@@ -13,15 +13,17 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Payments</h1><p class="sub">Client payments to suppliers: what is due, what has been paid, what is late.</p></div>
+      <div><h1>Payments</h1><p class="sub">Client payments to suppliers. Chase final payments before their date, or the supplier cancels the booking.</p></div>
       <button class="btn btn-primary btn-sm" id="new-payment">Post a payment</button>
     </header>
     <div class="content">
       <div id="err"></div>
       <div class="notice notice-info">
-        Clients pay suppliers directly. Nothing here is money Trip Vara holds. Your own
-        earnings are the commission on each booking, tracked under
-        <a href="/app/bookings">Bookings</a> and totalled on <a href="/app/reports">Reports</a>.
+        Clients pay suppliers directly, so nothing here is money Trip Vara holds. A missed
+        final payment does not sit as a debt: the supplier cancels the booking. That is why
+        the urgency is before the date, not after. Your own earnings are the commission on
+        each booking, under <a href="/app/bookings">Bookings</a> and totalled on
+        <a href="/app/reports">Reports</a>.
       </div>
       <section id="stats" class="stat-grid"></section>
       <div class="tabs">
@@ -102,15 +104,30 @@ let bookings = [];
 
 const KIND_LABEL = { deposit: 'Deposit', installment: 'Part payment', final: 'Final balance', refund: 'Refund' };
 
+// A final payment is a deadline, not an invoice: miss it and the supplier
+// cancels the booking. Everything else is a normal due date.
 function statusOf(p, today) {
   if (p.paid_date) return { label: 'posted', tone: 'badge-green' };
   if (!p.due_date) return { label: 'unscheduled', tone: 'badge-navy' };
+
+  const isFinal = p.kind === 'final';
   if (p.due_date < today) {
-    const d = Math.abs(daysUntil(p.due_date));
-    return { label: `${d}d overdue`, tone: 'badge-red' };
+    return isFinal
+      ? { label: 'past due, may be cancelled', tone: 'badge-red', atRisk: true }
+      : { label: 'past due', tone: 'badge-red' };
   }
+
   const left = daysUntil(p.due_date);
-  return { label: left <= 14 ? `due in ${left}d` : `due ${dateFmt(p.due_date)}`, tone: left <= 14 ? 'badge-amber' : 'badge-navy' };
+  if (isFinal) {
+    return {
+      label: left === 0 ? 'cancels today' : `cancels in ${left}d`,
+      tone: left <= 14 ? 'badge-red' : left <= 30 ? 'badge-amber' : 'badge-navy',
+    };
+  }
+  return {
+    label: left <= 14 ? `due in ${left}d` : `due ${dateFmt(p.due_date)}`,
+    tone: left <= 14 ? 'badge-amber' : 'badge-navy',
+  };
 }
 
 function render(d) {
@@ -149,6 +166,8 @@ function render(d) {
           <td class="num">${money(p.amount_cents)}</td>
           <td class="num" style="white-space:nowrap;">
             ${!p.paid_date ? `<button class="btn btn-primary btn-sm" data-paid="${esc(p.id)}">Mark posted</button>` : ''}
+            ${st.atRisk ? `<button class="btn btn-danger btn-sm" data-cancel="${esc(p.booking_id)}"
+               data-name="${esc(p.client_name)}">Booking cancelled</button>` : ''}
             <button class="btn btn-ghost btn-sm" data-edit="${esc(p.id)}">Edit</button></td>
         </tr>`;
       }).join('')}</tbody></table></div>`;
@@ -160,6 +179,16 @@ function render(d) {
     }));
     panel.querySelectorAll('[data-edit]').forEach((b) =>
       b.addEventListener('click', () => openDialog(d.payments.find((x) => x.id === b.dataset.edit))));
+
+    panel.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm(`Mark ${b.dataset.name}'s booking cancelled? Do this once the supplier has confirmed it.`)) return;
+      b.disabled = true;
+      try {
+        await api(`/api/bookings/${encodeURIComponent(b.dataset.cancel)}/status`,
+          { method: 'POST', body: { status: 'cancelled' } });
+        await load();
+      } catch (err) { alert(err.message); b.disabled = false; }
+    }));
   }
 
   bookings = d.balances;

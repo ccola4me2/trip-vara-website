@@ -32,7 +32,7 @@ import { handleListCalendar, handleCreateAppointment } from './calendar.js';
 import { handleBilling, handleCreateInvoice, handleSendInvoice } from './billing.js';
 import {
   handlePayments, handleCreatePayment, handleUpdatePayment,
-  handleMarkPaid, handleDeletePayment, handleGenerateSchedule,
+  handleMarkPaid, handleDeletePayment, handleGenerateSchedule, handleSetBookingStatus,
 } from './payments.js';
 import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
 import { handleCrmLinks } from './crm.js';
@@ -161,6 +161,7 @@ async function routeApi(request, env, path, method) {
   const payMatch = path.match(/^\/api\/payments\/([^/]+)$/);
   const payPaidMatch = path.match(/^\/api\/payments\/([^/]+)\/paid$/);
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
+  const bookingStatusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
 
   // ---- auth -------------------------------------------------------------
@@ -270,6 +271,9 @@ async function routeApi(request, env, path, method) {
   if (payMatch && method === 'DELETE') return handleDeletePayment(request, env, payMatch[1]);
   if (scheduleMatch && method === 'POST') {
     return handleGenerateSchedule(request, env, scheduleMatch[1]);
+  }
+  if (bookingStatusMatch && method === 'POST') {
+    return handleSetBookingStatus(request, env, bookingStatusMatch[1]);
   }
 
   // ---- billing ----------------------------------------------------------
