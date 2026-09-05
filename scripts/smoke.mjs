@@ -1821,6 +1821,66 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // ------------------------------------------------ trips that are over ----
+  {
+  step('A trip whose return date has passed has been travelled');
+
+  const been = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Been There ${stamp}`, supplier: 'Seabourn', status: 'booked',
+    departDate: isoDay(-40), returnDate: isoDay(-30), gross: '4000', commission: '400',
+  });
+  const beenId = been.data?.booking?.id;
+  if (beenId) cleanup('the finished reservation', () => call(advisor, 'DELETE', `/api/bookings/${beenId}`));
+
+  const going = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Going Later ${stamp}`, supplier: 'Seabourn', status: 'booked',
+    departDate: isoDay(40), returnDate: isoDay(50), gross: '4000',
+  });
+  const goingId = going.data?.booking?.id;
+  if (goingId) cleanup('the future reservation', () => call(advisor, 'DELETE', `/api/bookings/${goingId}`));
+
+  // A cancelled trip is not a holiday somebody had.
+  const off = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Called Off ${stamp}`, supplier: 'Seabourn', status: 'cancelled',
+    departDate: isoDay(-40), returnDate: isoDay(-30), gross: '4000',
+  });
+  const offId = off.data?.booking?.id;
+  if (offId) cleanup('the cancelled reservation', () => call(advisor, 'DELETE', `/api/bookings/${offId}`));
+
+  const swept = await call(admin, 'POST', '/api/admin/lifecycle', {});
+  check(swept.status === 200 && swept.data?.travelled >= 1,
+    'the sweep moves trips that are over', JSON.stringify(swept.data));
+
+  const afterSweep = await call(advisor, 'GET', `/api/bookings/${beenId}/record`);
+  check(afterSweep.data?.booking?.status === 'travelled',
+    'a booked trip whose return date has passed becomes travelled',
+    afterSweep.data?.booking?.status);
+
+  const stillGoing = await call(advisor, 'GET', `/api/bookings/${goingId}/record`);
+  check(stillGoing.data?.booking?.status === 'booked',
+    'while one that has not left yet is untouched', stillGoing.data?.booking?.status);
+
+  const stillOff = await call(advisor, 'GET', `/api/bookings/${offId}/record`);
+  check(stillOff.data?.booking?.status === 'cancelled',
+    'and a cancelled trip stays cancelled', stillOff.data?.booking?.status);
+
+  // The number this fixes: it read zero however many holidays had happened.
+  const prod = await call(advisor, 'GET', '/api/reports/production?months=12');
+  check((prod.data?.stats?.travelled || 0) >= 1,
+    'so the travelled count on the reports stops reading zero forever',
+    prod.data?.stats?.travelled);
+
+  // Running it twice must not double count or churn rows.
+  const again = await call(admin, 'POST', '/api/admin/lifecycle', {});
+  check(again.data?.travelled === 0,
+    'and a second pass has nothing left to do, rather than churning the same rows',
+    JSON.stringify(again.data));
+
+  const notAdmin = await call(advisor, 'POST', '/api/admin/lifecycle', {});
+  check(notAdmin.status === 403 || notAdmin.status === 404,
+    'an advisor cannot run agency wide maintenance', `status ${notAdmin.status}`);
+  }
+
   // -------------------------------------------------- quote options --------
   {
   step('The two or three choices a quote actually offers');

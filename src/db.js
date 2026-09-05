@@ -601,6 +601,58 @@ export async function quoteFollowUps(env, scope, { quietDays = 7, limit = 20 } =
 }
 
 /**
+ * A trip whose return date has passed has been travelled.
+ *
+ * "Travelled" was a status nothing ever set. It could only be reached by an
+ * advisor opening each reservation after each holiday and changing it by
+ * hand, which nobody does, so the count on the reports screen sat at zero
+ * next to Booked and Quoted and quietly said that none of these people had
+ * ever gone anywhere.
+ *
+ * Only booked trips move. A cancelled one stays cancelled, and a quote that
+ * was never taken is not a holiday somebody had.
+ *
+ * Written one advisor at a time rather than as a single sweeping UPDATE, so
+ * every write in this codebase still names the user whose rows it changes.
+ * The batch is bounded because this runs on a cron every few minutes: a
+ * backlog clears over a few passes rather than in one long transaction.
+ */
+export async function markReturnedTripsTravelled(env, { today, limit = 200 } = {}) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, user_id FROM bookings
+      WHERE status = 'booked'
+        AND COALESCE(return_date, depart_date) IS NOT NULL
+        AND COALESCE(return_date, depart_date) < ?
+      ORDER BY COALESCE(return_date, depart_date) ASC
+      LIMIT ?`
+  ).bind(today, Math.min(Number(limit) || 200, 500)).all();
+
+  const byUser = new Map();
+  for (const row of results || []) {
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
+    byUser.get(row.user_id).push(row.id);
+  }
+
+  let moved = 0;
+  for (const [userId, ids] of byUser) {
+    const marks = ids.map(() => '?').join(',');
+    const res = await env.DB.prepare(
+      `UPDATE bookings SET status = 'travelled', updated_at = ?
+        WHERE user_id = ? AND status = 'booked' AND id IN (${marks})`
+    ).bind(now(), userId, ...ids).run();
+    const changed = res.meta ? res.meta.changes || 0 : 0;
+    moved += changed;
+    if (changed) {
+      await logActivity(env, userId, 'booking.travelled',
+        `${changed} trip${changed === 1 ? '' : 's'} marked travelled, the return date having passed`,
+        { count: changed });
+    }
+  }
+
+  return moved;
+}
+
+/**
  * Clients worth ringing: they have travelled with you and have nothing booked.
  *
  * The most reliable rebooking signal an agency has, and the one nobody acts on

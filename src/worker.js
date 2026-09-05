@@ -25,6 +25,7 @@ import {
   handleListBookings, handleGetBooking, handleBookingRecord, handleCreateBooking,
   handleUpdateBooking, handleQuickUpdate, handleDeleteBooking,
 } from './bookings.js';
+import { markReturnedTripsTravelled } from './db.js';
 import { handleStatement } from './statement.js';
 import {
   handleAddOption, handleUpdateOption, handleDeleteOption, handleChooseOption,
@@ -91,6 +92,7 @@ import {
 import { handleDashboard, handleProduction, handleMonth } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleSetAdvisorSplit,
+  handleRunLifecycle,
   handleHealth, handleTestEmail,
   handleSyncStatus, handleRunSync,
 } from './admin.js';
@@ -178,6 +180,12 @@ export default {
     // catalog is never more than five minutes behind a new snapshot.
     ctx.waitUntil(
       importCatalogStep(env, { maxPages: 8 }).catch((e) => console.error('catalog import', e))
+    );
+    // A trip whose return date has passed has been travelled. Nothing else
+    // ever set that status, so the reports said nobody had been anywhere.
+    ctx.waitUntil(
+      markReturnedTripsTravelled(env, { today: new Date().toISOString().slice(0, 10) })
+        .catch((e) => console.error('lifecycle', e))
     );
     ctx.waitUntil(
       scanTimeTriggers(env, locationFor(env, null))
@@ -446,6 +454,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/admin/test-email' && method === 'POST') return handleTestEmail(request, env);
   if (path === '/api/admin/sync' && method === 'GET') return handleSyncStatus(request, env);
   if (path === '/api/admin/sync' && method === 'POST') return handleRunSync(request, env);
+  if (path === '/api/admin/lifecycle' && method === 'POST') return handleRunLifecycle(request, env);
   if (path === '/api/admin/advisors' && method === 'GET') return handleListAdvisors(request, env);
   if (advisorMatch && method === 'PUT') {
     const id = decodeURIComponent(advisorMatch[1]);

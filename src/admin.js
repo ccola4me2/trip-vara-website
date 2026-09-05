@@ -102,6 +102,22 @@ export async function handleSetAdvisorSplit(request, env, userId) {
 }
 
 /**
+ * Bring reservation statuses up to date now rather than on the next cron.
+ *
+ * The sweep runs every few minutes on its own. This exists so it can be run
+ * on demand, which is what you want after an import brings in a book of past
+ * trips and the reports still say nobody has travelled.
+ */
+export async function handleRunLifecycle(request, env) {
+  const { user: admin, response } = await requireAdmin(request, env);
+  if (response) return response;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const moved = await db.markReturnedTripsTravelled(env, { today });
+  return json({ ok: true, travelled: moved });
+}
+
+/**
  * Configuration health, admin only.
  *
  * Reports whether each secret and binding is actually reachable at runtime.
