@@ -29,7 +29,7 @@ import {
   handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
 } from './conversations.js';
 import { handleListCalendar, handleCreateAppointment } from './calendar.js';
-import { handleBilling } from './billing.js';
+import { handleBilling, handleCreateInvoice, handleSendInvoice } from './billing.js';
 import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
 import { handleCrmLinks } from './crm.js';
 import {
@@ -126,6 +126,7 @@ async function routeApi(request, env, path, method) {
   const oppMatch = path.match(/^\/api\/opportunities\/([^/]+)$/);
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
+  const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
 
   // ---- auth -------------------------------------------------------------
@@ -204,6 +205,10 @@ async function routeApi(request, env, path, method) {
 
   // ---- billing ----------------------------------------------------------
   if (path === '/api/billing' && method === 'GET') return handleBilling(request, env);
+  if (path === '/api/billing/invoices' && method === 'POST') return handleCreateInvoice(request, env);
+  if (invoiceSendMatch && method === 'POST') {
+    return handleSendInvoice(request, env, decodeURIComponent(invoiceSendMatch[1]));
+  }
 
   // ---- dashboard and reports -------------------------------------------
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);

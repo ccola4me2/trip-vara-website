@@ -5,7 +5,7 @@
 // actually collected. Both are shown together so the gap is visible instead of
 // being taken on trust.
 
-import { json } from './util.js';
+import { json, badRequest, clean, cleanDate, oneOf, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as ghl from './ghl.js';
 import * as db from './db.js';
@@ -68,4 +68,86 @@ export async function handleBilling(request, env) {
       subscriptions: subs === null,
     },
   });
+}
+
+
+/** Raise an invoice against a contact. */
+export async function handleCreateInvoice(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const contactId = clean(body.contactId, 64);
+  const name = clean(body.name, 160);
+  const items = Array.isArray(body.items) ? body.items : [];
+
+  if (!contactId) return badRequest('Pick a contact to invoice.');
+  if (!name) return badRequest('Give the invoice a name.');
+
+  const cleanItems = items
+    .map((i) => ({
+      name: clean(i.name, 160),
+      amount: Number(String(i.amount ?? '').replace(/[$,\s]/g, '')) || 0,
+      qty: Math.max(1, Math.min(Number(i.qty) || 1, 999)),
+    }))
+    .filter((i) => i.name && i.amount > 0);
+
+  if (!cleanItems.length) return badRequest('Add at least one line item with an amount.');
+
+  const issueDate = cleanDate(body.issueDate);
+  const dueDate = cleanDate(body.dueDate);
+  if (issueDate && dueDate && dueDate < issueDate) {
+    return badRequest('The due date cannot be before the issue date.');
+  }
+
+  const locationId = ghl.locationFor(env, user);
+  try {
+    const contact = await db.localContact(env, contactId);
+    const invoice = await ghl.createInvoice(env, locationId, {
+      name,
+      title: clean(body.title, 160) || name,
+      contactId,
+      contactName: contact?.name || clean(body.contactName, 120),
+      contactEmail: contact?.email || '',
+      contactPhone: contact?.phone || '',
+      items: cleanItems,
+      notes: clean(body.notes, 2000),
+      issueDate: issueDate || undefined,
+      dueDate: dueDate || undefined,
+    });
+
+    // Sending is opt-in: raising a draft and sending it are different
+    // decisions, and sending by accident is not recoverable.
+    let sent = false;
+    if (body.send && invoice && invoice.id) {
+      await ghl.sendInvoice(env, locationId, invoice.id, {
+        action: oneOf(body.sendVia, ['email', 'sms', 'sms_and_email']),
+        userId: user.ghl_user_id || undefined,
+      });
+      sent = true;
+    }
+
+    await db.logActivity(env, user.id, 'invoice.create',
+      `${sent ? 'Sent' : 'Raised'} invoice ${name}`, { contactId, invoiceId: invoice?.id });
+    return json({ ok: true, invoice, sent }, 201);
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
+}
+
+/** Send an invoice that already exists. */
+export async function handleSendInvoice(request, env, invoiceId) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+  const body = await readJson(request);
+  try {
+    await ghl.sendInvoice(env, ghl.locationFor(env, user), invoiceId, {
+      action: oneOf(body.sendVia, ['email', 'sms', 'sms_and_email']),
+      userId: user.ghl_user_id || undefined,
+    });
+    await db.logActivity(env, user.id, 'invoice.send', 'Sent an invoice', { invoiceId });
+    return json({ ok: true });
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
 }

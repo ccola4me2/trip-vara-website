@@ -941,6 +941,130 @@ export async function listSurveySubmissions(env, locationId, { surveyId, limit =
 }
 
 // ---------------------------------------------------------------------------
+// Writes: invoices, social posts, products, tags, custom values, blog posts
+//
+// Everything the upstream API will actually let us create. The builders it
+// does not expose (funnel pages, workflows, forms) have no equivalent here
+// because no endpoint exists to call.
+// ---------------------------------------------------------------------------
+const isoDay = (d) => new Date(d).toISOString().slice(0, 10);
+
+export async function createInvoice(env, locationId, f) {
+  const items = (f.items || []).map((i) => ({
+    name: i.name,
+    currency: f.currency || 'USD',
+    amount: Number(i.amount || 0),
+    qty: Number(i.qty || 1),
+  }));
+
+  const data = await request(env, '/invoices/', {
+    method: 'POST',
+    body: {
+      altId: locationId,
+      altType: 'location',
+      name: f.name,
+      title: f.title || f.name,
+      currency: f.currency || 'USD',
+      businessDetails: { name: f.businessName || 'Trip Vara' },
+      contactDetails: {
+        id: f.contactId,
+        name: f.contactName || '',
+        email: f.contactEmail || '',
+        phoneNo: f.contactPhone || '',
+      },
+      items,
+      discount: { type: 'percentage', value: 0 },
+      termsNotes: f.notes || '',
+      issueDate: f.issueDate || isoDay(Date.now()),
+      dueDate: f.dueDate || isoDay(Date.now() + 14 * 86400000),
+      liveMode: true,
+    },
+  });
+  return normalizeInvoice(data.invoice || data);
+}
+
+/** action: 'email' | 'sms' | 'sms_and_email' */
+export async function sendInvoice(env, locationId, invoiceId, { action = 'email', userId } = {}) {
+  const data = await request(env, `/invoices/${encodeURIComponent(invoiceId)}/send`, {
+    method: 'POST',
+    body: {
+      altId: locationId,
+      altType: 'location',
+      action,
+      liveMode: true,
+      userId: userId || undefined,
+    },
+  });
+  return { id: invoiceId, sent: true, detail: data || null };
+}
+
+export async function createSocialPost(env, locationId, { accountIds, summary, scheduleDate }) {
+  const data = await request(env, `/social-media-posting/${encodeURIComponent(locationId)}/posts`, {
+    method: 'POST',
+    body: {
+      accountIds,
+      summary,
+      type: scheduleDate ? 'post' : 'post',
+      scheduleDate: scheduleDate || new Date().toISOString(),
+      status: scheduleDate ? 'scheduled' : 'draft',
+    },
+  });
+  const post = data.results?.post || data.post || data;
+  return { id: pickId(post), summary };
+}
+
+export async function createProduct(env, locationId, { name, description, productType }) {
+  const data = await request(env, '/products/', {
+    method: 'POST',
+    body: {
+      locationId,
+      name,
+      description: description || undefined,
+      productType: productType || 'SERVICE',
+      availableInStore: true,
+    },
+  });
+  const pr = data.product || data;
+  return { id: pickId(pr), name: pr.name || name };
+}
+
+export async function createProductPrice(env, locationId, productId, { name, amount, currency = 'USD', type = 'one_time' }) {
+  const data = await request(env, `/products/${encodeURIComponent(productId)}/price`, {
+    method: 'POST',
+    body: { locationId, name, type, currency, amount: Number(amount || 0) },
+  });
+  const pr = data.price || data;
+  return { id: pickId(pr), amountCents: Math.round(Number(amount || 0) * 100) };
+}
+
+export async function createTag(env, locationId, name) {
+  const data = await request(env, `/locations/${encodeURIComponent(locationId)}/tags`, {
+    method: 'POST',
+    body: { name },
+  });
+  const t = data.tag || data;
+  return { id: pickId(t), name: t.name || name };
+}
+
+export async function createCustomValue(env, locationId, { name, value }) {
+  const data = await request(env, `/locations/${encodeURIComponent(locationId)}/customValues`, {
+    method: 'POST',
+    body: { name, value },
+  });
+  const v = data.customValue || data;
+  return { id: pickId(v), name: v.name || name, value: v.value || value };
+}
+
+export async function createCustomField(env, locationId, { name, dataType = 'TEXT', model = 'contact' }) {
+  const data = await request(env, `/locations/${encodeURIComponent(locationId)}/customFields`, {
+    method: 'POST',
+    body: { name, dataType, model },
+  });
+  const cf = data.customField || data;
+  return { id: pickId(cf), name: cf.name || name };
+}
+
+// ---------------------------------------------------------------------------
 // Scope probe
 //
 // A missing scope on the Private Integration Token surfaces as a 401 or 403,

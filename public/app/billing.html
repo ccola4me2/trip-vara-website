@@ -14,7 +14,10 @@
   <div class="main">
     <header class="topbar">
       <div><h1>Billing</h1><p class="sub">Invoices and payments from Trip Vara Tools, against what your bookings expect.</p></div>
-      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+      <div class="toolbar" style="margin:0;">
+        <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+        <button class="btn btn-primary btn-sm" id="new-invoice">Raise invoice</button>
+      </div>
     </header>
     <div class="content">
       <div id="err"></div>
@@ -35,8 +38,52 @@
     </div>
   </div>
 </div>
+<dialog id="inv-dialog">
+  <form id="inv-form" method="dialog">
+    <div class="card-head"><h2>Raise an invoice</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field picker">
+        <label for="contact-search">Client</label>
+        <input id="contact-search" autocomplete="off" placeholder="Search a name, email or phone">
+        <input type="hidden" name="contactId" id="contactId">
+        <div class="picker-results" id="picker" hidden></div>
+        <p class="field-hint" id="picked"></p>
+      </div>
+      <div class="field">
+        <label for="inv-name">Invoice name</label>
+        <input id="inv-name" name="name" required placeholder="Bahamas cruise, March 2027">
+      </div>
+
+      <p style="font-size:.8rem;font-weight:600;color:var(--navy-800);margin:1.2rem 0 .5rem;">Line items</p>
+      <div id="items"></div>
+      <button class="btn btn-ghost btn-sm" type="button" id="add-item">Add line</button>
+
+      <div class="field-row" style="margin-top:1.2rem;">
+        <div class="field"><label for="issueDate">Issue date</label>
+          <input id="issueDate" name="issueDate" type="date"></div>
+        <div class="field"><label for="dueDate">Due date</label>
+          <input id="dueDate" name="dueDate" type="date"></div>
+      </div>
+      <div class="field"><label for="notes">Terms or notes</label>
+        <textarea id="notes" name="notes" placeholder="Deposit due on booking, balance 60 days before sailing."></textarea></div>
+      <label style="display:flex;gap:.55rem;align-items:center;font-weight:500;">
+        <input type="checkbox" id="send" name="send" style="width:auto;">
+        Email it to the client straight away
+      </label>
+      <p class="field-hint">Leave unticked to raise it as a draft you can review first.</p>
+    </div>
+    <div class="dialog-foot">
+      <span class="muted" id="total" style="margin-right:auto;align-self:center;"></span>
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Create invoice</button>
+    </div>
+  </form>
+</dialog>
+
 <script type="module">
-import { api, mountShell, esc, money, timeAgo, showError } from '/js/app.js';
+import { api, mountShell, esc, money, timeAgo, showError, onSubmit } from '/js/app.js';
 await mountShell();
 
 const panelInv = document.getElementById('invoices');
@@ -138,6 +185,95 @@ async function load() {
   try { const d = await api('/api/billing'); render(d); renderSubscriptions(d); }
   catch (err) { statsEl.innerHTML = ''; showError(errBox, err); panelInv.innerHTML = ''; }
 }
+// --- raise an invoice -----------------------------------------------------
+const dlg = document.getElementById('inv-dialog');
+const invForm = document.getElementById('inv-form');
+const itemsEl = document.getElementById('items');
+const totalEl = document.getElementById('total');
+
+function itemRow() {
+  const row = document.createElement('div');
+  row.className = 'field-row item-row';
+  row.style.marginBottom = '.5rem';
+  row.innerHTML = `
+    <div class="field" style="margin:0;">
+      <input class="i-name" placeholder="Description" aria-label="Line description">
+    </div>
+    <div class="field" style="margin:0;display:flex;gap:.5rem;">
+      <input class="i-amount" inputmode="decimal" placeholder="0.00" aria-label="Amount">
+      <input class="i-qty" type="number" min="1" value="1" style="max-width:72px;" aria-label="Quantity">
+      <button class="icon-btn" type="button" aria-label="Remove line">&times;</button>
+    </div>`;
+  row.querySelector('.icon-btn').addEventListener('click', () => { row.remove(); recalc(); });
+  row.querySelectorAll('input').forEach((i) => i.addEventListener('input', recalc));
+  return row;
+}
+
+function recalc() {
+  let cents = 0;
+  itemsEl.querySelectorAll('.item-row').forEach((r) => {
+    const amt = Number(String(r.querySelector('.i-amount').value).replace(/[$,\s]/g, '')) || 0;
+    const qty = Number(r.querySelector('.i-qty').value) || 1;
+    cents += Math.round(amt * 100) * qty;
+  });
+  totalEl.textContent = cents ? `Total ${money(cents)}` : '';
+}
+
+document.getElementById('add-item').addEventListener('click', () => { itemsEl.appendChild(itemRow()); recalc(); });
+
+document.getElementById('new-invoice').addEventListener('click', () => {
+  invForm.reset();
+  itemsEl.innerHTML = '';
+  itemsEl.appendChild(itemRow());
+  document.getElementById('contactId').value = '';
+  document.getElementById('picked').textContent = '';
+  invForm.querySelector('.notice-error').hidden = true;
+  recalc();
+  dlg.showModal();
+});
+dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+
+const contactSearch = document.getElementById('contact-search');
+const picker = document.getElementById('picker');
+let pickTimer;
+contactSearch.addEventListener('input', () => {
+  clearTimeout(pickTimer);
+  const q = contactSearch.value.trim();
+  if (q.length < 2) { picker.hidden = true; return; }
+  pickTimer = setTimeout(async () => {
+    try {
+      const { contacts } = await api(`/api/leads?q=${encodeURIComponent(q)}&limit=8`);
+      picker.innerHTML = contacts.length
+        ? contacts.map((c) => `<button type="button" data-cid="${esc(c.id)}" data-cname="${esc(c.name)}">
+            ${esc(c.name)}<br><span class="muted">${esc(c.email || c.phone || '')}</span></button>`).join('')
+        : '<button type="button" disabled>No matches</button>';
+      picker.hidden = false;
+      picker.querySelectorAll('[data-cid]').forEach((b) => b.addEventListener('click', () => {
+        document.getElementById('contactId').value = b.dataset.cid;
+        document.getElementById('picked').textContent = `Invoicing ${b.dataset.cname}`;
+        contactSearch.value = b.dataset.cname;
+        picker.hidden = true;
+      }));
+    } catch { picker.hidden = true; }
+  }, 300);
+});
+
+onSubmit(invForm, async (values) => {
+  if (!values.contactId) throw new Error('Pick a client to invoice.');
+  const items = [...itemsEl.querySelectorAll('.item-row')].map((r) => ({
+    name: r.querySelector('.i-name').value,
+    amount: r.querySelector('.i-amount').value,
+    qty: r.querySelector('.i-qty').value,
+  }));
+  const res = await api('/api/billing/invoices', {
+    method: 'POST',
+    body: { ...values, items, send: Boolean(values.send) },
+  });
+  dlg.close();
+  await load();
+  if (res.sent) alert('Invoice created and emailed to the client.');
+});
+
 document.getElementById('refresh').addEventListener('click', load);
 await load();
 </script>
