@@ -30,6 +30,10 @@
         <button class="tab" type="button" data-state="outstanding" aria-selected="true">Outstanding</button>
         <button class="tab" type="button" data-state="paid" aria-selected="false">Posted</button>
         <button class="tab" type="button" data-state="all" aria-selected="false">Everything</button>
+        <span style="flex:1;"></span>
+        <button class="tab" type="button" data-class="" aria-selected="true">All types</button>
+        <button class="tab" type="button" data-class="soft" aria-selected="false">Soft</button>
+        <button class="tab" type="button" data-class="hard" aria-selected="false">Hard</button>
       </div>
       <section class="card" id="panel"><p class="spinner">Loading...</p></section>
       <section class="card">
@@ -49,6 +53,11 @@
       <div class="field"><label for="bookingId">Booking</label>
         <select id="bookingId" name="bookingId" required></select></div>
       <div class="field-row">
+        <div class="field"><label for="paymentClass">Deadline type</label>
+          <select id="paymentClass" name="paymentClass">
+            <option value="hard">Hard, the vendor's deadline</option>
+            <option value="soft">Soft, my own reminder</option>
+          </select></div>
         <div class="field"><label for="kind">Type</label>
           <select id="kind" name="kind">
             <option value="deposit">Deposit to hold the trip</option>
@@ -98,6 +107,7 @@ const dlg = document.getElementById('pay-dialog');
 const form = document.getElementById('pay-form');
 const delBtn = document.getElementById('delete-pay');
 let state = 'outstanding';
+let payClass = '';
 let editingId = null;
 let data = null;
 let bookings = [];
@@ -110,11 +120,12 @@ function statusOf(p, today) {
   if (p.paid_date) return { label: 'posted', tone: 'badge-green' };
   if (!p.due_date) return { label: 'unscheduled', tone: 'badge-navy' };
 
-  const isFinal = p.kind === 'final';
+  // A hard payment is the vendor's deadline; a soft one is our own reminder.
+  const isFinal = p.payment_class === 'hard';
   if (p.due_date < today) {
     return isFinal
       ? { label: 'past due, may be cancelled', tone: 'badge-red', atRisk: true }
-      : { label: 'past due', tone: 'badge-red' };
+      : { label: 'reminder passed', tone: 'badge-amber' };
   }
 
   const left = daysUntil(p.due_date);
@@ -125,7 +136,7 @@ function statusOf(p, today) {
     };
   }
   return {
-    label: left <= 14 ? `due in ${left}d` : `due ${dateFmt(p.due_date)}`,
+    label: left <= 14 ? `remind in ${left}d` : `remind ${dateFmt(p.due_date)}`,
     tone: left <= 14 ? 'badge-amber' : 'badge-navy',
   };
 }
@@ -134,16 +145,16 @@ function render(d) {
   data = d;
   const s = d.stats;
   statsEl.innerHTML = `
-    <div class="stat"><p class="label">Cancels within 14 days</p>
-      <p class="value" style="${s.atRiskCents ? 'color:var(--coral-600);' : ''}">${money(s.atRiskCents)}</p>
-      <p class="meta">${s.atRiskCount} final payment${s.atRiskCount === 1 ? '' : 's'} due. Chase now.</p></div>
+    <div class="stat"><p class="label">Hard payments due</p>
+      <p class="value" style="${s.hardDueCents ? 'color:var(--red-600);' : ''}">${money(s.hardDueCents)}</p>
+      <p class="meta">${s.hardCount} vendor deadline${s.hardCount === 1 ? '' : 's'} in 30 days</p></div>
+    <div class="stat"><p class="label">Soft reminders due</p><p class="value">${money(s.softDueCents)}</p>
+      <p class="meta">${s.softCount} to chase before the deadline</p></div>
     <div class="stat"><p class="label">Past due date</p>
       <p class="value" style="${s.pastDueCents ? 'color:var(--red-600);' : ''}">${money(s.pastDueCents)}</p>
-      <p class="meta">${s.pastDueCount} to confirm with the supplier</p></div>
-    <div class="stat"><p class="label">Due in 30 days</p><p class="value">${money(s.dueSoonCents)}</p>
-      <p class="meta">All payment types</p></div>
-    <div class="stat"><p class="label">Paid to suppliers</p><p class="value">${money(s.postedCents)}</p>
-      <p class="meta">Posted against bookings</p></div>`;
+      <p class="meta">${s.pastDueCount} to confirm with the vendor</p></div>
+    <div class="stat"><p class="label">Paid to vendors</p><p class="value">${money(s.postedCents)}</p>
+      <p class="meta">Posted against reservations</p></div>`;
 
   if (!d.payments.length) {
     panel.innerHTML = state === 'paid'
@@ -160,7 +171,9 @@ function render(d) {
             <div class="muted">${esc(p.depart_date ? 'Departs ' + dateFmt(p.depart_date) : '')}</div></td>
           <td>${esc(p.product_name || p.supplier || '-')}
             <div class="muted">${esc(p.product_name && p.supplier ? p.supplier : '')}</div></td>
-          <td><span class="badge badge-navy">${esc(KIND_LABEL[p.kind] || p.kind)}</span></td>
+          <td><span class="badge ${p.payment_class === 'hard' ? 'badge-coral' : 'badge-navy'}">${
+              esc(p.payment_class === 'hard' ? 'Hard' : 'Soft')}</span>
+            <div class="muted">${esc(KIND_LABEL[p.kind] || p.kind)}</div></td>
           <td><span class="badge ${st.tone}">${esc(st.label)}</span>
             <div class="muted">${esc(p.paid_date ? 'Posted ' + dateFmt(p.paid_date) + (p.method ? ' · ' + p.method : '')
                                    : p.due_date ? dateFmt(p.due_date) : '')}</div></td>
@@ -231,6 +244,7 @@ function openDialog(p) {
   if (p) {
     form.elements.bookingId.value = p.booking_id;
     form.elements.kind.value = p.kind;
+    form.elements.paymentClass.value = p.payment_class || 'hard';
     form.elements.amount.value = (p.amount_cents / 100).toFixed(2);
     form.elements.dueDate.value = p.due_date || '';
     form.elements.paidDate.value = p.paid_date || '';
@@ -243,6 +257,12 @@ function openDialog(p) {
 
 document.getElementById('new-payment').addEventListener('click', () => openDialog(null));
 dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+document.querySelectorAll('[data-class]').forEach((b) => b.addEventListener('click', () => {
+  payClass = b.dataset.class;
+  document.querySelectorAll('[data-class]').forEach((x) =>
+    x.setAttribute('aria-selected', String(x.dataset.class === payClass)));
+  load();
+}));
 document.querySelectorAll('[data-state]').forEach((b) => b.addEventListener('click', () => {
   state = b.dataset.state;
   document.querySelectorAll('[data-state]').forEach((x) =>
@@ -266,7 +286,7 @@ onSubmit(form, async (values) => {
 
 async function load() {
   panel.innerHTML = '<p class="spinner">Loading...</p>';
-  try { render(await api(`/api/payments?state=${state}`)); }
+  try { render(await api(`/api/payments?state=${state}${payClass ? `&class=${payClass}` : ''}`)); }
   catch (err) { statsEl.innerHTML = ''; showError(document.getElementById('err'), err); panel.innerHTML = ''; }
 }
 await load();

@@ -13,94 +13,166 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Dashboard</h1><p class="sub" id="greeting">Loading your numbers...</p></div>
-      <a class="btn btn-primary btn-sm" href="/app/bookings?new=1">Add a booking</a>
+      <div><h1>Dashboard</h1><p class="sub" id="greeting">Loading...</p></div>
+      <div class="toolbar" style="margin:0;">
+        <a class="btn btn-ghost btn-sm" href="/app/payments">Payments</a>
+        <a class="btn btn-primary btn-sm" href="/app/bookings?new=1">New reservation</a>
+      </div>
     </header>
     <div class="content">
       <section id="stats" class="stat-grid"></section>
       <section id="ghl-state"></section>
-      <section class="split">
-        <div class="card">
-          <div class="card-head"><h2>Client payments due in the next 60 days</h2>
-            <a class="btn btn-ghost btn-sm" href="/app/payments">All payments</a></div>
-          <div id="payments"><p class="spinner">Loading...</p></div>
-        </div>
-        <div class="card">
-          <div class="card-head"><h2>Recent activity</h2></div>
-          <div id="activity"><p class="spinner">Loading...</p></div>
-        </div>
-      </section>
+      <section class="widgets" id="widgets"></section>
     </div>
   </div>
 </div>
 <script type="module">
-import { api, mountShell, money, dateFmt, timeAgo, esc, daysUntil, showError } from '/js/app.js';
-
+import { api, mountShell, esc, money, dateFmt, timeAgo, daysUntil, showError } from '/js/app.js';
 await mountShell();
 
-try {
-  const d = await api('/api/dashboard');
-  document.getElementById('greeting').textContent =
-    `${d.user.name}, here is where things stand.`;
+const widgetsEl = document.getElementById('widgets');
+let d = null;
 
-  const s = d.stats;
-  const cards = [
-    { label: 'Active bookings', value: s.booked, meta: `${s.quoted} quoted, ${s.travelled} travelled` },
-    { label: 'Booked volume', value: money(s.grossCents), meta: 'Booked and travelled' },
-    { label: 'Commission', value: money(s.commissionCents), meta: `${money(s.commissionPaidCents)} paid` },
-  ];
-  if (d.pipeline) {
-    cards.push({
-      label: 'Open pipeline',
-      value: money(d.pipeline.openValue * 100),
-      meta: `${d.pipeline.openCount} open in ${esc(d.pipeline.name || 'pipeline')}`,
-    });
-  }
-  document.getElementById('stats').innerHTML = cards.map((c) => `
-    <div class="stat"><p class="label">${esc(c.label)}</p>
-    <p class="value">${esc(String(c.value))}</p><p class="meta">${esc(c.meta)}</p></div>`).join('');
+const fmtShort = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
 
-  if (d.ghlStatus === 'not_configured') {
-    showError(document.getElementById('ghl-state'), { code: 'not_configured' });
-  } else if (d.ghlStatus === 'error') {
-    document.getElementById('ghl-state').innerHTML =
-      '<div class="notice notice-error">Could not reach Trip Vara Tools just now. Booking numbers above are still accurate.</div>';
-  }
+/** A panel with its own tab strip. Tabs render lazily from a map of builders. */
+function widget(title, link, tabs, initial) {
+  const id = `w${Math.random().toString(36).slice(2, 8)}`;
+  const el = document.createElement('section');
+  el.className = 'widget';
+  el.innerHTML = `
+    <header><h2>${esc(title)}</h2>${link ? `<a href="${esc(link.href)}">${esc(link.label)}</a>` : ''}</header>
+    ${tabs.length > 1 ? `<div class="wtabs">${tabs.map((t) => `
+      <button class="wtab" type="button" data-tab="${esc(t.key)}"
+        aria-selected="${t.key === initial}">${esc(t.label)}</button>`).join('')}</div>` : ''}
+    <div class="wbody" id="${id}"></div>`;
 
-  const pay = d.upcomingPayments;
-  const KIND = { deposit: 'Deposit', installment: 'Part payment', final: 'Final balance', refund: 'Refund' };
-  document.getElementById('payments').innerHTML = pay.length ? `
-    <div class="table-wrap"><table>
-      <thead><tr><th>Client</th><th>Trip</th><th>Due</th><th class="num">Amount</th></tr></thead>
-      <tbody>${pay.map((p) => {
-        const left = daysUntil(p.due_date);
-        const isFinal = p.kind === 'final';
-        const tone = left === null ? 'badge-navy'
-          : left < 0 ? 'badge-red'
-          : isFinal && left <= 14 ? 'badge-red'
-          : left <= 14 ? 'badge-amber' : 'badge-navy';
-        return `<tr>
-          <td><span class="name">${esc(p.client_name)}</span>
-            <div class="muted">${esc(KIND[p.kind] || p.kind)}</div></td>
-          <td>${esc(p.product_name || p.supplier || '')}<div class="muted">${esc(p.depart_date ? 'Departs ' + dateFmt(p.depart_date) : '')}</div></td>
-          <td>${esc(dateFmt(p.due_date))}<div><span class="badge ${tone}">${
-            left === null ? ''
-              : left < 0 ? (isFinal ? 'past due, may be cancelled' : 'past due')
-              : isFinal ? `cancels in ${left}d`
-              : `in ${left}d`}</span></div></td>
-          <td class="num">${money(p.amount_cents)}</td></tr>`;
-      }).join('')}</tbody></table></div>`
-    : '<div class="empty"><h3>Nothing due</h3><p>No client payments fall due in the next 60 days.</p></div>';
-
-  const act = d.activity;
-  document.getElementById('activity').innerHTML = act.length
-    ? `<ul style="list-style:none;margin:0;padding:.4rem 0;">${act.map((a) => `
-        <li style="padding:.6rem 1.25rem;border-bottom:1px solid var(--navy-100);">
-          <div style="font-size:.875rem;color:var(--navy-800);">${esc(a.subject || a.kind)}</div>
-          <div class="muted">${esc(timeAgo(a.created_at))}</div></li>`).join('')}</ul>`
-    : '<div class="empty"><p>Nothing yet. Activity shows up here as you work.</p></div>';
-} catch (err) {
-  showError(document.getElementById('ghl-state'), err);
+  const body = el.querySelector(`#${id}`);
+  const draw = (key) => {
+    const tab = tabs.find((t) => t.key === key) || tabs[0];
+    body.innerHTML = tab.render() || '<p class="wempty">Nothing here yet.</p>';
+  };
+  el.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+    el.querySelectorAll('[data-tab]').forEach((x) =>
+      x.setAttribute('aria-selected', String(x.dataset.tab === b.dataset.tab)));
+    draw(b.dataset.tab);
+  }));
+  draw(initial);
+  return el;
 }
+
+function reservationTable(rows, cols) {
+  if (!rows.length) return '';
+  return `<div class="table-wrap"><table><thead><tr>${
+    cols.map((c) => `<th${c.num ? ' class="num"' : ''}>${esc(c.label)}</th>`).join('')
+  }</tr></thead><tbody>${rows.map((r) => `<tr>${
+    cols.map((c) => `<td${c.num ? ' class="num"' : ''}>${c.cell(r)}</td>`).join('')
+  }</tr></tbody>`).join('')}</tbody></table></div>`;
+}
+
+function paymentRows(list) {
+  if (!list.length) return '';
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Due</th><th>Details</th><th class="num">Amount</th></tr></thead>
+    <tbody>${list.map((p) => {
+      const left = daysUntil(p.due_date);
+      const hard = p.payment_class === 'hard';
+      const tone = left === null ? 'badge-navy'
+        : left < 0 ? 'badge-red'
+        : hard && left <= 14 ? 'badge-red'
+        : left <= 14 ? 'badge-amber' : 'badge-navy';
+      const label = left === null ? ''
+        : left < 0 ? (hard ? 'past due' : 'reminder passed')
+        : hard ? `cancels in ${left}d` : `remind in ${left}d`;
+      return `<tr>
+        <td>${esc(fmtShort(p.due_date))}<div><span class="badge ${tone}">${esc(label)}</span></div></td>
+        <td><span class="name">${esc(p.client_name)}</span>
+          <div class="muted">${esc([p.supplier, p.product_name].filter(Boolean).join(' · '))}</div></td>
+        <td class="num">${money(p.amount_cents)}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+function build() {
+  const s = d.stats;
+  const p = d.payStats;
+
+  document.getElementById('greeting').textContent = `${d.user.name}, here is where things stand.`;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Cancels within 60 days</p>
+      <p class="value" style="${p.hardDueCents ? 'color:var(--red-600);' : ''}">${money(p.hardDueCents)}</p>
+      <p class="meta">${p.hardCount} vendor deadline${p.hardCount === 1 ? '' : 's'}</p></div>
+    <div class="stat"><p class="label">Reminders due</p><p class="value">${money(p.softDueCents)}</p>
+      <p class="meta">${p.softCount} to chase before the deadline</p></div>
+    <div class="stat"><p class="label">Active reservations</p><p class="value">${s.booked}</p>
+      <p class="meta">${s.quoted} quoted, ${s.travelled} travelled</p></div>
+    <div class="stat"><p class="label">Your earnings</p><p class="value">${money(s.commissionCents)}</p>
+      <p class="meta">${money(s.commissionPaidCents)} paid to you</p></div>`;
+
+  if (d.ghlStatus === 'not_configured') showError(document.getElementById('ghl-state'), { code: 'not_configured' });
+  else if (d.ghlStatus === 'error') document.getElementById('ghl-state').innerHTML =
+    '<div class="notice notice-error">Could not reach Trip Vara Tools just now. Reservation figures above are still accurate.</div>';
+
+  const byClass = (cls) => d.upcomingPayments.filter((x) =>
+    cls === 'past' ? x.due_date < d.today : (x.payment_class === cls && x.due_date >= d.today));
+
+  widgetsEl.replaceChildren(
+    widget('Payments Due', { href: '/app/payments', label: 'All payments' }, [
+      { key: 'soft', label: 'Soft', render: () => paymentRows(byClass('soft')) },
+      { key: 'hard', label: 'Hard', render: () => paymentRows(byClass('hard')) },
+      { key: 'past', label: 'Past Due', render: () => paymentRows(byClass('past')) },
+    ], 'soft'),
+
+    widget('Recent Reservation Activity', { href: '/app/bookings', label: 'All reservations' }, [
+      { key: 'added', label: 'Last Added', render: () => reservationTable(d.reservations.added, RES_COLS) },
+      { key: 'modified', label: 'Last Modified', render: () => reservationTable(d.reservations.modified, RES_COLS) },
+    ], 'added'),
+
+    widget('Current Reservation Activity', null, [
+      { key: 'upcoming', label: 'Upcoming Departures', render: () => reservationTable(d.current.upcoming, CUR_COLS) },
+      { key: 'traveling', label: 'Currently Travelling', render: () => reservationTable(d.current.traveling, CUR_COLS) },
+      { key: 'returned', label: 'Recently Returned', render: () => reservationTable(d.current.returned, CUR_COLS) },
+    ], 'upcoming'),
+
+    widget('Sales Opportunities', { href: '/app/pipeline', label: 'Pipeline' }, [
+      { key: 'active', label: 'Active', render: () => {
+        if (!d.pipeline) return '<p class="wempty">Pipeline unavailable.</p>';
+        if (!d.pipeline.openCount) return '<p class="wempty">No open opportunities.</p>';
+        const total = d.pipeline.openCount;
+        return `<p style="padding:.7rem 1rem 0;font-size:.82rem;">Total active:
+            <strong>${total}</strong> &middot; ${money(d.pipeline.openValue * 100)}</p>
+          ${d.pipeline.stages.map((st) => `<div class="stage-row">
+            <span style="min-width:8rem;">${esc(st.name)}</span>
+            <span class="bar"><span style="width:${Math.round((st.count / total) * 100)}%"></span></span>
+            <span class="n">${st.count} · ${Math.round((st.count / total) * 100)}%</span></div>`).join('')}`;
+      } },
+    ], 'active'),
+
+    widget('Recent Activity', null, [
+      { key: 'all', label: 'All', render: () => d.activity.length
+        ? `<ul class="rows">${d.activity.map((a) => `<li>
+            <div class="t" style="font-size:.82rem;">${esc(a.subject || a.kind)}</div>
+            <div class="m">${esc(timeAgo(a.created_at))}</div></li>`).join('')}</ul>`
+        : '' },
+    ], 'all'),
+  );
+}
+
+const RES_COLS = [
+  { label: 'Added', cell: (r) => `<span class="muted">${esc(timeAgo(r.created_at))}</span>` },
+  { label: 'Vendor', cell: (r) => esc(r.supplier || '-') },
+  { label: 'Departing', cell: (r) => esc(fmtShort(r.depart_date)) },
+  { label: 'Client', cell: (r) => `<span class="name">${esc(r.client_name)}</span>` },
+  { label: 'Conf #', cell: (r) => `<span class="muted">${esc(r.confirmation_number || '-')}</span>` },
+];
+const CUR_COLS = [
+  { label: 'Vendor', cell: (r) => esc(r.supplier || '-') },
+  { label: 'Departing', cell: (r) => esc(fmtShort(r.depart_date)) },
+  { label: 'Returning', cell: (r) => esc(fmtShort(r.return_date)) },
+  { label: 'Client', cell: (r) => `<span class="name">${esc(r.client_name)}</span>` },
+  { label: 'Conf #', cell: (r) => `<span class="muted">${esc(r.confirmation_number || '-')}</span>` },
+];
+
+try { d = await api('/api/dashboard'); build(); }
+catch (err) { showError(document.getElementById('ghl-state'), err); }
 </script>
 </body></html>

@@ -299,7 +299,7 @@ export async function bookingStats(env, userId) {
  */
 export async function upcomingPayments(env, userId, through) {
   const { results } = await env.DB.prepare(
-    `SELECT p.id, p.kind, p.amount_cents, p.due_date,
+    `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date,
             b.id AS booking_id, b.client_name, b.supplier, b.product_name,
             b.depart_date, b.status
        FROM booking_payments p
@@ -473,16 +473,17 @@ export async function crmCounts(env, locationId) {
 // expected, and the same row gains paid_date when it arrives.
 // ---------------------------------------------------------------------------
 const PAYMENT_COLUMNS = `
-  p.id, p.booking_id, p.user_id, p.kind, p.amount_cents, p.due_date, p.paid_date,
-  p.method, p.reference, p.notes, p.created_at, p.updated_at
+  p.id, p.booking_id, p.user_id, p.kind, p.payment_class, p.amount_cents,
+  p.due_date, p.paid_date, p.method, p.reference, p.notes, p.created_at, p.updated_at
 `;
 
-export async function listPayments(env, userId, { bookingId, state, limit = 300 } = {}) {
+export async function listPayments(env, userId, { bookingId, state, paymentClass, limit = 300 } = {}) {
   const where = ['p.user_id = ?'];
   const binds = [userId];
   if (bookingId) { where.push('p.booking_id = ?'); binds.push(bookingId); }
   if (state === 'outstanding') where.push('p.paid_date IS NULL');
   if (state === 'paid') where.push('p.paid_date IS NOT NULL');
+  if (paymentClass) { where.push('p.payment_class = ?'); binds.push(paymentClass); }
 
   const { results } = await env.DB.prepare(
     `SELECT ${PAYMENT_COLUMNS},
@@ -507,22 +508,23 @@ export async function createPayment(env, userId, f) {
   const id = uid();
   await env.DB.prepare(
     `INSERT INTO booking_payments
-       (id, booking_id, user_id, kind, amount_cents, due_date, paid_date, method,
-        reference, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id, f.bookingId, userId, f.kind, f.amountCents, f.dueDate, f.paidDate,
-         f.method || null, f.reference || null, f.notes || null, ts, ts).run();
+       (id, booking_id, user_id, kind, payment_class, amount_cents, due_date,
+        paid_date, method, reference, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, f.bookingId, userId, f.kind, f.paymentClass || 'hard', f.amountCents,
+         f.dueDate, f.paidDate, f.method || null, f.reference || null,
+         f.notes || null, ts, ts).run();
   return getPayment(env, id, userId);
 }
 
 export async function updatePayment(env, id, userId, f) {
   const res = await env.DB.prepare(
     `UPDATE booking_payments
-        SET kind = ?, amount_cents = ?, due_date = ?, paid_date = ?, method = ?,
-            reference = ?, notes = ?, updated_at = ?
+        SET kind = ?, payment_class = ?, amount_cents = ?, due_date = ?, paid_date = ?,
+            method = ?, reference = ?, notes = ?, updated_at = ?
       WHERE id = ? AND user_id = ?`
-  ).bind(f.kind, f.amountCents, f.dueDate, f.paidDate, f.method || null,
-         f.reference || null, f.notes || null, now(), id, userId).run();
+  ).bind(f.kind, f.paymentClass || 'hard', f.amountCents, f.dueDate, f.paidDate,
+         f.method || null, f.reference || null, f.notes || null, now(), id, userId).run();
   if (!res.meta || res.meta.changes === 0) return null;
   return getPayment(env, id, userId);
 }
@@ -534,45 +536,48 @@ export async function deletePayment(env, id, userId) {
 }
 
 /**
- * The numbers the payments page leads with.
+ * The numbers the payments page leads with, split the way the trade splits
+ * them: soft, hard and past due.
  *
- * Framed around cancellation, not debt. A missed final payment does not become
- * an overdue invoice an agency can chase; the supplier cancels the booking. So
- * what matters is how long is left before that happens, and separately which
- * bookings have already passed their date and need checking with the supplier.
+ * A hard payment is the vendor's deadline and missing it cancels the
+ * reservation. A soft payment is the advisor's own earlier reminder, which is
+ * the one that gives them room to collect. Reporting the two as one number
+ * hides the only distinction that matters.
  */
-export async function paymentStats(env, userId, { today, soonThrough, urgentThrough }) {
+export async function paymentStats(env, userId, { today, soonThrough }) {
   const row = await env.DB.prepare(
     `SELECT
        SUM(CASE WHEN paid_date IS NOT NULL THEN amount_cents ELSE 0 END) AS posted,
        SUM(CASE WHEN paid_date IS NULL THEN amount_cents ELSE 0 END) AS outstanding,
-       -- Already past its date. The booking is probably gone and needs
-       -- confirming with the supplier rather than chasing the client.
        SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
                 THEN amount_cents ELSE 0 END) AS past_due,
        SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
                 THEN 1 ELSE 0 END) AS past_due_count,
-       -- Inside the window where a final payment will cancel the booking.
-       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL
-                     AND due_date >= ? AND due_date <= ? AND kind = 'final'
-                THEN amount_cents ELSE 0 END) AS at_risk,
-       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL
-                     AND due_date >= ? AND due_date <= ? AND kind = 'final'
-                THEN 1 ELSE 0 END) AS at_risk_count,
-       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL
-                     AND due_date >= ? AND due_date <= ?
-                THEN amount_cents ELSE 0 END) AS due_soon
+       SUM(CASE WHEN paid_date IS NULL AND payment_class = 'soft'
+                     AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ?
+                THEN amount_cents ELSE 0 END) AS soft_due,
+       SUM(CASE WHEN paid_date IS NULL AND payment_class = 'soft'
+                     AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ?
+                THEN 1 ELSE 0 END) AS soft_count,
+       SUM(CASE WHEN paid_date IS NULL AND payment_class = 'hard'
+                     AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ?
+                THEN amount_cents ELSE 0 END) AS hard_due,
+       SUM(CASE WHEN paid_date IS NULL AND payment_class = 'hard'
+                     AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ?
+                THEN 1 ELSE 0 END) AS hard_count
      FROM booking_payments WHERE user_id = ?`
-  ).bind(today, today, today, urgentThrough, today, urgentThrough, today, soonThrough, userId).first();
+  ).bind(today, today, today, soonThrough, today, soonThrough,
+         today, soonThrough, today, soonThrough, userId).first();
 
   return {
     postedCents: row?.posted || 0,
     outstandingCents: row?.outstanding || 0,
     pastDueCents: row?.past_due || 0,
     pastDueCount: row?.past_due_count || 0,
-    atRiskCents: row?.at_risk || 0,
-    atRiskCount: row?.at_risk_count || 0,
-    dueSoonCents: row?.due_soon || 0,
+    softDueCents: row?.soft_due || 0,
+    softCount: row?.soft_count || 0,
+    hardDueCents: row?.hard_due || 0,
+    hardCount: row?.hard_count || 0,
   };
 }
 
@@ -614,5 +619,50 @@ export async function paymentsByMonth(env, userId, sinceDate) {
         AND b.status IN ('quoted','booked','travelled')
       GROUP BY month ORDER BY month ASC LIMIT 36`
   ).bind(userId, sinceDate).all();
+  return results || [];
+}
+
+/**
+ * Recent reservation activity: what was added or last touched.
+ * Mirrors the widget an advisor is used to reading first thing.
+ */
+export async function recentReservations(env, userId, { by = 'added', limit = 8 } = {}) {
+  const order = by === 'modified' ? 'b.updated_at DESC' : 'b.created_at DESC';
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
+            b.return_date, b.confirmation_number, b.status, b.gross_cents,
+            b.created_at, b.updated_at
+       FROM bookings b
+      WHERE b.user_id = ? AND b.status != 'cancelled'
+      ORDER BY ${order} LIMIT ?`
+  ).bind(userId, Math.min(Number(limit) || 8, 25)).all();
+  return results || [];
+}
+
+/**
+ * Current reservation activity: departing soon, away right now, or just back.
+ * Recently returned is the one that drives follow-up and reviews.
+ */
+export async function currentReservations(env, userId, { view = 'upcoming', today, limit = 8 } = {}) {
+  let clause;
+  let order;
+  if (view === 'traveling') {
+    clause = "b.depart_date <= ? AND COALESCE(b.return_date, b.depart_date) >= ?";
+    order = 'b.depart_date ASC';
+  } else if (view === 'returned') {
+    clause = "COALESCE(b.return_date, b.depart_date) < ? AND COALESCE(b.return_date, b.depart_date) >= date(?, '-45 days')";
+    order = 'COALESCE(b.return_date, b.depart_date) DESC';
+  } else {
+    clause = "b.depart_date >= ? AND ? IS NOT NULL";
+    order = 'b.depart_date ASC';
+  }
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
+            b.return_date, b.confirmation_number, b.status
+       FROM bookings b
+      WHERE b.user_id = ? AND b.status IN ('booked','travelled') AND b.depart_date IS NOT NULL
+        AND ${clause}
+      ORDER BY ${order} LIMIT ?`
+  ).bind(userId, today, today, Math.min(Number(limit) || 8, 25)).all();
   return results || [];
 }

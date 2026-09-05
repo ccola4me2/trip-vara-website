@@ -58,7 +58,7 @@ firstChild lastChild parentElement nextElementSibling previousElementSibling
 constructor hasOwnProperty toString valueOf now random floor ceil round abs min max
 isArray fromEntries createElement className scrollTop scrollHeight isNaN isFinite
 isInteger parse stringify
-writeText clipboard currentTarget preventDefault stopPropagation
+writeText clipboard currentTarget preventDefault stopPropagation replaceChildren
 gridTemplateColumns cssText selectedOptions
 data detail error code redirect
 `.trim().split(/\s+/));

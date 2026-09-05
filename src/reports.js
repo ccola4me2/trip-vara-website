@@ -18,13 +18,23 @@ export async function handleDashboard(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
-  const [stats, payments, activity] = await Promise.all([
+  const today = isoDay(0);
+
+  const [stats, payStats, payments, activity, recentAdded, recentModified,
+         upcoming, traveling, returned] = await Promise.all([
     db.bookingStats(env, user.id),
+    db.paymentStats(env, user.id, { today, soonThrough: isoDay(60) }),
     db.upcomingPayments(env, user.id, isoDay(60)),
-    db.recentActivity(env, user.id, 12),
+    db.recentActivity(env, user.id, 8),
+    db.recentReservations(env, user.id, { by: 'added' }),
+    db.recentReservations(env, user.id, { by: 'modified' }),
+    db.currentReservations(env, user.id, { view: 'upcoming', today }),
+    db.currentReservations(env, user.id, { view: 'traveling', today }),
+    db.currentReservations(env, user.id, { view: 'returned', today }),
   ]);
 
-  // Live pipeline snapshot, best effort.
+  // Live pipeline, best effort. A CRM outage should cost one widget, not the
+  // whole dashboard.
   let pipeline = null;
   let ghlStatus = 'ok';
   if (!ghl.ghlConfigured(env)) {
@@ -32,19 +42,26 @@ export async function handleDashboard(request, env) {
   } else {
     try {
       const locationId = ghl.locationFor(env, user);
-      const pipelines = await ghl.listPipelines(env, locationId);
+      const pipelines = await db.localPipelines(env, locationId);
       if (pipelines.length) {
         const first = pipelines[0];
-        const { opportunities } = await ghl.searchOpportunities(env, locationId, {
-          pipelineId: first.id, status: 'open', limit: 100,
+        const opps = await db.localOpportunities(env, locationId, {
+          pipelineId: first.id, status: 'open',
         });
+        // Grouped by stage, the way Sales Opportunities reads in CP Maxx.
+        const byStage = first.stages.map((st) => {
+          const items = opps.filter((o) => o.stageId === st.id);
+          return { name: st.name, count: items.length,
+                   value: items.reduce((n, o) => n + o.monetaryValue, 0) };
+        }).filter((st) => st.count > 0);
         pipeline = {
           name: first.name,
-          openCount: opportunities.length,
-          openValue: opportunities.reduce((sum, o) => sum + o.monetaryValue, 0),
+          openCount: opps.length,
+          openValue: opps.reduce((n, o) => n + o.monetaryValue, 0),
+          stages: byStage,
         };
       } else {
-        pipeline = { name: null, openCount: 0, openValue: 0 };
+        pipeline = { name: null, openCount: 0, openValue: 0, stages: [] };
       }
     } catch (e) {
       ghlStatus = 'error';
@@ -55,10 +72,14 @@ export async function handleDashboard(request, env) {
   return json({
     user: { name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email },
     stats,
+    payStats,
     upcomingPayments: payments,
     activity,
+    reservations: { added: recentAdded, modified: recentModified },
+    current: { upcoming, traveling, returned },
     pipeline,
     ghlStatus,
+    today,
   });
 }
 

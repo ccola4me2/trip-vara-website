@@ -15,6 +15,7 @@ import * as db from './db.js';
 import * as ghl from './ghl.js';
 
 const KINDS = ['deposit', 'installment', 'final', 'refund'];
+const CLASSES = ['hard', 'soft'];
 const METHODS = ['card', 'ach', 'check', 'cash', 'transfer', 'other'];
 
 const isoDay = (offsetDays = 0) =>
@@ -26,12 +27,14 @@ export async function handlePayments(request, env) {
 
   const url = new URL(request.url);
   const state = oneOf(url.searchParams.get('state') || 'all', ['all', 'outstanding', 'paid']);
+  const cls = url.searchParams.get('class');
 
   const [payments, stats, balances] = await Promise.all([
-    db.listPayments(env, user.id, { state: state === 'all' ? undefined : state }),
-    db.paymentStats(env, user.id, {
-      today: isoDay(0), soonThrough: isoDay(30), urgentThrough: isoDay(14),
+    db.listPayments(env, user.id, {
+      state: state === 'all' ? undefined : state,
+      paymentClass: CLASSES.includes(cls) ? cls : undefined,
     }),
+    db.paymentStats(env, user.id, { today: isoDay(0), soonThrough: isoDay(30) }),
     db.bookingBalances(env, user.id),
   ]);
 
@@ -66,6 +69,10 @@ function parsePayment(body) {
     fields: {
       bookingId,
       kind: oneOf(body.kind, KINDS),
+      // Hard is the vendor's deadline, soft the advisor's own earlier
+      // reminder. Defaulting to hard is the safe way round: treating a real
+      // deadline as a reminder is how a reservation gets cancelled.
+      paymentClass: oneOf(body.paymentClass, CLASSES),
       amountCents,
       dueDate,
       paidDate,
@@ -126,6 +133,7 @@ export async function handleMarkPaid(request, env, id) {
 
   const payment = await db.updatePayment(env, id, user.id, {
     kind: existing.kind,
+    paymentClass: existing.payment_class,
     amountCents: existing.amount_cents,
     dueDate: existing.due_date,
     paidDate: cleanDate(body.paidDate) || isoDay(0),
@@ -167,19 +175,32 @@ export async function handleGenerateSchedule(request, env, bookingId) {
 
   if (booking.deposit_cents > 0 && booking.deposit_due && !have.has('deposit')) {
     created.push(await db.createPayment(env, user.id, {
-      bookingId, kind: 'deposit', amountCents: booking.deposit_cents,
+      bookingId, kind: 'deposit', paymentClass: 'hard',
+      amountCents: booking.deposit_cents,
       dueDate: booking.deposit_due, paidDate: null,
-      notes: 'Generated from the booking',
+      notes: 'Vendor deadline, generated from the reservation',
     }));
   }
 
   const balance = (booking.gross_cents || 0) - (booking.deposit_cents || 0);
   if (balance > 0 && booking.final_payment_due && !have.has('final')) {
+    // The vendor's date, and a soft reminder a week ahead of it. The reminder
+    // is the whole point: chasing on the deadline itself is already too late.
     created.push(await db.createPayment(env, user.id, {
-      bookingId, kind: 'final', amountCents: balance,
+      bookingId, kind: 'final', paymentClass: 'hard', amountCents: balance,
       dueDate: booking.final_payment_due, paidDate: null,
-      notes: 'Generated from the booking',
+      notes: 'Vendor deadline, generated from the reservation',
     }));
+
+    const softDate = new Date(Date.parse(`${booking.final_payment_due}T00:00:00`) - 7 * 86400000)
+      .toISOString().slice(0, 10);
+    if (softDate > isoDay(0)) {
+      created.push(await db.createPayment(env, user.id, {
+        bookingId, kind: 'final', paymentClass: 'soft', amountCents: balance,
+        dueDate: softDate, paidDate: null,
+        notes: 'Internal reminder, one week before the vendor deadline',
+      }));
+    }
   }
 
   if (!created.length) {
