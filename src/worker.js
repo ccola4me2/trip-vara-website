@@ -33,6 +33,10 @@ import { handleBilling, handleCreateInvoice, handleSendInvoice } from './billing
 import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
 import { handleCrmLinks } from './crm.js';
 import {
+  handleListForms as handleListOwnForms, handleGetForm, handleSaveForm, handleDeleteForm,
+} from './formbuilder.js';
+import { renderPublicForm, handlePublicSubmit } from './publicform.js';
+import {
   handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
 } from './library.js';
 import { handleDashboard, handleProduction } from './reports.js';
@@ -70,6 +74,7 @@ const PAGE_FILES = {
   '/app/calendar': '/app/calendar.html',
   '/app/billing': '/app/billing.html',
   '/app/forms': '/app/forms.html',
+  '/app/formbuilder': '/app/formbuilder.html',
   '/app/crm': '/app/crm.html',
   '/app/marketing': '/app/marketing.html',
   '/app/catalog': '/app/catalog.html',
@@ -127,6 +132,8 @@ async function routeApi(request, env, path, method) {
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
+  const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
+  const publicFormMatch = path.match(/^\/api\/public\/forms\/([^/]+)$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
 
   // ---- auth -------------------------------------------------------------
@@ -197,6 +204,18 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/forms' && method === 'GET') return handleListForms(request, env);
   if (path === '/api/workflows' && method === 'GET') return handleListWorkflows(request, env);
   if (path === '/api/crm/links' && method === 'GET') return handleCrmLinks(request, env);
+
+  // Our own forms, built and hosted here.
+  if (path === '/api/myforms' && method === 'GET') return handleListOwnForms(request, env);
+  if (path === '/api/myforms' && method === 'POST') return handleSaveForm(request, env, null);
+  if (ownFormMatch && method === 'GET') return handleGetForm(request, env, ownFormMatch[1]);
+  if (ownFormMatch && method === 'PUT') return handleSaveForm(request, env, ownFormMatch[1]);
+  if (ownFormMatch && method === 'DELETE') return handleDeleteForm(request, env, ownFormMatch[1]);
+
+  // Public submission endpoint for a hosted form. Unauthenticated by design.
+  if (publicFormMatch && method === 'POST') {
+    return handlePublicSubmit(request, env, decodeURIComponent(publicFormMatch[1]));
+  }
   if (path === '/api/surveys' && method === 'GET') return handleSurveys(request, env);
   if (path === '/api/marketing' && method === 'GET') return handleMarketing(request, env);
   if (path === '/api/catalog' && method === 'GET') return handleCatalog(request, env);
@@ -234,6 +253,10 @@ async function routeApi(request, env, path, method) {
 // Pages
 // ---------------------------------------------------------------------------
 async function routePage(request, env, path) {
+  // Hosted forms are public: no session, no gate. They are how leads arrive.
+  const hosted = path.match(/^\/f\/([^/]+)\/?$/);
+  if (hosted) return renderPublicForm(request, env, decodeURIComponent(hosted[1]));
+
   const needsAuth = path.startsWith('/app');
   const needsAdmin = path.startsWith('/admin');
 

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forms | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Forms</h1><p class="sub">Your own forms, hosted on your domain. Submissions land here.</p></div>
+      <button class="btn btn-primary btn-sm" id="new-form">Build a form</button>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section class="card" id="panel"><p class="spinner">Loading forms...</p></section>
+      <section class="card" id="subs" hidden></section>
+    </div>
+  </div>
+</div>
+
+<dialog id="builder">
+  <form id="builder-form" method="dialog">
+    <div class="card-head"><h2 id="builder-title">Build a form</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="name">Form name</label>
+        <input id="name" name="name" required placeholder="Cruise quote request">
+        <p class="field-hint">Internal only. The public page uses the headline below.</p></div>
+      <div class="field"><label for="headline">Headline</label>
+        <input id="headline" name="headline" placeholder="Tell us about your trip"></div>
+      <div class="field"><label for="description">Intro text</label>
+        <textarea id="description" name="description" placeholder="A few details and we will come back with real options."></textarea></div>
+
+      <p style="font-size:.8rem;font-weight:600;color:var(--navy-800);margin:1.4rem 0 .5rem;">Fields</p>
+      <div id="fields"></div>
+      <button class="btn btn-ghost btn-sm" type="button" id="add-field">Add a field</button>
+
+      <div class="field-row" style="margin-top:1.4rem;">
+        <div class="field"><label for="submitLabel">Button text</label>
+          <input id="submitLabel" name="submitLabel" placeholder="Send"></div>
+        <div class="field"><label for="slug">Link address</label>
+          <input id="slug" name="slug" placeholder="cruise-quote-request">
+          <p class="field-hint">Leave blank to build it from the name.</p></div>
+      </div>
+      <div class="field"><label for="successMessage">Thank you message</label>
+        <input id="successMessage" name="successMessage" placeholder="Got it. We will be in touch within one business day."></div>
+      <div class="field"><label for="redirectUrl">Or send them to a page instead</label>
+        <input id="redirectUrl" name="redirectUrl" type="url" placeholder="https://tripvaratravel.com/thanks"></div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-danger" type="button" id="delete-form" hidden>Delete</button>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Save form</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, timeAgo, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const panel = document.getElementById('panel');
+const subsEl = document.getElementById('subs');
+const dlg = document.getElementById('builder');
+const form = document.getElementById('builder-form');
+const fieldsEl = document.getElementById('fields');
+const delBtn = document.getElementById('delete-form');
+let editingId = null;
+let cache = [];
+
+const TYPES = [
+  ['text', 'Short text'], ['email', 'Email'], ['tel', 'Phone'],
+  ['textarea', 'Long text'], ['select', 'Dropdown'], ['date', 'Date'],
+  ['number', 'Number'], ['checkbox', 'Checkbox'],
+];
+
+function fieldRow(f = {}) {
+  const row = document.createElement('div');
+  row.className = 'field-row f-row';
+  row.style.cssText = 'margin-bottom:.6rem;align-items:start;';
+  row.innerHTML = `
+    <div class="field" style="margin:0;">
+      <input class="f-label" placeholder="Question or label" aria-label="Field label" value="${esc(f.label || '')}">
+      <input class="f-options" placeholder="Choices, comma separated" aria-label="Choices"
+             style="margin-top:.4rem;" value="${esc((f.options || []).join(', '))}" hidden>
+    </div>
+    <div class="field" style="margin:0;display:flex;gap:.5rem;align-items:center;">
+      <select class="f-type" aria-label="Field type">
+        ${TYPES.map(([v, l]) => `<option value="${v}"${f.type === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <label style="display:flex;gap:.3rem;align-items:center;font-weight:400;font-size:.8rem;white-space:nowrap;margin:0;">
+        <input type="checkbox" class="f-req" style="width:auto;" ${f.required ? 'checked' : ''}> Required
+      </label>
+      <button class="icon-btn" type="button" aria-label="Remove field">&times;</button>
+    </div>`;
+
+  const typeSel = row.querySelector('.f-type');
+  const opts = row.querySelector('.f-options');
+  const syncOpts = () => { opts.hidden = typeSel.value !== 'select'; };
+  typeSel.addEventListener('change', syncOpts);
+  syncOpts();
+  row.querySelector('.icon-btn').addEventListener('click', () => row.remove());
+  return row;
+}
+
+function readFields() {
+  return [...fieldsEl.querySelectorAll('.f-row')].map((r) => ({
+    label: r.querySelector('.f-label').value,
+    type: r.querySelector('.f-type').value,
+    required: r.querySelector('.f-req').checked,
+    options: r.querySelector('.f-options').value.split(',').map((s) => s.trim()).filter(Boolean),
+  })).filter((f) => f.label.trim());
+}
+
+function openBuilder(f) {
+  editingId = f ? f.id : null;
+  form.reset();
+  fieldsEl.innerHTML = '';
+  form.querySelector('.notice-error').hidden = true;
+  document.getElementById('builder-title').textContent = f ? 'Edit form' : 'Build a form';
+  delBtn.hidden = !f;
+
+  if (f) {
+    form.elements.name.value = f.name || '';
+    form.elements.headline.value = f.headline || '';
+    form.elements.description.value = f.description || '';
+    form.elements.submitLabel.value = f.submitLabel || '';
+    form.elements.slug.value = f.slug || '';
+    form.elements.successMessage.value = f.successMessage || '';
+    form.elements.redirectUrl.value = f.redirectUrl || '';
+    f.fields.forEach((fl) => fieldsEl.appendChild(fieldRow(fl)));
+  } else {
+    [{ label: 'First name', type: 'text', required: true },
+     { label: 'Last name', type: 'text', required: true },
+     { label: 'Email', type: 'email', required: true },
+     { label: 'Phone', type: 'tel' }].forEach((fl) => fieldsEl.appendChild(fieldRow(fl)));
+  }
+  dlg.showModal();
+}
+
+function render(forms) {
+  cache = forms;
+  if (!forms.length) {
+    panel.innerHTML = '<div class="empty"><h3>No forms yet</h3><p>Build one and it gets its own page on your domain, ready to share or embed.</p></div>';
+    return;
+  }
+  panel.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Form</th><th>Link</th><th class="num">Submissions</th><th>Updated</th><th></th></tr></thead>
+    <tbody>${forms.map((f) => `<tr>
+      <td><span class="name">${esc(f.name)}</span>
+        <div><span class="badge ${f.active ? 'badge-green' : 'badge-navy'}">${f.active ? 'live' : 'off'}</span></div></td>
+      <td><a href="/f/${esc(f.slug)}" target="_blank" rel="noopener">/f/${esc(f.slug)}</a>
+        <div><button class="btn btn-ghost btn-sm" data-copy="${esc(f.slug)}">Copy link</button></div></td>
+      <td class="num"><button class="btn btn-ghost btn-sm" data-subs="${esc(f.id)}">${f.submissions}</button></td>
+      <td><span class="muted">${esc(timeAgo(f.updatedAt))}</span></td>
+      <td class="num"><button class="btn btn-ghost btn-sm" data-edit="${esc(f.id)}">Edit</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+
+  panel.querySelectorAll('[data-edit]').forEach((b) =>
+    b.addEventListener('click', () => openBuilder(cache.find((x) => x.id === b.dataset.edit))));
+  panel.querySelectorAll('[data-subs]').forEach((b) =>
+    b.addEventListener('click', () => showSubs(b.dataset.subs)));
+  panel.querySelectorAll('[data-copy]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const url = `${location.origin}/f/${b.dataset.copy}`;
+      try { await navigator.clipboard.writeText(url); b.textContent = 'Copied'; }
+      catch { prompt('Copy this link:', url); }
+      setTimeout(() => { b.textContent = 'Copy link'; }, 2000);
+    }));
+}
+
+async function showSubs(id) {
+  subsEl.hidden = false;
+  subsEl.innerHTML = '<p class="spinner">Loading submissions...</p>';
+  try {
+    const d = await api(`/api/myforms/${encodeURIComponent(id)}`);
+    subsEl.innerHTML = `<div class="card-head"><h2>${esc(d.form.name)} submissions</h2>
+        <span class="muted">${d.submissions.length}</span></div>` +
+      (d.submissions.length
+        ? `<ul class="timeline">${d.submissions.map((s) => `<li>
+            <div class="row-between"><div>
+              <span class="name">${esc(s.name || s.email || 'Anonymous')}</span>
+              <div class="muted">${esc([s.email, s.phone].filter(Boolean).join('  ·  '))}</div></div>
+              <div style="text-align:right;">
+                <div class="when">${esc(timeAgo(s.createdAt))}</div>
+                ${s.contactId ? `<a class="btn btn-ghost btn-sm" style="margin-top:.35rem;"
+                   href="/app/contact?id=${encodeURIComponent(s.contactId)}">Open contact</a>` : ''}
+              </div></div>
+            <dl class="kv" style="margin-top:.7rem;">${Object.entries(s.data)
+              .map(([k, v]) => `<dt>${esc(k.replace(/_/g, ' '))}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+          </li>`).join('')}</ul>`
+        : '<div class="empty"><p>No submissions yet.</p></div>');
+    subsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) { showError(subsEl, err); }
+}
+
+document.getElementById('new-form').addEventListener('click', () => openBuilder(null));
+document.getElementById('add-field').addEventListener('click', () => fieldsEl.appendChild(fieldRow()));
+dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+
+delBtn.addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Delete this form? Its submissions go with it and cannot be recovered.')) return;
+  await api(`/api/myforms/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
+  dlg.close();
+  subsEl.hidden = true;
+  await load();
+});
+
+onSubmit(form, async (values) => {
+  const fields = readFields();
+  if (!fields.length) throw new Error('Add at least one field.');
+  const path = editingId ? `/api/myforms/${encodeURIComponent(editingId)}` : '/api/myforms';
+  await api(path, { method: editingId ? 'PUT' : 'POST', body: { ...values, fields } });
+  dlg.close();
+  await load();
+});
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading forms...</p>';
+  try { render((await api('/api/myforms')).forms); }
+  catch (err) { showError(document.getElementById('err'), err); panel.innerHTML = ''; }
+}
+await load();
+</script>
+</body></html>
