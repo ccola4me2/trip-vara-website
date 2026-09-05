@@ -20,8 +20,12 @@ Cloudflare Worker + static assets + D1, no build step, deployed from GitHub
 | Conversations | GoHighLevel | SMS and email threads, send and reply from the portal |
 | Pipeline and opportunities | GoHighLevel | Board grouped by the pipeline's own stages, drag to move |
 | Calendar and appointments | GoHighLevel | Agenda across all active calendars, booking included |
-| Bookings and trips | D1 | Supplier, confirmation, dates, payments, commission |
-| Invoices and payments | GoHighLevel | Reconciled against what bookings expect |
+| Reservations | D1 | Vendor, confirmation, dates, cabin, travellers and their documents |
+| Pricing | D1 | Broken into parts, because only some of what a client pays earns commission |
+| Payments | D1 | The vendor's deadline and the advisor's own reminder a week before it |
+| Quotes and statements | D1 | Previewed, then sent; a quote offers choices, a statement does not |
+| Commission | D1 | What is owed, by age and vendor, split between advisor and agency |
+| Invoices | GoHighLevel | Reconciled against what reservations expect |
 | Dashboard and reports | Both | Booking numbers from D1, live pipeline value from GHL |
 | Advisor accounts | D1 | Email and password, admin approves before access |
 
@@ -88,45 +92,61 @@ every other account is approved from `/admin/`.
 
 ---
 
-## Checking page contracts
+## Checks
 
-This is plain JavaScript with no build step, so nothing catches a page reading
-a field the API stopped returning. That is not hypothetical: a rename moved
-`collectedCents` to `postedCents`, the follow-up edit to the page silently
-failed to apply, and two figures on Payments rendered as zero. Nothing threw.
+Plain JavaScript, no build step, no types. Four checks stand in for what a
+compiler would have said, and each exists because of a bug that shipped.
 
 ```bash
-npx wrangler dev --local          # in one terminal
-npm run check:contracts           # in another
+npm run check:columns             # offline: column lists, and scope
+npx wrangler dev --local          # in one terminal, for the two below
+npm run check:contracts           # page syntax, then page contracts
+npm run check:smoke               # the whole portal, end to end
 ```
 
-It signs in, fetches the endpoint behind each page, and compares every field
-the page reads against what actually came back. A page whose response has no
+All four run on every push to `main`, against a Worker started from this
+repo's own `wrangler.toml` and a D1 built from the migrations in that commit.
+See `.github/workflows/checks.yml`.
+
+**Column lists.** Every read names its columns in a shared constant. A
+migration adds a column, the constant is not updated, the write succeeds and
+the read comes back undefined. Nothing throws; the field is simply always
+empty. `check-columns` builds the schema from the migrations and compares.
+
+**Scope.** A read may widen to the whole agency when an owner asks. A write
+never may. The failure is not a wrong scope but a missing one, which returns
+everybody's rows and looks normal when you test on one account. `check-scope`
+requires a user predicate on every statement touching an advisor's tables, and
+requires writes to name `user_id` outright rather than borrow a read's scope.
+It found a real one: the automation sweep was firing one advisor's automations
+against every advisor's payments.
+
+**Page syntax.** A function declaration inside an object literal took the whole
+dashboard down and passed every other check, because the smoke test only talks
+to the API and the contract check reads field names out of the page without
+caring whether the file parses. Every page script is now parsed first.
+
+**Page contracts.** Nothing catches a page reading a field the API stopped
+returning. A rename moved `collectedCents` to `postedCents`, the follow-up edit
+to the page silently failed to apply, and two figures on Payments rendered as
+zero. The checker signs in, fetches the endpoint behind each page, and compares
+every field the page reads against what came back. A page whose response has no
 rows is reported as unverifiable rather than passed or failed, because an empty
 table and a misspelled field look identical and guessing is what makes a
-checker not worth running. The same applies within a response: if one
-collection came back empty, a field missing from it is reported as
-unverifiable, and the empty collection is named.
+checker not worth running.
 
-### Smoke test
-
-```bash
-npx wrangler dev --local          # in one terminal
-npm run check:smoke               # in another
-```
-
-The contract checker asks whether a page reads fields the API returns. It says
-nothing about whether a sequence of requests does the right thing, and three of
-this portal's paths were only ever exercised by a real person doing a real
-thing weeks apart:
+**Smoke test.** Three of this portal's paths were only ever exercised by a real
+person doing a real thing weeks apart:
 
 - signup, pending, admin approval, first sign in
 - a hosted form submission arriving as a lead
 - an automation firing from that submission and running
 
-The smoke test drives all three end to end against a local dev server in under
-a second, plus a reservation and the soft/hard schedule built from it. It
-cleans up after itself, including when it bails early.
+It drives those end to end in about a second, along with reservations, the
+soft/hard schedule, pricing, payments and credits, quotes and statements, the
+commission split, and the scope rules between an owner and an associate. It
+cleans up after itself, including when it bails early, and names any section it
+had to skip so the count means the same thing wherever it is read.
 
 ## The dashboard
 
@@ -290,20 +310,48 @@ calendars, custom fields, tags and users.
 
 ```
 src/
-  worker.js     Router, auth gate on /app and /admin, static asset serving
+  worker.js     Router, auth gate on /app and /admin, static asset serving, cron
   auth.js       Signup, sign in, sessions, password reset, requireUser/requireAdmin
-  db.js         Every D1 query
-  ghl.js        GoHighLevel client and response normalizers
-  leads.js      Contacts, notes, tasks, the full record
-  conversations.js  Threads, messages, sending
-  calendar.js   Calendars and appointments
-  billing.js    Invoices, transactions, reconciliation
-  pipeline.js   Pipelines and opportunities
-  bookings.js   Booking CRUD and validation
-  reports.js    Dashboard and production numbers
-  admin.js      Approve, suspend, bind advisors
-  email.js      Resend templates
-  util.js       JSON responses, cookies, PBKDF2, validation
+  db.js         Every D1 query, and the scope helpers everything else uses
+  util.js       JSON responses, cookies, PBKDF2, validation, money and dates
+  email.js      Resend templates and the send that knows what is worth retrying
+
+  A reservation
+  bookings.js   Reservation CRUD, the record page payload, partial updates
+  pricing.js    What the client pays, in parts, and which parts earn commission
+  options.js    The two or three choices a quote offers, and which was taken
+  travellers.js The people on a trip, their documents, and the amenities granted
+  payments.js   The schedule, chasing, posting, and the credit ledger behind it
+  statement.js  What the client is told: a quote, or a statement, never both
+  split.js      How a commission divides between the advisor and the agency
+  credits.js    Credits a client holds with a vendor, and when they lapse
+  groups.js     Blocks of cabins and the option date that releases them
+
+  The book
+  clients.js    One client across their trips
+  vendors.js    One spelling per vendor, and the terms they trade on
+  commissions.js  What is owed, by age and by vendor
+  goals.js      A target and whether you are on course for it
+  tasks.js      The working list
+  reports.js    Dashboard, production, and the notices worth acting on
+  prefs.js      Which dashboard panels an advisor sees, and in what order
+  search.js     One box across clients, reservations and vendors
+  importer.js   Pasting an existing book in, and filling the gaps afterwards
+  catalog.js    The CruiseFeed sailing catalog, imported in resumable steps
+  catalogapi.js Filling a reservation's blanks from that catalog
+
+  GoHighLevel
+  ghl.js        API client and response normalizers
+  crm.js        The local mirror the pages read
+  sync.js       Keeping that mirror current
+  leads.js, conversations.js, calendar.js, pipeline.js, billing.js
+                Contacts, threads, appointments, opportunities, invoices
+  forms.js, formbuilder.js, publicform.js
+                Hosted forms and the submissions that become leads
+  automations.js  Triggers, steps, runs, and the retry ladder
+  library.js, marketing.js  Assets and campaigns
+  admin.js      Approve, suspend, bind and split advisors; health; maintenance
+
 public/
   css/app.css   Whole design system, hand written
   js/app.js     API wrapper, formatting, app shell

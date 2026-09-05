@@ -39,7 +39,7 @@ const SCHEMA = schemaFromMigrations(ROOT);
 const OWNED = new Set([
   'bookings', 'booking_payments', 'booking_pricing', 'quote_options', 'travellers',
   'amenities', 'tasks', 'client_credits', 'clients', 'travel_groups', 'vendors',
-  'goals', 'user_prefs', 'reminders',
+  'goals', 'user_prefs',
 ]);
 
 // Shared by a whole agency through a GoHighLevel sub-account, so location_id
