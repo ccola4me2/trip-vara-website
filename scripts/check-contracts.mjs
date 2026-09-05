@@ -28,6 +28,7 @@ const PAGES = [
   ['public/app/groups.html', ['/api/groups']],
   ['public/app/credits.html', ['/api/credits?state=all', '/api/bookings']],
   ['public/app/goals.html', ['/api/goals']],
+  ['public/app/reservation.html', ['detail-record:/api/bookings']],
   ['public/app/tasks.html', ['/api/tasks?state=all', '/api/bookings']],
   ['public/app/billing.html', ['/api/billing']],
   ['public/app/reports.html', ['/api/reports/production?months=12']],
@@ -192,7 +193,15 @@ async function main() {
     let skipped = null;
 
     for (let endpoint of endpoints) {
-      if (endpoint.startsWith('detail:')) {
+      if (endpoint.startsWith('detail-record:')) {
+        // Same trick as detail:, but the id hangs a sub resource off the item.
+        const listRes = await fetch(BASE + endpoint.replace(/^detail-record:/, ''), { headers: { Cookie: cookie } });
+        if (!listRes.ok) continue;
+        const list = await listRes.json();
+        const first = Object.values(list).find((v) => Array.isArray(v) && v.length)?.[0];
+        if (!first || !first.id) continue;
+        endpoint = `${endpoint.replace(/^detail-record:/, '')}/${first.id}/record`;
+      } else if (endpoint.startsWith('detail:')) {
         // Resolve {id} from the list endpoint before calling the detail one.
         const listPath = endpoints[0];
         const listRes = await fetch(BASE + listPath, { headers: { Cookie: cookie } });

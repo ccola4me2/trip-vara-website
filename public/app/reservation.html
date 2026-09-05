@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reservation | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <a class="back-link" href="/app/reservations">&larr; All reservations</a>
+        <h1 id="client">Loading...</h1>
+        <p class="sub" id="sub"></p>
+      </div>
+      <div class="toolbar" style="margin:0;" id="actions"></div>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="money" class="stat-grid"></section>
+      <div class="split" style="margin-top:1.5rem;">
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>Payment schedule</h2>
+              <span id="schedule-actions"></span></div>
+            <div id="payments"></div>
+          </section>
+          <section class="card" style="margin-top:1.5rem;">
+            <div class="card-head"><h2>Trip</h2></div>
+            <div class="card-pad" id="trip"></div>
+          </section>
+        </div>
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>To do</h2></div>
+            <div class="card-pad">
+              <form id="task-form" class="toolbar" style="margin:0 0 .7rem;">
+                <input name="title" maxlength="200" required placeholder="Add a task for this trip"
+                       style="min-width:0;flex:1;">
+                <button class="btn btn-secondary btn-sm" type="submit">Add</button>
+              </form>
+              <div id="tasks"></div>
+            </div>
+          </section>
+          <section class="card" style="margin-top:1.5rem;">
+            <div class="card-head"><h2>Credits applied</h2>
+              <a class="btn btn-ghost btn-sm" href="/app/credits">All credits</a></div>
+            <div id="credits"></div>
+          </section>
+          <section class="card" style="margin-top:1.5rem;" id="group-card" hidden>
+            <div class="card-head"><h2>Sold from a group</h2></div>
+            <div class="card-pad" id="group"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const id = new URLSearchParams(location.search).get('id') || '';
+const err = document.getElementById('err');
+let d = null;
+
+const short = (iso) => (iso ? dateFmt(iso) : '-');
+const KIND = { deposit: 'Deposit', installment: 'Instalment', final: 'Final balance', refund: 'Refund' };
+const STATUS_TONE = { quoted: 'badge-navy', booked: 'badge-green', travelled: 'badge-navy', cancelled: 'badge-red' };
+
+function render() {
+  const b = d.booking;
+  document.getElementById('client').textContent = b.client_name;
+  document.getElementById('sub').innerHTML = [
+    b.supplier ? esc(b.supplier) : '',
+    b.product_name ? esc(b.product_name) : '',
+    b.confirmation_number ? `Conf ${esc(b.confirmation_number)}` : '',
+    b.advisor_name ? `Booked by ${esc(b.advisor_name)}` : '',
+  ].filter(Boolean).join(' &middot; ');
+
+  document.getElementById('actions').innerHTML = d.editable
+    ? `<a class="btn btn-ghost btn-sm" href="/app/reservations?focus=${esc(b.id)}">Edit reservation</a>`
+    : '<span class="muted">Another advisor\'s reservation</span>';
+
+  const left = daysUntil(b.final_payment_due);
+  document.getElementById('money').innerHTML = `
+    <div class="stat"><p class="label">Trip cost</p><p class="value">${money(b.gross_cents)}</p>
+      <p class="meta"><span class="badge ${STATUS_TONE[b.status] || 'badge-navy'}">${esc(b.status)}</span></p></div>
+    <div class="stat"><p class="label">Posted to vendor</p><p class="value">${money(d.money.paidCents)}</p>
+      <p class="meta">${money(d.money.scheduledCents)} still scheduled</p></div>
+    <div class="stat"><p class="label">Not yet scheduled</p>
+      <p class="value" style="${d.money.unscheduledCents ? 'color:var(--amber-600);' : ''}">${money(d.money.unscheduledCents)}</p>
+      <p class="meta">Nothing will chase what is not on the schedule</p></div>
+    <div class="stat"><p class="label">Final payment</p>
+      <p class="value" style="font-size:1.1rem;${left !== null && left < 14 ? 'color:var(--red-600);' : ''}">${
+        b.final_payment_due ? esc(short(b.final_payment_due)) : 'none set'}</p>
+      <p class="meta">${b.final_payment_due
+        ? (left < 0 ? 'passed, confirm with the vendor' : `vendor cancels in ${left} days`)
+        : 'nothing can warn you without a date'}</p></div>`;
+
+  // ---- schedule ----
+  document.getElementById('schedule-actions').innerHTML = d.editable
+    ? `<button class="btn btn-ghost btn-sm" id="build">Build schedule</button>`
+    : '';
+  const buildBtn = document.getElementById('build');
+  if (buildBtn) buildBtn.addEventListener('click', async () => {
+    buildBtn.disabled = true;
+    try {
+      const res = await api(`/api/bookings/${encodeURIComponent(id)}/schedule`, { method: 'POST', body: {} });
+      if (!res.created.length) err.innerHTML = `<div class="notice notice-info">${esc(res.message)}</div>`;
+      await load();
+    } catch (e) { showError(err, e); buildBtn.disabled = false; }
+  });
+
+  document.getElementById('payments').innerHTML = d.payments.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Due</th><th>What</th><th class="num">Amount</th><th></th></tr></thead>
+        <tbody>${d.payments.map((p) => {
+          const days = daysUntil(p.due_date);
+          const hard = p.payment_class === 'hard';
+          const tone = p.paid_date ? 'badge-green'
+            : days === null ? 'badge-navy'
+            : days < 0 ? 'badge-red' : hard && days <= 14 ? 'badge-red'
+            : days <= 14 ? 'badge-amber' : 'badge-navy';
+          const label = p.paid_date ? `posted ${short(p.paid_date)}`
+            : days === null ? 'no date'
+            : days < 0 ? (hard ? 'passed' : 'reminder passed')
+            : hard ? `cancels in ${days}d` : `chase in ${days}d`;
+          return `<tr>
+            <td>${esc(short(p.due_date))}<div><span class="badge ${tone}">${esc(label)}</span></div></td>
+            <td><span class="name">${esc(KIND[p.kind] || p.kind)}</span>
+              <div class="muted">${hard ? 'vendor deadline' : 'your reminder'}${
+                p.reference ? ' · ' + esc(p.reference) : ''}</div></td>
+            <td class="num">${money(p.amount_cents)}</td>
+            <td class="num">${!p.paid_date && d.editable
+              ? `<button class="btn btn-ghost btn-sm" data-paid="${esc(p.id)}">Mark posted</button>` : ''}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>No schedule yet</h3>
+        <p>Nothing will warn you about a payment that was never written down.</p></div>`;
+
+  document.querySelectorAll('[data-paid]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await api(`/api/payments/${encodeURIComponent(btn.dataset.paid)}/paid`,
+        { method: 'POST', body: {} }); await load(); }
+      catch (e) { showError(err, e); btn.disabled = false; }
+    });
+  });
+
+  // ---- trip ----
+  document.getElementById('trip').innerHTML = `<dl class="pairs">
+    <dt>Departing</dt><dd>${esc(short(b.depart_date))}</dd>
+    <dt>Returning</dt><dd>${esc(short(b.return_date))}</dd>
+    <dt>Destination</dt><dd>${esc(b.destination || '-')}</dd>
+    <dt>Travellers</dt><dd>${b.travellers || 1}</dd>
+    <dt>Type</dt><dd>${esc(b.product_type || '-')}</dd>
+    <dt>Commission</dt><dd>${money(b.commission_cents)} <span class="muted">${esc(b.commission_status)}</span></dd>
+    ${b.notes ? `<dt>Notes</dt><dd>${esc(b.notes)}</dd>` : ''}
+  </dl>`;
+
+  // ---- tasks ----
+  document.getElementById('task-form').hidden = !d.editable;
+  document.getElementById('tasks').innerHTML = d.tasks.length
+    ? `<ul class="rows task-rows">${d.tasks.map((t) => `<li class="${t.done_at ? 'done' : ''}">
+        <label class="task-tick">
+          <input type="checkbox" data-task="${esc(t.id)}"${t.done_at ? ' checked' : ''}${
+            d.editable ? '' : ' disabled'}>
+          <span><span class="t">${esc(t.title)}</span>
+            <span class="m">${t.due_date ? esc(short(t.due_date)) : 'no date'}${
+              t.priority === 'high' ? ' · <span class="badge badge-coral">high</span>' : ''}</span></span>
+        </label></li>`).join('')}</ul>`
+    : '<p class="wempty" style="text-align:left;padding:.4rem 0;">Nothing to do for this trip.</p>';
+
+  document.querySelectorAll('[data-task]').forEach((box) => {
+    box.addEventListener('change', async () => {
+      box.disabled = true;
+      try { await api(`/api/tasks/${encodeURIComponent(box.dataset.task)}`,
+        { method: 'PUT', body: { done: box.checked } }); await load(); }
+      catch (e) { box.checked = !box.checked; box.disabled = false; showError(err, e); }
+    });
+  });
+
+  // ---- credits ----
+  document.getElementById('credits').innerHTML = d.credits.length
+    ? `<ul class="rows">${d.credits.map((c) => `<li><div class="row-between">
+        <span><span class="t">${esc(c.vendor || c.kind)}</span>
+          <span class="m">${esc(c.client_name)}${c.used_on ? ' · used ' + esc(short(c.used_on)) : ''}</span></span>
+        <strong>${money(c.amount_cents)}</strong></div></li>`).join('')}</ul>`
+    : '<p class="wempty" style="text-align:left;padding:.9rem 1rem;">No credit applied to this trip.</p>';
+
+  // ---- group ----
+  const gc = document.getElementById('group-card');
+  gc.hidden = !d.group;
+  if (d.group) {
+    const days = daysUntil(d.group.option_date);
+    document.getElementById('group').innerHTML = `
+      <p><a href="/app/groups"><strong>${esc([d.group.group_code, d.group.name].filter(Boolean).join(' / '))}</strong></a></p>
+      <p class="muted" style="font-size:.82rem;margin-top:.3rem;">${esc(d.group.vendor || '')}${
+        d.group.option_date ? ` &middot; unsold space released ${esc(short(d.group.option_date))}${
+          days !== null && days >= 0 ? `, in ${days} days` : ''}` : ''}</p>`;
+  }
+}
+
+async function load() {
+  try {
+    d = await api(`/api/bookings/${encodeURIComponent(id)}/record`);
+    err.innerHTML = '';
+    render();
+  } catch (e) { showError(err, e); }
+}
+
+onSubmit(document.getElementById('task-form'), async (values) => {
+  await api('/api/tasks', { method: 'POST', body: { title: values.title, bookingId: id } });
+  document.getElementById('task-form').reset();
+  await load();
+});
+
+if (!id) err.innerHTML = '<div class="notice notice-error">No reservation was named in the address.</div>';
+else await load();
+</script>
+</body></html>

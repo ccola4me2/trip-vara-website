@@ -618,6 +618,11 @@ tbody tr[data-href] { cursor: pointer; }
 .pin:hover { color: var(--navy-700); }
 .pin.on { color: var(--coral-500); }
 
+/* Definition pairs, for a record page */
+.pairs { display: grid; grid-template-columns: auto 1fr; gap: .45rem 1.1rem; margin: 0; }
+.pairs dt { font-size: .78rem; color: var(--ink-400); font-weight: 600; }
+.pairs dd { margin: 0; font-size: .86rem; color: var(--navy-800); }
+
 /* Targets */
 .goal-aim { font-size: 1.05rem; color: var(--navy-800); font-weight: 600; margin: 0; line-height: 1.5; }
 .goal-edge { font-size: .88rem; color: var(--ink-500); margin: .5rem 0 0; }

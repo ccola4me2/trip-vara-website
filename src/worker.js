@@ -22,7 +22,7 @@ import {
   handleCreateOpportunity, handleUpdateOpportunity,
 } from './pipeline.js';
 import {
-  handleListBookings, handleGetBooking, handleCreateBooking,
+  handleListBookings, handleGetBooking, handleBookingRecord, handleCreateBooking,
   handleUpdateBooking, handleDeleteBooking,
 } from './bookings.js';
 import {
@@ -114,6 +114,7 @@ const PAGE_FILES = {
   '/app/credits': '/app/credits.html',
   '/app/goals': '/app/goals.html',
   '/app/reservations': '/app/reservations.html',
+  '/app/reservation': '/app/reservation.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
   '/app/settings': '/app/settings.html',
@@ -173,6 +174,7 @@ async function routeApi(request, env, path, method) {
   const wfMatch = path.match(/^\/api\/leads\/([^/]+)\/workflow$/);
   const oppMatch = path.match(/^\/api\/opportunities\/([^/]+)$/);
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
+  const recordMatch = path.match(/^\/api\/bookings\/([^/]+)\/record$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
@@ -236,6 +238,7 @@ async function routeApi(request, env, path, method) {
   // ---- bookings ---------------------------------------------------------
   if (path === '/api/bookings' && method === 'GET') return handleListBookings(request, env);
   if (path === '/api/bookings' && method === 'POST') return handleCreateBooking(request, env);
+  if (recordMatch && method === 'GET') return handleBookingRecord(request, env, recordMatch[1]);
   if (bookingMatch && method === 'GET') return handleGetBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'PUT') return handleUpdateBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'DELETE') return handleDeleteBooking(request, env, bookingMatch[1]);

@@ -603,11 +603,11 @@ export async function calendarMonth(env, scope, { from, to }) {
   const out = [];
   for (const r of departs.results || []) {
     out.push({ date: r.on_date, kind: 'depart', title: r.client_name,
-               detail: `Departs${r.supplier ? ' · ' + r.supplier : ''}`, href: '/app/reservations?focus=' + r.id });
+               detail: `Departs${r.supplier ? ' · ' + r.supplier : ''}`, href: '/app/reservation?id=' + r.id });
   }
   for (const r of returns.results || []) {
     out.push({ date: r.on_date, kind: 'return', title: r.client_name,
-               detail: `Returns${r.supplier ? ' · ' + r.supplier : ''}`, href: '/app/reservations?focus=' + r.id });
+               detail: `Returns${r.supplier ? ' · ' + r.supplier : ''}`, href: '/app/reservation?id=' + r.id });
   }
   for (const r of payments.results || []) {
     out.push({ date: r.on_date, kind: r.payment_class === 'hard' ? 'hard' : 'soft',
@@ -1019,8 +1019,12 @@ export async function paymentStats(env, scope, { today, soonThrough, softThrough
   const scoped = scopeWhere(scope);
   const row = await env.DB.prepare(
     `SELECT
-       SUM(CASE WHEN paid_date IS NOT NULL THEN amount_cents ELSE 0 END) AS posted,
-       SUM(CASE WHEN paid_date IS NULL THEN amount_cents ELSE 0 END) AS outstanding,
+       -- Money totals count hard rows only: a soft row is the same balance
+       -- again, a week earlier, so including it doubles every final payment.
+       -- The soft and hard due figures below are counts within a window
+       -- rather than totals owed, so they are class filtered already.
+       SUM(CASE WHEN payment_class = 'hard' AND paid_date IS NOT NULL THEN amount_cents ELSE 0 END) AS posted,
+       SUM(CASE WHEN payment_class = 'hard' AND paid_date IS NULL THEN amount_cents ELSE 0 END) AS outstanding,
        SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
                 THEN amount_cents ELSE 0 END) AS past_due,
        SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
@@ -1059,8 +1063,13 @@ export async function bookingBalances(env, scope) {
   const { results } = await env.DB.prepare(
     `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
             b.status, b.gross_cents, b.deposit_cents,
-            COALESCE(SUM(CASE WHEN p.paid_date IS NOT NULL THEN p.amount_cents END), 0) AS paid_cents,
-            COALESCE(SUM(CASE WHEN p.paid_date IS NULL THEN p.amount_cents END), 0) AS scheduled_cents,
+            -- Hard rows only. A soft row is a reminder to chase the same
+            -- balance a week earlier, not a second sum owed, so counting both
+            -- inflates every reservation carrying a final payment.
+            COALESCE(SUM(CASE WHEN p.payment_class = 'hard' AND p.paid_date IS NOT NULL
+                              THEN p.amount_cents END), 0) AS paid_cents,
+            COALESCE(SUM(CASE WHEN p.payment_class = 'hard' AND p.paid_date IS NULL
+                              THEN p.amount_cents END), 0) AS scheduled_cents,
             COUNT(p.id) AS payment_count
        FROM bookings b
        LEFT JOIN booking_payments p ON p.booking_id = b.id
@@ -1085,8 +1094,10 @@ export async function paymentsByMonth(env, scope, sinceDate) {
   const { results } = await env.DB.prepare(
     `SELECT substr(p.due_date, 1, 7) AS month,
             COUNT(*) AS payments,
-            SUM(CASE WHEN p.paid_date IS NOT NULL THEN p.amount_cents ELSE 0 END) AS posted_cents,
-            SUM(CASE WHEN p.paid_date IS NULL THEN p.amount_cents ELSE 0 END) AS outstanding_cents
+            SUM(CASE WHEN p.payment_class = 'hard' AND p.paid_date IS NOT NULL
+                     THEN p.amount_cents ELSE 0 END) AS posted_cents,
+            SUM(CASE WHEN p.payment_class = 'hard' AND p.paid_date IS NULL
+                     THEN p.amount_cents ELSE 0 END) AS outstanding_cents
        FROM booking_payments p
        JOIN bookings b ON b.id = p.booking_id
       WHERE ${scoped.sql} AND p.due_date IS NOT NULL AND p.due_date >= ?

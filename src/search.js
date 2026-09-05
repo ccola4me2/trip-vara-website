@@ -96,7 +96,7 @@ export async function handleSearch(request, env) {
                    b.confirmation_number ? `Conf ${b.confirmation_number}` : '']
           .filter(Boolean).join('  ·  '),
         badge: b.status,
-        href: `/app/reservations?focus=${encodeURIComponent(b.id)}`,
+        href: `/app/reservation?id=${encodeURIComponent(b.id)}`,
       })),
     });
   }

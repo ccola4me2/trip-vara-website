@@ -186,6 +186,15 @@ async function main() {
   const due = dash.data?.payStats || {};
   check(due.hardDueCents >= 50000, 'the dashboard counts the hard deadlines', due.hardDueCents);
 
+  // The soft row is a reminder to chase the same balance a week early, not a
+  // second amount owed. Totalling both reported a $5,000 trip as owing $9,500
+  // on every screen that summed a schedule.
+  const bal = await call(advisor, 'GET', '/api/payments?state=all');
+  const thisTrip = (bal.data?.balances || []).find((b) => b.id === bookingId);
+  check(thisTrip && (thisTrip.paid_cents + thisTrip.scheduled_cents) <= thisTrip.gross_cents,
+    'a schedule never totals more than the trip it is for',
+    thisTrip && `${thisTrip.paid_cents} + ${thisTrip.scheduled_cents} vs ${thisTrip.gross_cents}`);
+
   // ------------------------------------------------ who can see what ------
   step('An associate sees their own records; an owner sees the agency');
 
@@ -589,6 +598,45 @@ async function main() {
   check(zero && (zero.prev.grossCents > 0 || zero.change.gross === null),
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
+
+  // ------------------------------------------------ the reservation record --
+  step('One trip on one screen');
+
+  const rec = await call(advisor, 'GET', `/api/bookings/${bookingId}/record`);
+  check(rec.status === 200 && rec.data?.booking?.id === bookingId,
+    'the record loads', `status ${rec.status}`);
+  check(Array.isArray(rec.data?.payments) && rec.data.payments.length >= 2,
+    'with the schedule on it', `${rec.data?.payments?.length} payment(s)`);
+  check(rec.data?.editable === true, 'and the owner of it may change it');
+
+  // The quiet number: what is neither posted nor even scheduled. A trip worth
+  // five thousand with a five hundred deposit and nothing else planned has
+  // four and a half thousand that nothing will ever chase.
+  const m = rec.data?.money || {};
+  check(m.paidCents + m.scheduledCents + m.unscheduledCents === rec.data.booking.gross_cents,
+    'and the three money figures account for the whole trip',
+    `${m.paidCents} + ${m.scheduledCents} + ${m.unscheduledCents} vs ${rec.data.booking.gross_cents}`);
+
+  const recTask = await call(advisor, 'POST', '/api/tasks',
+    { title: `From the record ${stamp}`, bookingId });
+  if (recTask.data?.task?.id) cleanup('the record task', () =>
+    call(advisor, 'DELETE', `/api/tasks/${recTask.data.task.id}`));
+  const withTask = await call(advisor, 'GET', `/api/bookings/${bookingId}/record`);
+  check((withTask.data?.tasks || []).some((t) => t.id === recTask.data?.task?.id),
+    'a task added against the trip shows on its record');
+
+  // An owner may read an associate's trip, and its schedule with it, but the
+  // record says plainly that they cannot change it.
+  const ownerRec = await call(admin, 'GET', `/api/bookings/${bookingId}/record`);
+  check(ownerRec.status === 200 && ownerRec.data?.editable === false,
+    'an owner sees the record read only', `status ${ownerRec.status}, editable ${ownerRec.data?.editable}`);
+  check((ownerRec.data?.payments || []).length === (rec.data?.payments || []).length,
+    'with the same schedule, not an empty one',
+    `${ownerRec.data?.payments?.length} vs ${rec.data?.payments?.length}`);
+
+  const strangerRec = await call(admin, 'GET', '/api/bookings/does-not-exist/record');
+  check(strangerRec.status === 404, 'and a reservation that is not there is a 404',
+    `status ${strangerRec.status}`);
 
   // ------------------------------------------------------------ targets -----
   step('Targets, and whether you are on course');

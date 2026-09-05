@@ -161,7 +161,7 @@ function render(bookings, stats, scope) {
       const left = daysUntil(b.final_payment_due);
       const tone = left === null ? '' : left < 0 ? 'badge-red' : left <= 14 ? 'badge-red' : left <= 30 ? 'badge-amber' : 'badge-navy';
       return `<tr>
-        <td><span class="name">${esc(b.client_name)}</span>
+        <td><a class="name" href="/app/reservation?id=${esc(b.id)}">${esc(b.client_name)}</a>
           <div><span class="badge ${STATUS_TONE[b.status] || 'badge-navy'}">${esc(b.status)}</span></div></td>
         ${showAdvisor ? `<td class="muted">${esc(b.advisor_name || '-')}</td>` : ''}
         <td>${b.supplier ? esc(b.supplier) : '<span class="muted">-</span>'}</td>
@@ -177,9 +177,9 @@ function render(bookings, stats, scope) {
         <td class="num">${money(b.gross_cents)}</td>
         <td class="num">${money(b.commission_cents)}
           <div class="muted">${esc(b.commission_status)}</div></td>
-        <td class="num">${b.user_id === ME
-          ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(b.id)}">Edit</button>`
-          : '<span class="muted" title="Another advisor\u2019s reservation">view only</span>'}</td>
+        <td class="num"><a class="btn btn-ghost btn-sm" href="/app/reservation?id=${esc(b.id)}">Open</a>
+          ${b.user_id === ME
+            ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(b.id)}">Edit</button>` : ''}</td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
 

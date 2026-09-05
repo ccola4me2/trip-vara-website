@@ -107,6 +107,86 @@ export async function handleGetBooking(request, env, id) {
   return booking ? json({ booking }) : notFound('Booking not found.');
 }
 
+/**
+ * Everything about one reservation on a single screen.
+ *
+ * Until now a trip was scattered: its payments lived on the Payments page
+ * behind a filter, its tasks on the To do page, a credit against it on the
+ * Credits page, and the block it was sold from on Groups. Answering "where are
+ * we with the Barnabys" meant four screens and holding the answer in your
+ * head. This is the screen a CRM exists to have.
+ *
+ * Each part is fetched independently and allowed to be empty. A reservation
+ * with no schedule yet is the normal case, not an error.
+ */
+export async function handleBookingRecord(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const scope = db.scopeFor(env, user, request);
+  const booking = await db.getBookingInScope(env, id, scope);
+  if (!booking) return notFound('Reservation not found.');
+
+  // Scoped the same way the reservation was, so an owner reading an
+  // associate's trip sees its payments too rather than an empty schedule.
+  const payScope = db.scopeWhere(scope, 'p.user_id');
+  const taskScope = db.scopeWhere(scope, 't.user_id');
+  const creditScope = db.scopeWhere(scope, 'c.user_id');
+
+  const [payments, tasks, credits, group] = await Promise.all([
+    env.DB.prepare(
+      `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date, p.paid_date,
+              p.method, p.reference, p.notes
+         FROM booking_payments p
+        WHERE p.booking_id = ? AND ${payScope.sql}
+        ORDER BY COALESCE(p.due_date, '9999-12-31') ASC`
+    ).bind(id, ...payScope.binds).all().catch(() => ({ results: [] })),
+
+    env.DB.prepare(
+      `SELECT t.id, t.title, t.due_date, t.priority, t.done_at, t.pinned_at
+         FROM tasks t WHERE t.booking_id = ? AND ${taskScope.sql}
+        ORDER BY t.done_at IS NOT NULL ASC, COALESCE(t.due_date, '9999-12-31') ASC`
+    ).bind(id, ...taskScope.binds).all().catch(() => ({ results: [] })),
+
+    env.DB.prepare(
+      `SELECT c.id, c.client_name, c.vendor, c.kind, c.amount_cents, c.expires_on, c.used_on
+         FROM client_credits c WHERE c.booking_id = ? AND ${creditScope.sql}`
+    ).bind(id, ...creditScope.binds).all().catch(() => ({ results: [] })),
+
+    booking.group_id
+      ? env.DB.prepare(
+          'SELECT id, name, group_code, vendor, option_date, cabins_held FROM travel_groups WHERE id = ?'
+        ).bind(booking.group_id).first().catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  // Hard rows only. A soft row is a reminder to chase the same balance a week
+  // before its vendor deadline, not a second amount owed, so totalling both
+  // reports a $5,000 trip as owing $9,500.
+  const owed = (payments.results || []).filter((p) => p.payment_class === 'hard');
+  const paid = owed.filter((p) => p.paid_date).reduce((n, p) => n + (p.amount_cents || 0), 0);
+  const scheduled = owed.filter((p) => !p.paid_date).reduce((n, p) => n + (p.amount_cents || 0), 0);
+
+  return json({
+    booking,
+    payments: payments.results || [],
+    tasks: tasks.results || [],
+    credits: credits.results || [],
+    group,
+    // What is neither posted nor even on the schedule. The quiet number: a
+    // trip worth $8,000 with a $500 deposit and nothing else planned.
+    money: {
+      paidCents: paid,
+      scheduledCents: scheduled,
+      unscheduledCents: Math.max(0, (booking.gross_cents || 0) - paid - scheduled),
+    },
+    // Whether this reader may change any of it, so the page does not offer
+    // buttons that would fail.
+    editable: booking.user_id === user.id,
+    today: new Date().toISOString().slice(0, 10),
+  });
+}
+
 export async function handleCreateBooking(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
