@@ -95,7 +95,8 @@ const NAV = [
 
   { group: 'Money' },
   { href: '/app/bookings', label: 'Bookings', icon: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm4-4v4m8-4v4M4 10h16' },
-  { href: '/app/billing', label: 'Billing', icon: 'M3 10h18M6 6h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 8h4' },
+  { href: '/app/payments', label: 'Payments', icon: 'M3 10h18M6 6h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 8h4' },
+  { href: '/app/billing', label: 'Invoices', icon: 'M3 10h18M6 6h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 8h4' },
   { href: '/app/catalog', label: 'Products', icon: 'M20 7 12 3 4 7l8 4 8-4Zm0 0v10l-8 4-8-4V7' },
   { href: '/app/reports', label: 'Reports', icon: 'M5 20V10m7 10V4m7 16v-7' },
 

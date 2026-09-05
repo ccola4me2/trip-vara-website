@@ -189,7 +189,7 @@ export async function consumeResetToken(env, tokenHash) {
 const BOOKING_COLUMNS = `
   id, user_id, ghl_contact_id, ghl_opportunity_id, client_name, supplier,
   product_type, product_name, destination, confirmation_number, depart_date,
-  return_date, deposit_due, final_payment_due, travellers, gross_cents,
+  return_date, deposit_due, final_payment_due, travellers, gross_cents, deposit_cents,
   commission_cents, commission_status, status, notes, created_at, updated_at
 `;
 
@@ -226,15 +226,15 @@ export async function createBooking(env, userId, f) {
        (id, user_id, ghl_contact_id, ghl_opportunity_id, client_name, supplier,
         product_type, product_name, destination, confirmation_number,
         depart_date, return_date, deposit_due, final_payment_due, travellers,
-        gross_cents, commission_cents, commission_status, status, notes,
+        gross_cents, deposit_cents, commission_cents, commission_status, status, notes,
         created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, userId, f.ghlContactId || null, f.ghlOpportunityId || null,
     f.clientName, f.supplier || null, f.productType, f.productName || null,
     f.destination || null, f.confirmationNumber || null,
     f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
-    f.travellers, f.grossCents, f.commissionCents, f.commissionStatus,
+    f.travellers, f.grossCents, f.depositCents || 0, f.commissionCents, f.commissionStatus,
     f.status, f.notes || null, ts, ts
   ).run();
   return getBooking(env, id, userId);
@@ -246,14 +246,14 @@ export async function updateBooking(env, id, userId, f) {
        ghl_contact_id = ?, ghl_opportunity_id = ?, client_name = ?, supplier = ?,
        product_type = ?, product_name = ?, destination = ?, confirmation_number = ?,
        depart_date = ?, return_date = ?, deposit_due = ?, final_payment_due = ?,
-       travellers = ?, gross_cents = ?, commission_cents = ?, commission_status = ?,
+       travellers = ?, gross_cents = ?, deposit_cents = ?, commission_cents = ?, commission_status = ?,
        status = ?, notes = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(
     f.ghlContactId || null, f.ghlOpportunityId || null, f.clientName, f.supplier || null,
     f.productType, f.productName || null, f.destination || null, f.confirmationNumber || null,
     f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
-    f.travellers, f.grossCents, f.commissionCents, f.commissionStatus,
+    f.travellers, f.grossCents, f.depositCents || 0, f.commissionCents, f.commissionStatus,
     f.status, f.notes || null, now(), id, userId
   ).run();
   if (!res.meta || res.meta.changes === 0) return null;
@@ -457,4 +457,114 @@ export async function crmCounts(env, locationId) {
   const o = await env.DB.prepare('SELECT COUNT(*) AS n FROM crm_opportunities WHERE location_id = ?').bind(locationId).first();
   const p = await env.DB.prepare('SELECT COUNT(*) AS n FROM crm_pipelines WHERE location_id = ?').bind(locationId).first();
   return { contacts: c?.n || 0, opportunities: o?.n || 0, pipelines: p?.n || 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Booking payments
+//
+// One row covers both sides of a payment: due_date with no paid_date is money
+// expected, and the same row gains paid_date when it arrives.
+// ---------------------------------------------------------------------------
+const PAYMENT_COLUMNS = `
+  p.id, p.booking_id, p.user_id, p.kind, p.amount_cents, p.due_date, p.paid_date,
+  p.method, p.reference, p.notes, p.created_at, p.updated_at
+`;
+
+export async function listPayments(env, userId, { bookingId, state, limit = 300 } = {}) {
+  const where = ['p.user_id = ?'];
+  const binds = [userId];
+  if (bookingId) { where.push('p.booking_id = ?'); binds.push(bookingId); }
+  if (state === 'outstanding') where.push('p.paid_date IS NULL');
+  if (state === 'paid') where.push('p.paid_date IS NOT NULL');
+
+  const { results } = await env.DB.prepare(
+    `SELECT ${PAYMENT_COLUMNS},
+            b.client_name, b.supplier, b.product_name, b.depart_date, b.status AS booking_status
+       FROM booking_payments p
+       JOIN bookings b ON b.id = p.booking_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY COALESCE(p.due_date, '9999-12-31') ASC, p.created_at ASC
+      LIMIT ?`
+  ).bind(...binds, Math.min(Number(limit) || 300, 500)).all();
+  return results || [];
+}
+
+export async function getPayment(env, id, userId) {
+  return env.DB.prepare(
+    `SELECT ${PAYMENT_COLUMNS} FROM booking_payments p WHERE p.id = ? AND p.user_id = ?`
+  ).bind(id, userId).first();
+}
+
+export async function createPayment(env, userId, f) {
+  const ts = now();
+  const id = uid();
+  await env.DB.prepare(
+    `INSERT INTO booking_payments
+       (id, booking_id, user_id, kind, amount_cents, due_date, paid_date, method,
+        reference, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, f.bookingId, userId, f.kind, f.amountCents, f.dueDate, f.paidDate,
+         f.method || null, f.reference || null, f.notes || null, ts, ts).run();
+  return getPayment(env, id, userId);
+}
+
+export async function updatePayment(env, id, userId, f) {
+  const res = await env.DB.prepare(
+    `UPDATE booking_payments
+        SET kind = ?, amount_cents = ?, due_date = ?, paid_date = ?, method = ?,
+            reference = ?, notes = ?, updated_at = ?
+      WHERE id = ? AND user_id = ?`
+  ).bind(f.kind, f.amountCents, f.dueDate, f.paidDate, f.method || null,
+         f.reference || null, f.notes || null, now(), id, userId).run();
+  if (!res.meta || res.meta.changes === 0) return null;
+  return getPayment(env, id, userId);
+}
+
+export async function deletePayment(env, id, userId) {
+  const res = await env.DB.prepare('DELETE FROM booking_payments WHERE id = ? AND user_id = ?')
+    .bind(id, userId).run();
+  return Boolean(res.meta && res.meta.changes > 0);
+}
+
+/** The numbers the payments page leads with. */
+export async function paymentStats(env, userId, { soonThrough, today }) {
+  const row = await env.DB.prepare(
+    `SELECT
+       SUM(CASE WHEN paid_date IS NOT NULL THEN amount_cents ELSE 0 END) AS collected,
+       SUM(CASE WHEN paid_date IS NULL THEN amount_cents ELSE 0 END) AS outstanding,
+       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
+                THEN amount_cents ELSE 0 END) AS overdue,
+       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL
+                     AND due_date >= ? AND due_date <= ?
+                THEN amount_cents ELSE 0 END) AS due_soon,
+       SUM(CASE WHEN paid_date IS NULL AND due_date IS NOT NULL AND due_date < ?
+                THEN 1 ELSE 0 END) AS overdue_count
+     FROM booking_payments WHERE user_id = ?`
+  ).bind(today, today, soonThrough, today, userId).first();
+
+  return {
+    collectedCents: row?.collected || 0,
+    outstandingCents: row?.outstanding || 0,
+    overdueCents: row?.overdue || 0,
+    dueSoonCents: row?.due_soon || 0,
+    overdueCount: row?.overdue_count || 0,
+  };
+}
+
+/** Per-booking balance: what it is worth, what came in, what is left. */
+export async function bookingBalances(env, userId) {
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
+            b.status, b.gross_cents, b.deposit_cents,
+            COALESCE(SUM(CASE WHEN p.paid_date IS NOT NULL THEN p.amount_cents END), 0) AS paid_cents,
+            COALESCE(SUM(CASE WHEN p.paid_date IS NULL THEN p.amount_cents END), 0) AS scheduled_cents,
+            COUNT(p.id) AS payment_count
+       FROM bookings b
+       LEFT JOIN booking_payments p ON p.booking_id = b.id
+      WHERE b.user_id = ? AND b.status IN ('quoted','booked','travelled')
+      GROUP BY b.id
+      ORDER BY COALESCE(b.depart_date, '9999-12-31') ASC
+      LIMIT 200`
+  ).bind(userId).all();
+  return results || [];
 }

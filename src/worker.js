@@ -30,6 +30,10 @@ import {
 } from './conversations.js';
 import { handleListCalendar, handleCreateAppointment } from './calendar.js';
 import { handleBilling, handleCreateInvoice, handleSendInvoice } from './billing.js';
+import {
+  handlePayments, handleCreatePayment, handleUpdatePayment,
+  handleMarkPaid, handleDeletePayment, handleGenerateSchedule,
+} from './payments.js';
 import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
 import { handleCrmLinks } from './crm.js';
 import {
@@ -77,6 +81,7 @@ const PAGE_FILES = {
   '/app/inbox': '/app/inbox.html',
   '/app/calendar': '/app/calendar.html',
   '/app/billing': '/app/billing.html',
+  '/app/payments': '/app/payments.html',
   '/app/forms': '/app/forms.html',
   '/app/formbuilder': '/app/formbuilder.html',
   '/app/automations': '/app/automations.html',
@@ -142,6 +147,9 @@ async function routeApi(request, env, path, method) {
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
   const publicFormMatch = path.match(/^\/api\/public\/forms\/([^/]+)$/);
   const autoMatch = path.match(/^\/api\/automations\/([^/]+)$/);
+  const payMatch = path.match(/^\/api\/payments\/([^/]+)$/);
+  const payPaidMatch = path.match(/^\/api\/payments\/([^/]+)\/paid$/);
+  const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
 
   // ---- auth -------------------------------------------------------------
@@ -237,6 +245,16 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/catalog' && method === 'GET') return handleCatalog(request, env);
   if (path === '/api/library' && method === 'GET') return handleLibrary(request, env);
   if (path === '/api/account' && method === 'GET') return handleAccount(request, env);
+
+  // ---- payments ---------------------------------------------------------
+  if (path === '/api/payments' && method === 'GET') return handlePayments(request, env);
+  if (path === '/api/payments' && method === 'POST') return handleCreatePayment(request, env);
+  if (payPaidMatch && method === 'POST') return handleMarkPaid(request, env, payPaidMatch[1]);
+  if (payMatch && method === 'PUT') return handleUpdatePayment(request, env, payMatch[1]);
+  if (payMatch && method === 'DELETE') return handleDeletePayment(request, env, payMatch[1]);
+  if (scheduleMatch && method === 'POST') {
+    return handleGenerateSchedule(request, env, scheduleMatch[1]);
+  }
 
   // ---- billing ----------------------------------------------------------
   if (path === '/api/billing' && method === 'GET') return handleBilling(request, env);

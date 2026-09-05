@@ -55,6 +55,7 @@ function parseBooking(body) {
       finalPaymentDue,
       travellers,
       grossCents,
+      depositCents: toCents(body.deposit),
       commissionCents,
       commissionStatus: oneOf(body.commissionStatus, COMMISSION_STATUSES),
       status: oneOf(body.status, STATUSES),

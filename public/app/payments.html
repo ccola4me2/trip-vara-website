@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payments | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Payments</h1><p class="sub">Deposits, instalments and final payments across your bookings.</p></div>
+      <button class="btn btn-primary btn-sm" id="new-payment">Record a payment</button>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="stats" class="stat-grid"></section>
+      <div class="tabs">
+        <button class="tab" type="button" data-state="outstanding" aria-selected="true">Outstanding</button>
+        <button class="tab" type="button" data-state="paid" aria-selected="false">Received</button>
+        <button class="tab" type="button" data-state="all" aria-selected="false">Everything</button>
+      </div>
+      <section class="card" id="panel"><p class="spinner">Loading...</p></section>
+      <section class="card">
+        <div class="card-head"><h2>Balance by booking</h2></div>
+        <div id="balances"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<dialog id="pay-dialog">
+  <form id="pay-form" method="dialog">
+    <div class="card-head"><h2 id="pay-title">Record a payment</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="bookingId">Booking</label>
+        <select id="bookingId" name="bookingId" required></select></div>
+      <div class="field-row">
+        <div class="field"><label for="kind">Type</label>
+          <select id="kind" name="kind">
+            <option value="deposit">Deposit</option>
+            <option value="installment">Instalment</option>
+            <option value="final">Final payment</option>
+            <option value="refund">Refund</option>
+          </select></div>
+        <div class="field"><label for="amount">Amount (USD)</label>
+          <input id="amount" name="amount" inputmode="decimal" placeholder="0.00" required></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="dueDate">Due</label>
+          <input id="dueDate" name="dueDate" type="date"></div>
+        <div class="field"><label for="paidDate">Paid</label>
+          <input id="paidDate" name="paidDate" type="date">
+          <p class="field-hint">Leave blank if it has not arrived yet.</p></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="method">Method</label>
+          <select id="method" name="method">
+            <option value="card">Card</option><option value="ach">ACH</option>
+            <option value="check">Check</option><option value="cash">Cash</option>
+            <option value="transfer">Transfer</option><option value="other">Other</option>
+          </select></div>
+        <div class="field"><label for="reference">Reference</label>
+          <input id="reference" name="reference" placeholder="Confirmation or receipt no."></div>
+      </div>
+      <div class="field"><label for="notes">Notes</label><textarea id="notes" name="notes"></textarea></div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-danger" type="button" id="delete-pay" hidden>Delete</button>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Save payment</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const panel = document.getElementById('panel');
+const balancesEl = document.getElementById('balances');
+const statsEl = document.getElementById('stats');
+const dlg = document.getElementById('pay-dialog');
+const form = document.getElementById('pay-form');
+const delBtn = document.getElementById('delete-pay');
+let state = 'outstanding';
+let editingId = null;
+let data = null;
+let bookings = [];
+
+const KIND_LABEL = { deposit: 'Deposit', installment: 'Instalment', final: 'Final', refund: 'Refund' };
+
+function statusOf(p, today) {
+  if (p.paid_date) return { label: 'received', tone: 'badge-green' };
+  if (!p.due_date) return { label: 'unscheduled', tone: 'badge-navy' };
+  if (p.due_date < today) {
+    const d = Math.abs(daysUntil(p.due_date));
+    return { label: `${d}d overdue`, tone: 'badge-red' };
+  }
+  const left = daysUntil(p.due_date);
+  return { label: left <= 14 ? `due in ${left}d` : `due ${dateFmt(p.due_date)}`, tone: left <= 14 ? 'badge-amber' : 'badge-navy' };
+}
+
+function render(d) {
+  data = d;
+  const s = d.stats;
+  statsEl.innerHTML = `
+    <div class="stat"><p class="label">Overdue</p>
+      <p class="value" style="${s.overdueCents ? 'color:var(--red-600);' : ''}">${money(s.overdueCents)}</p>
+      <p class="meta">${s.overdueCount} payment${s.overdueCount === 1 ? '' : 's'} past due</p></div>
+    <div class="stat"><p class="label">Due in 30 days</p><p class="value">${money(s.dueSoonCents)}</p>
+      <p class="meta">Coming up</p></div>
+    <div class="stat"><p class="label">Received</p><p class="value">${money(s.collectedCents)}</p>
+      <p class="meta">Across all bookings</p></div>
+    <div class="stat"><p class="label">Still owed</p><p class="value">${money(s.outstandingCents)}</p>
+      <p class="meta">Scheduled but not paid</p></div>`;
+
+  if (!d.payments.length) {
+    panel.innerHTML = state === 'paid'
+      ? '<div class="empty"><h3>Nothing received yet</h3><p>Payments you mark as paid appear here.</p></div>'
+      : '<div class="empty"><h3>Nothing outstanding</h3><p>Add a deposit amount and dates to a booking, then build its schedule below.</p></div>';
+  } else {
+    panel.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Client</th><th>Trip</th><th>Type</th><th>Status</th>
+        <th class="num">Amount</th><th></th></tr></thead>
+      <tbody>${d.payments.map((p) => {
+        const st = statusOf(p, d.today);
+        return `<tr>
+          <td><span class="name">${esc(p.client_name)}</span>
+            <div class="muted">${esc(p.depart_date ? 'Departs ' + dateFmt(p.depart_date) : '')}</div></td>
+          <td>${esc(p.product_name || p.supplier || '-')}
+            <div class="muted">${esc(p.product_name && p.supplier ? p.supplier : '')}</div></td>
+          <td><span class="badge badge-navy">${esc(KIND_LABEL[p.kind] || p.kind)}</span></td>
+          <td><span class="badge ${st.tone}">${esc(st.label)}</span>
+            <div class="muted">${esc(p.paid_date ? 'Paid ' + dateFmt(p.paid_date) + (p.method ? ' · ' + p.method : '')
+                                   : p.due_date ? dateFmt(p.due_date) : '')}</div></td>
+          <td class="num">${money(p.amount_cents)}</td>
+          <td class="num" style="white-space:nowrap;">
+            ${!p.paid_date ? `<button class="btn btn-primary btn-sm" data-paid="${esc(p.id)}">Mark paid</button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-edit="${esc(p.id)}">Edit</button></td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
+
+    panel.querySelectorAll('[data-paid]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { await api(`/api/payments/${encodeURIComponent(b.dataset.paid)}/paid`, { method: 'POST', body: {} }); await load(); }
+      catch (err) { alert(err.message); b.disabled = false; }
+    }));
+    panel.querySelectorAll('[data-edit]').forEach((b) =>
+      b.addEventListener('click', () => openDialog(d.payments.find((x) => x.id === b.dataset.edit))));
+  }
+
+  bookings = d.balances;
+  balancesEl.innerHTML = d.balances.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Booking</th><th class="num">Trip value</th><th class="num">Received</th>
+          <th class="num">Scheduled</th><th class="num">Not scheduled</th><th></th></tr></thead>
+        <tbody>${d.balances.map((b) => `<tr>
+          <td><span class="name">${esc(b.client_name)}</span>
+            <div class="muted">${esc([b.product_name || b.supplier, b.depart_date ? dateFmt(b.depart_date) : ''].filter(Boolean).join('  ·  '))}</div></td>
+          <td class="num">${money(b.gross_cents)}</td>
+          <td class="num">${money(b.paid_cents)}</td>
+          <td class="num">${money(b.scheduled_cents)}</td>
+          <td class="num" style="${b.unscheduled_cents ? 'color:var(--amber-600);font-weight:650;' : ''}">${money(b.unscheduled_cents)}</td>
+          <td class="num">${b.payment_count === 0
+            ? `<button class="btn btn-ghost btn-sm" data-gen="${esc(b.id)}">Build schedule</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty"><p>No active bookings yet.</p></div>';
+
+  balancesEl.querySelectorAll('[data-gen]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const res = await api(`/api/bookings/${encodeURIComponent(b.dataset.gen)}/schedule`, { method: 'POST', body: {} });
+      if (res.message) alert(res.message);
+      await load();
+    } catch (err) { alert(err.message); b.disabled = false; }
+  }));
+}
+
+function openDialog(p) {
+  editingId = p ? p.id : null;
+  form.reset();
+  form.querySelector('.notice-error').hidden = true;
+  document.getElementById('pay-title').textContent = p ? 'Edit payment' : 'Record a payment';
+  delBtn.hidden = !p;
+  document.getElementById('bookingId').innerHTML = bookings.length
+    ? bookings.map((b) => `<option value="${esc(b.id)}">${esc(b.client_name)} — ${esc(b.product_name || b.supplier || 'booking')}</option>`).join('')
+    : '<option value="">No bookings yet</option>';
+  if (p) {
+    form.elements.bookingId.value = p.booking_id;
+    form.elements.kind.value = p.kind;
+    form.elements.amount.value = (p.amount_cents / 100).toFixed(2);
+    form.elements.dueDate.value = p.due_date || '';
+    form.elements.paidDate.value = p.paid_date || '';
+    form.elements.method.value = p.method || 'card';
+    form.elements.reference.value = p.reference || '';
+    form.elements.notes.value = p.notes || '';
+  }
+  dlg.showModal();
+}
+
+document.getElementById('new-payment').addEventListener('click', () => openDialog(null));
+dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+document.querySelectorAll('[data-state]').forEach((b) => b.addEventListener('click', () => {
+  state = b.dataset.state;
+  document.querySelectorAll('[data-state]').forEach((x) =>
+    x.setAttribute('aria-selected', String(x.dataset.state === state)));
+  load();
+}));
+
+delBtn.addEventListener('click', async () => {
+  if (!editingId || !confirm('Delete this payment?')) return;
+  await api(`/api/payments/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
+  dlg.close();
+  await load();
+});
+
+onSubmit(form, async (values) => {
+  const path = editingId ? `/api/payments/${encodeURIComponent(editingId)}` : '/api/payments';
+  await api(path, { method: editingId ? 'PUT' : 'POST', body: values });
+  dlg.close();
+  await load();
+});
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading...</p>';
+  try { render(await api(`/api/payments?state=${state}`)); }
+  catch (err) { statsEl.innerHTML = ''; showError(document.getElementById('err'), err); panel.innerHTML = ''; }
+}
+await load();
+</script>
+</body></html>

@@ -81,6 +81,12 @@
           <input id="commission" name="commission" inputmode="decimal" placeholder="0.00"></div>
       </div>
       <div class="field-row">
+        <div class="field"><label for="deposit">Deposit amount (USD)</label>
+          <input id="deposit" name="deposit" inputmode="decimal" placeholder="0.00">
+          <p class="field-hint">Used to build the payment schedule.</p></div>
+        <div class="field"><label>&nbsp;</label><span class="field-hint">Balance is the trip value less the deposit.</span></div>
+      </div>
+      <div class="field-row">
         <div class="field"><label for="travellers">Travellers</label>
           <input id="travellers" name="travellers" type="number" min="1" value="1"></div>
         <div class="field"><label for="commissionStatus">Commission status</label>
@@ -185,6 +191,7 @@ function openEdit(id) {
   set('travellers', b.travellers); set('status', b.status);
   set('commissionStatus', b.commission_status); set('notes', b.notes);
   set('gross', (b.gross_cents / 100).toFixed(2));
+  set('deposit', ((b.deposit_cents || 0) / 100).toFixed(2));
   set('commission', (b.commission_cents / 100).toFixed(2));
   dlg.showModal();
 }
