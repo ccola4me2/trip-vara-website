@@ -100,6 +100,13 @@ export async function handleUpdatePayment(request, env, id) {
   const { fields, error } = parsePayment(await readJson(request));
   if (error) return badRequest(error);
 
+  // The payment itself is scoped by user, but the booking it points at comes
+  // from the request. Without this an advisor could move their own payment
+  // onto someone else's booking and corrupt that booking's balance. Create
+  // already checked this; update did not.
+  const booking = await db.getBooking(env, fields.bookingId, user.id);
+  if (!booking) return notFound('Booking not found.');
+
   const payment = await db.updatePayment(env, id, user.id, fields);
   if (!payment) return notFound('Payment not found.');
   await db.logActivity(env, user.id, 'payment.update', 'Updated a payment', { id });

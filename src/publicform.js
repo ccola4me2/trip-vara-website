@@ -8,7 +8,7 @@
 // These pages are unauthenticated by design. Everything below assumes hostile
 // input.
 
-import { json, badRequest, notFound, uid, now, clean, isValidEmail, normalizeEmail } from './util.js';
+import { json, badRequest, notFound, uid, now, clean, isValidEmail, normalizeEmail, sha256Hex } from './util.js';
 import * as ghl from './ghl.js';
 import { upsertContact } from './sync.js';
 import { hydrateForm } from './formbuilder.js';
@@ -112,6 +112,20 @@ export async function handlePublicSubmit(request, env, slug) {
   let body = {};
   try { body = await request.json(); } catch { body = {}; }
 
+  // Rate limit before doing any work. These pages are unauthenticated, so the
+  // honeypot below is the only other thing standing between them and a script.
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  const ipHash = ip ? (await sha256Hex(`${slug}:${ip}`)).slice(0, 32) : null;
+  if (ipHash) {
+    const since = now() - 3600;
+    const seen = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM form_submissions WHERE form_id = ? AND ip_hash = ? AND created_at > ?'
+    ).bind(form.id, ipHash, since).first();
+    if ((seen?.n || 0) >= 10) {
+      return json({ error: 'Too many submissions from here. Please try again later.' }, 429);
+    }
+  }
+
   // Honeypot. Answer as if it worked so a bot learns nothing.
   if (clean(body.company_website, 200)) {
     return json({ ok: true, message: form.successMessage || 'Thanks, we have got it.' });
@@ -163,10 +177,10 @@ export async function handlePublicSubmit(request, env, slug) {
   const submissionId = uid();
   await env.DB.prepare(
     `INSERT INTO form_submissions
-       (id, form_id, location_id, contact_id, name, email, phone, data_json, source, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, form_id, location_id, contact_id, name, email, phone, data_json, source, ip_hash, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(submissionId, form.id, row.location_id, null, name || null, email || null,
-         phone || null, JSON.stringify(data), `form:${form.slug}`, now()).run();
+         phone || null, JSON.stringify(data), `form:${form.slug}`, ipHash, now()).run();
 
   // Push the contact upstream so messaging and automations still see it. Best
   // effort on purpose: losing a lead because the CRM was rate limiting would

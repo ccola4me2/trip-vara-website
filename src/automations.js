@@ -341,6 +341,33 @@ export async function scanTimeTriggers(env, locationId, { withinDays = 7 } = {})
   return { candidates: (results || []).length, fired };
 }
 
+/**
+ * Housekeeping. Finished runs and their logs accumulate forever otherwise, and
+ * a busy automation firing on every form submission fills the table with rows
+ * nobody will read again. Keeps recent history for the activity view and drops
+ * anything older; failed runs are kept longer because they are the ones
+ * someone may still want to look at.
+ */
+export async function purgeOldRuns(env, { doneAfterDays = 30, failedAfterDays = 90 } = {}) {
+  const doneBefore = now() - doneAfterDays * 86400;
+  const failedBefore = now() - failedAfterDays * 86400;
+
+  await env.DB.prepare(
+    `DELETE FROM automation_logs WHERE run_id IN (
+       SELECT id FROM automation_runs
+        WHERE (status IN ('done','cancelled') AND updated_at < ?)
+           OR (status = 'failed' AND updated_at < ?))`
+  ).bind(doneBefore, failedBefore).run();
+
+  const res = await env.DB.prepare(
+    `DELETE FROM automation_runs
+      WHERE (status IN ('done','cancelled') AND updated_at < ?)
+         OR (status = 'failed' AND updated_at < ?)`
+  ).bind(doneBefore, failedBefore).run();
+
+  return { removed: res.meta?.changes || 0 };
+}
+
 /** One scheduled pass over everything that is due. */
 export async function processDueRuns(env) {
   const { results } = await env.DB.prepare(

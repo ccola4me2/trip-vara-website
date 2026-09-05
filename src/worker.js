@@ -42,7 +42,7 @@ import {
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
-  handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers,
+  handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
 } from './automations.js';
 import {
   handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
@@ -112,6 +112,7 @@ export default {
   // resumable or cheap, so an idle run costs almost nothing.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(purgeExpiredSessions(env).catch((e) => console.error('purge', e)));
+    ctx.waitUntil(purgeOldRuns(env).catch((e) => console.error('purge runs', e)));
     ctx.waitUntil(
       runSync(env, locationFor(env, null)).catch((e) => console.error('sync', e))
     );
@@ -153,7 +154,8 @@ async function routeApi(request, env, path, method) {
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
   const publicFormMatch = path.match(/^\/api\/public\/forms\/([^/]+)$/);
-  const autoMatch = path.match(/^\/api\/automations\/([^/]+)$/);
+  // Excludes /run, which is an action rather than an automation id.
+  const autoMatch = path.match(/^\/api\/automations\/(?!run$)([^/]+)$/);
   const payMatch = path.match(/^\/api\/payments\/([^/]+)$/);
   const payPaidMatch = path.match(/^\/api\/payments\/([^/]+)\/paid$/);
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
@@ -239,7 +241,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/automations' && method === 'GET') return handleListAutomations(request, env);
   if (path === '/api/automations' && method === 'POST') return handleSaveAutomation(request, env, null);
   if (path === '/api/automations/run' && method === 'POST') return handleRunAutomations(request, env);
-  if (autoMatch && autoMatch[1] !== 'run' && method === 'GET') return handleGetAutomation(request, env, autoMatch[1]);
+  if (autoMatch && method === 'GET') return handleGetAutomation(request, env, autoMatch[1]);
   if (autoMatch && method === 'PUT') return handleSaveAutomation(request, env, autoMatch[1]);
   if (autoMatch && method === 'DELETE') return handleDeleteAutomation(request, env, autoMatch[1]);
 
