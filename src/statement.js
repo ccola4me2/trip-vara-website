@@ -12,7 +12,7 @@
 // named here to reach a client, which means a column added to the reservation
 // next month cannot leak into a client's inbox by default.
 
-import { json, badRequest, notFound, readJson } from './util.js';
+import { json, badRequest, notFound, readJson, now } from './util.js';
 import { requireUser } from './auth.js';
 import { layout, escapeHtml, sendHtml } from './email.js';
 import { listPricing } from './pricing.js';
@@ -266,6 +266,13 @@ export async function handleStatement(request, env, id) {
       problem: statement.to ? null : 'That client has no email address on file.',
       // So the page can offer the fix rather than only the complaint.
       clientId: client ? client.id : null,
+      // So the advisor can see they have already sent this before sending it
+      // again. The payment chaser has shown this from the start; the client
+      // documents showed nothing, which is how a quote gets sent three times
+      // and followed up never.
+      alreadySent: (statement.mode === 'quote' ? booking.quote_sent_at : booking.statement_sent_at)
+        || null,
+      sentCount: statement.mode === 'quote' ? (booking.quote_sent_count || 0) : 0,
       subject,
       statement,
       html,
@@ -280,7 +287,21 @@ export async function handleStatement(request, env, id) {
     return badRequest(String((e && e.message) || e).slice(0, 300));
   }
 
-  await db.logActivity(env, user.id, 'booking.statement',
-    `Sent ${statement.clientName} a statement`, { bookingId: id });
-  return json({ ok: true, sentTo: statement.to, subject });
+  // Recorded only after the send returns. A failed send that still marked the
+  // quote as sent would be worse than no record at all: the follow-up list is
+  // the one place that would have caught it.
+  if (statement.mode === 'quote') {
+    await env.DB.prepare(
+      `UPDATE bookings SET quote_sent_at = ?, quote_sent_count = quote_sent_count + 1,
+              updated_at = ? WHERE id = ? AND user_id = ?`
+    ).bind(now(), now(), id, user.id).run();
+  } else {
+    await env.DB.prepare(
+      'UPDATE bookings SET statement_sent_at = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+    ).bind(now(), now(), id, user.id).run();
+  }
+
+  await db.logActivity(env, user.id, `booking.${statement.mode}`,
+    `Sent ${statement.clientName} a ${statement.mode}`, { bookingId: id });
+  return json({ ok: true, sentTo: statement.to, subject, mode: statement.mode });
 }

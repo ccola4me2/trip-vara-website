@@ -114,6 +114,9 @@ export async function handleDashboard(request, env) {
     tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
     groups: await listGroups(env, scope, { status: 'open', limit: 12 }).catch(() => []),
     rebook: await db.rebookCandidates(env, scope, { today, limit: 12 }).catch(() => []),
+    // Quotes nobody has answered, and quotes nobody has sent. Neither shows up
+    // in production, on the to do list, or anywhere else on this screen.
+    quotes: await db.quoteFollowUps(env, scope, { limit: 12 }).catch(() => []),
     pinned: await db.listClients(env, scope, { pinnedOnly: true, limit: 12 }).catch(() => []),
     // Always the reader's own target, whatever scope the rest of the screen
     // is showing. A target you did not set is not your target.

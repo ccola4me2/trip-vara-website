@@ -287,6 +287,30 @@ const PANELS = {
           <td class="num">${r.trips}</td>
           <td class="num">${esc(money(r.lifetime_cents))}</td></tr>`).join('')}</tbody></table></div>`;
     } },
+    // A quote sent and never followed up is the largest quiet leak in travel
+    // sales, and it appears nowhere else: not in production, which counts
+    // bookings, and not on the to do list, because nobody wrote a task.
+    { key: 'quotes', label: 'Quotes with no answer', render: () => {
+      const rows = d.quotes || [];
+      if (!rows.length) return '<p class="wempty">No quote is waiting on an answer.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Trip</th><th class="num">Worth</th><th>Where it stands</th></tr></thead>
+        <tbody>${rows.map((q) => `<tr>
+          <td><a class="name" href="/app/reservation?id=${esc(q.id)}">${esc(q.client_name)}</a>
+            <div class="muted">${esc(q.supplier || '')}</div></td>
+          <td>${esc(q.product_name || '-')}
+            <div class="muted">${esc(q.depart_date ? fmtShort(q.depart_date) : 'no dates')}</div></td>
+          <td class="num">${esc(money(q.gross_cents))}</td>
+          <td>${q.state === 'unsent'
+            ? '<span class="badge badge-amber">never sent</span>'
+            : `<span class="badge ${q.quiet_days >= 21 ? 'badge-red' : 'badge-navy'}">quiet ${
+                q.quiet_days}d</span>`}
+            <div class="muted" style="font-size:.72rem;">${q.state === 'unsent'
+              ? 'written, not sent to the client'
+              : `sent ${q.quote_sent_count > 1 ? q.quote_sent_count + ' times' : 'once'}`}</div></td>
+        </tr>`).join('')}</tbody></table></div>`;
+    } },
+
     { key: 'credits', label: 'Credits expiring', render: () => {
       const rows = (d.credits || []).filter((c) => c.expires_on).slice(0, 12);
       if (!rows.length) return '<p class="wempty">No credits on file.</p>';

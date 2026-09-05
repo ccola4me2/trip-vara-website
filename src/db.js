@@ -297,6 +297,7 @@ const BOOKING_COLUMNS = `
   return_date, deposit_due, final_payment_due, travellers, gross_cents, deposit_cents,
   commission_cents, commission_status, status, notes, group_id, client_id, vendor_id,
   cabin, cabin_category, itinerary, booking_method, insurance_status, advisor_split_pct,
+  quote_sent_at, quote_sent_count, statement_sent_at,
   created_at, updated_at
 `;
 
@@ -310,7 +311,9 @@ const BOOKING_COLUMNS_B = `
   b.return_date, b.deposit_due, b.final_payment_due, b.travellers, b.gross_cents,
   b.deposit_cents, b.commission_cents, b.commission_status, b.status, b.notes,
   b.group_id, b.client_id, b.vendor_id, b.cabin, b.cabin_category, b.itinerary,
-  b.booking_method, b.insurance_status, b.advisor_split_pct, b.created_at, b.updated_at
+  b.booking_method, b.insurance_status, b.advisor_split_pct,
+  b.quote_sent_at, b.quote_sent_count, b.statement_sent_at,
+  b.created_at, b.updated_at
 `;
 
 export async function listBookings(env, scope, { status, search, limit = 200 } = {}) {
@@ -556,6 +559,45 @@ export async function productionBreakdown(env, scope, sinceDate, by = 'type') {
       GROUP BY label ORDER BY gross_cents DESC LIMIT 20`
   ).bind(...scoped.binds, sinceDate).all();
   return results || [];
+}
+
+/**
+ * Quotes sitting with no answer.
+ *
+ * The largest quiet leak in travel sales, and the one nothing in this portal
+ * could see until the documents started recording that they had been sent. A
+ * quote is not a task, so it never appeared on the to do list; it is not a
+ * booking, so it never appeared in production; and the reservation looked the
+ * same the day it went out and a month later.
+ *
+ * Two states, because they call for different things. One has been sent and
+ * ignored, which is a follow-up. The other was never sent at all, which is a
+ * quote somebody wrote and forgot, and no amount of chasing the client fixes
+ * it.
+ */
+export async function quoteFollowUps(env, scope, { quietDays = 7, limit = 20 } = {}) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+  // Seconds. Every timestamp column in this database is written by now(),
+  // which is seconds, and mixing in a Date.now() milliseconds figure here
+  // would put the cut-off fifty thousand years in the future and return every
+  // quote ever written as overdue.
+  const nowSec = now();
+  const quietBefore = nowSec - quietDays * 86400;
+
+  const { results } = await env.DB.prepare(
+    `SELECT ${BOOKING_COLUMNS_B}, ${ADVISOR_NAME}
+       FROM bookings b LEFT JOIN users u ON u.id = b.user_id
+      WHERE ${scoped.sql} AND b.status = 'quoted'
+        AND (b.quote_sent_at IS NULL OR b.quote_sent_at < ?)
+      ORDER BY COALESCE(b.quote_sent_at, b.created_at) ASC
+      LIMIT ?`
+  ).bind(...scoped.binds, quietBefore, Math.min(Number(limit) || 20, 100)).all();
+
+  return (results || []).map((b) => ({
+    ...b,
+    state: b.quote_sent_at ? 'waiting' : 'unsent',
+    quiet_days: b.quote_sent_at ? Math.floor((nowSec - b.quote_sent_at) / 86400) : null,
+  }));
 }
 
 /**

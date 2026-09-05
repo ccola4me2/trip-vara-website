@@ -1548,6 +1548,41 @@ async function main() {
   check(/\$500\.00/.test(qhtml) && /holds this/.test(qhtml),
     'while saying what it takes to hold it, and by when');
 
+  // A quote sent and never followed up is the largest quiet leak in travel
+  // sales, and nothing here could even tell you one had been sent.
+  const unsent = await call(advisor, 'GET', '/api/dashboard');
+  const waiting = (unsent.data?.quotes || []).find((q) => q.id === quotedId);
+  check(waiting?.state === 'unsent',
+    'a quote written and not sent is waiting on the advisor, not the client',
+    JSON.stringify({ state: waiting?.state, days: waiting?.quiet_days }));
+  check(!(unsent.data?.quotes || []).some((q) => q.id === stId),
+    'and a booked trip is not sitting in the quote follow-up list');
+
+  // Previewing is not sending. Nothing is recorded until the email leaves.
+  check(qp.data?.alreadySent === null && qp.data?.sentCount === 0,
+    'previewing a quote records nothing');
+
+  const sent = await call(advisor, 'POST', `/api/bookings/${quotedId}/statement`, {});
+  const after = await call(advisor, 'POST', `/api/bookings/${quotedId}/statement`, { preview: true });
+  if (sent.status === 200) {
+    check(after.data?.alreadySent && after.data?.sentCount === 1,
+      'a sent quote is remembered, and counted',
+      JSON.stringify({ at: after.data?.alreadySent, n: after.data?.sentCount }));
+    // Seconds, not milliseconds. Every timestamp in this database is seconds,
+    // and one millisecond figure would put a quote sent today fifty thousand
+    // years in the past and every quote ever written into the overdue list.
+    const dash = await call(advisor, 'GET', '/api/dashboard');
+    const row = (dash.data?.quotes || []).find((q) => q.id === quotedId);
+    check(!row || row.quiet_days === 0,
+      'and a quote sent today is not reported as quiet for decades',
+      row && row.quiet_days);
+  } else {
+    check(after.data?.alreadySent === null,
+      'a send that failed records nothing, so nothing looks followed up when it was not',
+      `send said ${sent.status}, alreadySent ${after.data?.alreadySent}`);
+    console.log('        (email is not configured here, so the send itself cannot be exercised)');
+  }
+
   // Nothing goes out about a trip that is off.
   await call(advisor, 'POST', `/api/bookings/${quotedId}/quick`, { status: 'cancelled' });
   const dead = await call(advisor, 'POST', `/api/bookings/${quotedId}/statement`, { preview: true });
