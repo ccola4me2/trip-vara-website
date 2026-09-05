@@ -13,20 +13,20 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Payments</h1><p class="sub">Deposits, instalments and final payments across your bookings.</p></div>
-      <button class="btn btn-primary btn-sm" id="new-payment">Record a payment</button>
+      <div><h1>Payments</h1><p class="sub">What each client owes on their trip, and what they have paid so far.</p></div>
+      <button class="btn btn-primary btn-sm" id="new-payment">Record a client payment</button>
     </header>
     <div class="content">
       <div id="err"></div>
       <section id="stats" class="stat-grid"></section>
       <div class="tabs">
         <button class="tab" type="button" data-state="outstanding" aria-selected="true">Outstanding</button>
-        <button class="tab" type="button" data-state="paid" aria-selected="false">Received</button>
+        <button class="tab" type="button" data-state="paid" aria-selected="false">Paid</button>
         <button class="tab" type="button" data-state="all" aria-selected="false">Everything</button>
       </div>
       <section class="card" id="panel"><p class="spinner">Loading...</p></section>
       <section class="card">
-        <div class="card-head"><h2>Balance by booking</h2></div>
+        <div class="card-head"><h2>What each client still owes</h2></div>
         <div id="balances"></div>
       </section>
     </div>
@@ -35,7 +35,7 @@
 
 <dialog id="pay-dialog">
   <form id="pay-form" method="dialog">
-    <div class="card-head"><h2 id="pay-title">Record a payment</h2>
+    <div class="card-head"><h2 id="pay-title">Record a client payment</h2>
       <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
     <div class="dialog-body">
       <div class="notice notice-error" hidden></div>
@@ -44,23 +44,23 @@
       <div class="field-row">
         <div class="field"><label for="kind">Type</label>
           <select id="kind" name="kind">
-            <option value="deposit">Deposit</option>
-            <option value="installment">Instalment</option>
-            <option value="final">Final payment</option>
+            <option value="deposit">Deposit to hold the trip</option>
+            <option value="installment">Part payment</option>
+            <option value="final">Final balance</option>
             <option value="refund">Refund</option>
           </select></div>
         <div class="field"><label for="amount">Amount (USD)</label>
           <input id="amount" name="amount" inputmode="decimal" placeholder="0.00" required></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="dueDate">Due</label>
+        <div class="field"><label for="dueDate">Date it is due</label>
           <input id="dueDate" name="dueDate" type="date"></div>
-        <div class="field"><label for="paidDate">Paid</label>
+        <div class="field"><label for="paidDate">Date they paid</label>
           <input id="paidDate" name="paidDate" type="date">
-          <p class="field-hint">Leave blank if it has not arrived yet.</p></div>
+          <p class="field-hint">Leave blank if the client has not paid it yet.</p></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="method">Method</label>
+        <div class="field"><label for="method">How they paid</label>
           <select id="method" name="method">
             <option value="card">Card</option><option value="ach">ACH</option>
             <option value="check">Check</option><option value="cash">Cash</option>
@@ -95,10 +95,10 @@ let editingId = null;
 let data = null;
 let bookings = [];
 
-const KIND_LABEL = { deposit: 'Deposit', installment: 'Instalment', final: 'Final', refund: 'Refund' };
+const KIND_LABEL = { deposit: 'Deposit', installment: 'Part payment', final: 'Final balance', refund: 'Refund' };
 
 function statusOf(p, today) {
-  if (p.paid_date) return { label: 'received', tone: 'badge-green' };
+  if (p.paid_date) return { label: 'paid', tone: 'badge-green' };
   if (!p.due_date) return { label: 'unscheduled', tone: 'badge-navy' };
   if (p.due_date < today) {
     const d = Math.abs(daysUntil(p.due_date));
@@ -114,17 +114,17 @@ function render(d) {
   statsEl.innerHTML = `
     <div class="stat"><p class="label">Overdue</p>
       <p class="value" style="${s.overdueCents ? 'color:var(--red-600);' : ''}">${money(s.overdueCents)}</p>
-      <p class="meta">${s.overdueCount} payment${s.overdueCount === 1 ? '' : 's'} past due</p></div>
+      <p class="meta">${s.overdueCount} client payment${s.overdueCount === 1 ? '' : 's'} past due</p></div>
     <div class="stat"><p class="label">Due in 30 days</p><p class="value">${money(s.dueSoonCents)}</p>
-      <p class="meta">Coming up</p></div>
-    <div class="stat"><p class="label">Received</p><p class="value">${money(s.collectedCents)}</p>
-      <p class="meta">Across all bookings</p></div>
-    <div class="stat"><p class="label">Still owed</p><p class="value">${money(s.outstandingCents)}</p>
-      <p class="meta">Scheduled but not paid</p></div>`;
+      <p class="meta">Client payments coming up</p></div>
+    <div class="stat"><p class="label">Paid by clients</p><p class="value">${money(s.collectedCents)}</p>
+      <p class="meta">Money collected on trips</p></div>
+    <div class="stat"><p class="label">Clients still owe</p><p class="value">${money(s.outstandingCents)}</p>
+      <p class="meta">Due but not yet paid</p></div>`;
 
   if (!d.payments.length) {
     panel.innerHTML = state === 'paid'
-      ? '<div class="empty"><h3>Nothing received yet</h3><p>Payments you mark as paid appear here.</p></div>'
+      ? '<div class="empty"><h3>No client payments yet</h3><p>Payments you mark as paid appear here.</p></div>'
       : '<div class="empty"><h3>Nothing outstanding</h3><p>Add a deposit amount and dates to a booking, then build its schedule below.</p></div>';
   } else {
     panel.innerHTML = `<div class="table-wrap"><table>
@@ -160,8 +160,8 @@ function render(d) {
   bookings = d.balances;
   balancesEl.innerHTML = d.balances.length
     ? `<div class="table-wrap"><table>
-        <thead><tr><th>Booking</th><th class="num">Trip value</th><th class="num">Received</th>
-          <th class="num">Scheduled</th><th class="num">Not scheduled</th><th></th></tr></thead>
+        <thead><tr><th>Booking</th><th class="num">Trip cost</th><th class="num">Paid</th>
+          <th class="num">Scheduled</th><th class="num">Unbilled</th><th></th></tr></thead>
         <tbody>${d.balances.map((b) => `<tr>
           <td><span class="name">${esc(b.client_name)}</span>
             <div class="muted">${esc([b.product_name || b.supplier, b.depart_date ? dateFmt(b.depart_date) : ''].filter(Boolean).join('  ·  '))}</div></td>
@@ -188,7 +188,7 @@ function openDialog(p) {
   editingId = p ? p.id : null;
   form.reset();
   form.querySelector('.notice-error').hidden = true;
-  document.getElementById('pay-title').textContent = p ? 'Edit payment' : 'Record a payment';
+  document.getElementById('pay-title').textContent = p ? 'Edit payment' : 'Record a client payment';
   delBtn.hidden = !p;
   document.getElementById('bookingId').innerHTML = bookings.length
     ? bookings.map((b) => `<option value="${esc(b.id)}">${esc(b.client_name)} — ${esc(b.product_name || b.supplier || 'booking')}</option>`).join('')

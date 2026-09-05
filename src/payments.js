@@ -1,8 +1,11 @@
-// Travel payment schedules: deposits, instalments, final payments.
+// What a client owes on their trip, and what they have paid.
 //
-// This is what a travel agency actually tracks. Not "invoicing" in the
-// accounting sense, but the schedule a supplier imposes on a booking: a
-// deposit to hold it, a balance due by a date, and whether either has landed.
+// "Deposit" here means the money a client pays up front to hold a trip, which
+// is what a travel agency tracks. It is not a bank deposit, and nothing in
+// this module touches an agency's own accounts.
+//
+// The shape is the one a supplier imposes on a booking: a deposit to hold it,
+// optional part payments, and a final balance due by a deadline.
 
 import { json, badRequest, notFound, uid, now, clean, cleanDate, toCents, oneOf, readJson } from './util.js';
 import { requireUser } from './auth.js';
