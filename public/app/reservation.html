@@ -212,6 +212,23 @@
   </form>
 </dialog>
 
+<dialog id="split-dlg">
+  <form id="split-form" method="dialog">
+    <div class="card-head"><h2>Commission split</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-split>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <p class="muted" id="split-what" style="margin:0 0 .9rem;"></p>
+      <div class="field"><label for="sp-pct">You keep (%)</label>
+        <input id="sp-pct" name="advisorSplitPct" inputmode="decimal" placeholder="70">
+        <p class="field-hint" id="sp-hint"></p></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-primary" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="statement-dlg" style="max-width:720px;">
   <div class="card-head"><h2>Statement to the client</h2>
     <button class="btn btn-ghost btn-sm" type="button" id="statement-close">Close</button></div>
@@ -398,11 +415,14 @@ function render() {
   ].filter(Boolean).join(' &middot; ');
 
   document.getElementById('actions').innerHTML = d.editable
-    ? `<button class="btn btn-ghost btn-sm" id="send-statement">Send statement</button>
+    ? `<button class="btn btn-ghost btn-sm" id="split-btn">Commission split</button>
+       <button class="btn btn-ghost btn-sm" id="send-statement">Send statement</button>
        <a class="btn btn-ghost btn-sm" href="/app/reservations?focus=${esc(b.id)}">Edit reservation</a>`
     : '<span class="muted">Another advisor\'s reservation</span>';
   const sb = document.getElementById('send-statement');
   if (sb) sb.addEventListener('click', statement);
+  const spb = document.getElementById('split-btn');
+  if (spb) spb.addEventListener('click', openSplit);
 
   const left = daysUntil(b.final_payment_due);
   document.getElementById('money').innerHTML = `
@@ -494,6 +514,10 @@ function render() {
     <dt>Insurance</dt><dd>${INSURANCE[b.insurance_status] || esc(b.insurance_status || '-')}</dd>
     <dt>Booked by</dt><dd>${esc(b.booking_method || '-')}</dd>
     <dt>Commission</dt><dd>${money(b.commission_cents)} <span class="muted">${esc(b.commission_status)}</span></dd>
+    ${d.split && d.split.pct !== 100 ? `<dt>You keep</dt><dd>${money(d.split.advisorCents)}
+      <span class="muted">${esc(String(d.split.pct))}% ${d.split.overridden
+        ? 'set on this trip' : 'by your standing agreement'}; the agency keeps ${
+        money(d.split.agencyCents)}</span></dd>` : ''}
     ${b.notes ? `<dt>Notes</dt><dd>${esc(b.notes)}</dd>` : ''}
   </dl>`;
 
@@ -664,6 +688,37 @@ async function statement() {
 
 document.getElementById('statement-close').addEventListener('click',
   () => document.getElementById('statement-dlg').close());
+
+/**
+ * The share of this trip's commission the advisor keeps.
+ *
+ * Blank is not zero. Blank means this trip follows the standing agreement,
+ * and zero means the agency keeps all of it, so the field is left empty
+ * rather than pre-filled with the number it would inherit.
+ */
+const splitDlg = document.getElementById('split-dlg');
+const splitForm = document.getElementById('split-form');
+
+function openSplit() {
+  const sp = d.split || {};
+  splitForm.reset();
+  splitForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('split-what').textContent =
+    `${money(d.booking.commission_cents)} commission on this reservation.`;
+  splitForm.elements.advisorSplitPct.value = sp.overridden ? String(sp.pct) : '';
+  document.getElementById('sp-hint').textContent = sp.defaultPct === null
+    ? 'Leave it blank to keep all of it, which is your standing arrangement.'
+    : `Leave it blank to follow your standing agreement of ${sp.defaultPct}%.`;
+  splitDlg.showModal();
+}
+
+document.querySelector('[data-close-split]').addEventListener('click', () => splitDlg.close());
+onSubmit(splitForm, async (values) => {
+  await api(`/api/bookings/${encodeURIComponent(id)}/quick`,
+    { method: 'POST', body: { advisorSplitPct: values.advisorSplitPct } });
+  splitDlg.close();
+  await load();
+});
 
 async function load() {
   try {

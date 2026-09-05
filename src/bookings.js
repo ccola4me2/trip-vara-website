@@ -13,6 +13,7 @@ import { fireTrigger } from './automations.js';
 import { resolveVendor } from './vendors.js';
 import { listTravellers, listAmenities, passportProblem } from './travellers.js';
 import { PAYMENT_TYPES, releaseCredit } from './payments.js';
+import { splitPct, shareOf } from './split.js';
 import { listPricing, summarise, PRICE_KINDS } from './pricing.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
@@ -251,6 +252,22 @@ export async function handleBookingRecord(request, env, id) {
       scheduledCents: scheduled,
       unscheduledCents: Math.max(0, (booking.gross_cents || 0) - paid - scheduled),
     },
+    // What the advisor who booked it keeps, and what the agency keeps. Shown
+    // on the reservation because that is where the override is set, and a
+    // percentage with no money beside it is easy to get backwards.
+    split: (() => {
+      const pct = splitPct(booking.advisor_split_pct, booking.default_split_pct);
+      return {
+        pct,
+        // Whether this trip carries its own figure or is following the
+        // advisor's standing agreement. The page says which, because "70%"
+        // means something different in each case.
+        overridden: booking.advisor_split_pct !== null && booking.advisor_split_pct !== undefined,
+        defaultPct: booking.default_split_pct === null || booking.default_split_pct === undefined
+          ? null : Number(booking.default_split_pct),
+        ...shareOf(booking.commission_cents, pct),
+      };
+    })(),
     // Whether this reader may change any of it, so the page does not offer
     // buttons that would fail.
     editable: booking.user_id === user.id,
@@ -316,6 +333,11 @@ const QUICK_FIELDS = {
   status: ['status', (v) => oneOf(v, STATUSES)],
   productType: ['product_type', (v) => oneOf(v, PRODUCT_TYPES)],
   commissionStatus: ['commission_status', (v) => oneOf(v, COMMISSION_STATUSES)],
+  // Blank clears the override and puts the trip back on the advisor's standing
+  // agreement, which is why this cannot go through toCents or oneOf: both turn
+  // "nothing set" into a value.
+  advisorSplitPct: ['advisor_split_pct', (v) => (v === '' || v === null || v === undefined
+    || !Number.isFinite(Number(v)) ? null : Math.max(0, Math.min(Number(v), 100)))],
 };
 
 export async function handleQuickUpdate(request, env, id) {

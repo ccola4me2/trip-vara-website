@@ -88,7 +88,14 @@ function render() {
     <div class="stat"><p class="label">Owed in total</p><p class="value">${money(t.owedCents)}</p>
       <p class="meta">${t.owedCount} reservation${t.owedCount === 1 ? '' : 's'}, travelled or not</p></div>
     <div class="stat"><p class="label">Received</p><p class="value">${money(t.paidCents)}</p>
-      <p class="meta">Marked paid</p></div>`;
+      <p class="meta">Marked paid</p></div>
+    ${d.anySplit ? `
+    <div class="stat"><p class="label">Advisors' share</p>
+      <p class="value">${money(t.owedAdvisorCents)}</p>
+      <p class="meta">Of what is still owed</p></div>
+    <div class="stat"><p class="label">Agency's share</p>
+      <p class="value">${money(t.owedAgencyCents)}</p>
+      <p class="meta">The rest of the same money</p></div>` : ''}`;
 
   document.getElementById('ageing').innerHTML = d.buckets.map((b) => {
     const a = d.ageing[b.key] || { cents: 0, count: 0 };
@@ -116,7 +123,8 @@ function render() {
   document.getElementById('rows').innerHTML = rows.length
     ? `<div class="table-wrap"><table>
         <thead><tr><th style="width:2rem;"></th><th>Client</th><th>Vendor</th><th>Home</th>
-          <th>Status</th><th class="num">Commission</th></tr></thead>
+          <th>Status</th><th class="num">Commission</th>${
+            d.anySplit ? '<th class="num">Advisor keeps</th>' : ''}</tr></thead>
         <tbody>${rows.map((r) => `<tr>
           <td>${r.user_id === ME
             ? `<input type="checkbox" data-pick="${esc(r.id)}"${chosen.has(r.id) ? ' checked' : ''}
@@ -128,6 +136,8 @@ function render() {
           <td>${esc(short(r.back))}<div class="muted" style="font-size:.72rem;">${esc(ageLabel(r))}</div></td>
           <td><span class="badge ${TONE[r.commission_status]}">${esc(r.commission_status)}</span></td>
           <td class="num">${money(r.commission_cents)}</td>
+          ${d.anySplit ? `<td class="num">${money(r.advisor_cents)}
+            <div class="muted" style="font-size:.72rem;">${esc(String(r.split_pct))}%</div></td>` : ''}
         </tr>`).join('')}</tbody></table></div>`
     : '<div class="empty"><h3>Nothing here</h3><p>No commission in this state.</p></div>';
 

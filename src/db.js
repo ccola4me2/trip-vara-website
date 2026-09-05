@@ -6,11 +6,12 @@
 // and are deliberately not mirrored here.
 
 import { uid, now } from './util.js';
+import { SPLIT_PCT_SQL, ADVISOR_SHARE_SQL } from './split.js';
 
 const USER_COLUMNS = `
   id, email, first_name, last_name, phone, agency_name, role, status,
   ghl_location_id, ghl_user_id, created_at, updated_at, last_login_at,
-  approved_at, approved_by
+  approved_at, approved_by, default_split_pct
 `;
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,20 @@ export async function setUserGhl(env, id, { locationId, ghlUserId }) {
   await env.DB.prepare(
     'UPDATE users SET ghl_location_id = ?, ghl_user_id = ?, updated_at = ? WHERE id = ?'
   ).bind(locationId || null, ghlUserId || null, now(), id).run();
+  return getUserById(env, id);
+}
+
+/**
+ * An advisor's standing share of the commission they bill.
+ *
+ * Null clears it, which puts them back on keeping all of it. Stored on the
+ * advisor rather than copied onto their reservations, so changing the
+ * agreement changes every trip that has not been given its own figure.
+ */
+export async function setUserSplit(env, id, pct) {
+  await env.DB.prepare(
+    'UPDATE users SET default_split_pct = ?, updated_at = ? WHERE id = ?'
+  ).bind(pct, now(), id).run();
   return getUserById(env, id);
 }
 
@@ -383,17 +398,24 @@ export async function deleteBooking(env, id, userId) {
 
 /** Headline numbers for the dashboard and the reports page. */
 export async function bookingStats(env, scope) {
-  const scoped = scopeWhere(scope);
+  const scoped = scopeWhere(scope, 'b.user_id');
+  // Joined to users so the advisor's standing split can be applied. The
+  // commission figure is what the vendor pays the agency; the share is what
+  // the person reading the screen actually keeps, and for an associate on a
+  // split those are not the same number.
+  const share = ADVISOR_SHARE_SQL('b.commission_cents', SPLIT_PCT_SQL('b.advisor_split_pct', 'u.default_split_pct'));
   const row = await env.DB.prepare(
     `SELECT
        COUNT(*) AS total,
-       SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) AS booked,
-       SUM(CASE WHEN status = 'quoted' THEN 1 ELSE 0 END) AS quoted,
-       SUM(CASE WHEN status = 'travelled' THEN 1 ELSE 0 END) AS travelled,
-       SUM(CASE WHEN status IN ('booked','travelled') THEN gross_cents ELSE 0 END) AS gross_cents,
-       SUM(CASE WHEN status IN ('booked','travelled') THEN commission_cents ELSE 0 END) AS commission_cents,
-       SUM(CASE WHEN commission_status = 'paid' THEN commission_cents ELSE 0 END) AS commission_paid_cents
-     FROM bookings WHERE ${scoped.sql}`
+       SUM(CASE WHEN b.status = 'booked' THEN 1 ELSE 0 END) AS booked,
+       SUM(CASE WHEN b.status = 'quoted' THEN 1 ELSE 0 END) AS quoted,
+       SUM(CASE WHEN b.status = 'travelled' THEN 1 ELSE 0 END) AS travelled,
+       SUM(CASE WHEN b.status IN ('booked','travelled') THEN b.gross_cents ELSE 0 END) AS gross_cents,
+       SUM(CASE WHEN b.status IN ('booked','travelled') THEN b.commission_cents ELSE 0 END) AS commission_cents,
+       SUM(CASE WHEN b.status IN ('booked','travelled') THEN ${share} ELSE 0 END) AS commission_share_cents,
+       SUM(CASE WHEN b.commission_status = 'paid' THEN b.commission_cents ELSE 0 END) AS commission_paid_cents,
+       SUM(CASE WHEN b.commission_status = 'paid' THEN ${share} ELSE 0 END) AS commission_paid_share_cents
+     FROM bookings b LEFT JOIN users u ON u.id = b.user_id WHERE ${scoped.sql}`
   ).bind(...scoped.binds).first();
   return {
     total: row?.total || 0,
@@ -402,7 +424,9 @@ export async function bookingStats(env, scope) {
     travelled: row?.travelled || 0,
     grossCents: row?.gross_cents || 0,
     commissionCents: row?.commission_cents || 0,
+    commissionShareCents: row?.commission_share_cents || 0,
     commissionPaidCents: row?.commission_paid_cents || 0,
+    commissionPaidShareCents: row?.commission_paid_share_cents || 0,
   };
 }
 
@@ -470,7 +494,13 @@ export async function productionByAdvisor(env, scope, sinceDate) {
             COALESCE(SUM(b.gross_cents), 0) AS gross_cents,
             COALESCE(SUM(b.commission_cents), 0) AS commission_cents,
             COALESCE(SUM(CASE WHEN b.commission_status = 'paid' THEN b.commission_cents END), 0)
-              AS commission_paid_cents
+              AS commission_paid_cents,
+            -- What this advisor keeps, and what the agency keeps out of what
+            -- they billed. An owner reading a combined report needs both: the
+            -- agency is owed the whole commission and pays out only part of it.
+            COALESCE(SUM(${ADVISOR_SHARE_SQL('b.commission_cents', SPLIT_PCT_SQL('b.advisor_split_pct', 'u.default_split_pct'))}), 0)
+              AS advisor_share_cents,
+            u.default_split_pct
        FROM users u
        LEFT JOIN bookings b
          ON b.user_id = u.id
@@ -481,7 +511,11 @@ export async function productionByAdvisor(env, scope, sinceDate) {
       HAVING u.status = 'active' OR COUNT(b.id) > 0
       ORDER BY gross_cents DESC, advisor_name ASC`
   ).bind(sinceDate, ...scoped.binds).all();
-  return results || [];
+  // The agency's share is the remainder, never its own rounded figure, so an
+  // advisor's share and the agency's always add back to the commission.
+  return (results || []).map((r) => ({
+    ...r, agency_share_cents: (r.commission_cents || 0) - (r.advisor_share_cents || 0),
+  }));
 }
 
 /**
@@ -495,7 +529,7 @@ export async function productionByAdvisor(env, scope, sinceDate) {
 export async function getBookingInScope(env, id, scope) {
   const scoped = scopeWhere(scope, 'b.user_id');
   return env.DB.prepare(
-    `SELECT ${BOOKING_COLUMNS_B}, ${ADVISOR_NAME}
+    `SELECT ${BOOKING_COLUMNS_B}, ${ADVISOR_NAME}, u.default_split_pct
        FROM bookings b LEFT JOIN users u ON u.id = b.user_id
       WHERE b.id = ? AND ${scoped.sql}`
   ).bind(id, ...scoped.binds).first();

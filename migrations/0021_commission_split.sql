@@ -1,0 +1,13 @@
+-- How a commission is divided between the advisor who booked it and the agency.
+--
+-- An agency owner with associates does not keep what the associates earn, and
+-- the associates do not keep all of what they bill. Until now every report
+-- credited the full vendor commission to whoever booked the trip, which
+-- overstates an associate's earnings by exactly the agency's share and makes
+-- the owner's own take invisible.
+--
+-- NULL is not zero. It means no split was ever agreed, and an advisor with no
+-- agreement keeps what they earned. A deliberate 0 means the agency keeps all
+-- of it, which is a real arrangement for a house account. Any code reading
+-- this must treat the two differently: `pct || 100` collapses them.
+ALTER TABLE users ADD COLUMN default_split_pct REAL;

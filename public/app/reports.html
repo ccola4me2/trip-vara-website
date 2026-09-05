@@ -130,14 +130,23 @@ function render(data) {
   card.hidden = !(data.scope && data.scope.all && rows.length > 1);
   if (!card.hidden) {
     const top = Math.max(...rows.map((r) => r.gross_cents || 0), 1);
+    // Only shown when somebody is actually on a split. An agency of one would
+    // otherwise get two identical columns and a question about which is which.
+    const split = rows.some((r) => (r.advisor_share_cents || 0) !== (r.commission_cents || 0));
     document.getElementById('by-advisor').innerHTML = `<div class="table-wrap"><table>
       <thead><tr><th>Advisor</th><th class="num">Reservations</th><th class="num">Volume</th>
-        <th class="num">Commission</th><th class="num">Paid to them</th><th>Share</th></tr></thead>
+        <th class="num">Commission billed</th>${split
+          ? '<th class="num">They keep</th><th class="num">Agency keeps</th>' : ''}
+        <th class="num">Received from vendors</th><th>Share</th></tr></thead>
       <tbody>${rows.map((r) => `<tr>
         <td><span class="name">${esc(r.advisor_name)}</span>${r.role === 'admin' ? ' <span class="badge badge-navy">owner</span>' : ''}</td>
         <td class="num">${r.bookings}</td>
         <td class="num">${money(r.gross_cents)}</td>
         <td class="num">${money(r.commission_cents)}</td>
+        ${split ? `<td class="num">${money(r.advisor_share_cents)}${
+          r.default_split_pct === null || r.default_split_pct === undefined ? ''
+            : `<div class="muted" style="font-size:.72rem;">${esc(String(r.default_split_pct))}%</div>`}</td>
+          <td class="num">${money(r.agency_share_cents)}</td>` : ''}
         <td class="num">${money(r.commission_paid_cents)}</td>
         <td style="min-width:120px;"><span style="display:block;height:8px;border-radius:4px;background:var(--navy-100);">
           <span style="display:block;height:8px;border-radius:4px;width:${Math.round(((r.gross_cents || 0) / top) * 100)}%;background:var(--coral-400);"></span>

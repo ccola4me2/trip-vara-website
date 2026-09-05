@@ -1658,6 +1658,106 @@ async function main() {
     !(reset.data.layout.widgets[0] || {}).hidden,
     'and reset puts the default back');
 
+  // -------------------------------------------------- commission split -----
+  // Deliberately last but one: it changes what this advisor is recorded as
+  // keeping, and every earlier check reads those same figures. Cleared again
+  // at the end of the section.
+  {
+  step('Splitting a commission between the advisor and the agency');
+
+  // 333.33 at half is 16,666.5 cents. The point of the figure: SQLite rounds
+  // it in the reports and JavaScript rounds it on the record, and the two must
+  // land on the same cent or the screens disagree about somebody's pay.
+  const half = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Split ${stamp}`, supplier: 'Celebrity Cruises', status: 'booked',
+    departDate: isoDay(60), returnDate: isoDay(67), gross: '4000', commission: '333.33',
+  });
+  const halfId = half.data?.booking?.id;
+  if (halfId) cleanup('the split reservation', () => call(advisor, 'DELETE', `/api/bookings/${halfId}`));
+
+  const noDeal = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
+  check(noDeal.data?.split?.pct === 100 && noDeal.data?.split?.advisorCents === 33333,
+    'with no agreement an advisor keeps what they billed',
+    JSON.stringify(noDeal.data?.split));
+
+  // An associate who could set their own share could pay themselves.
+  const selfServe = await call(advisor, 'PUT', `/api/admin/advisors/${advisorId}/split`,
+    { defaultSplitPct: 90 });
+  check(selfServe.status === 403 || selfServe.status === 404,
+    'an advisor cannot set their own share', `status ${selfServe.status}`);
+
+  const nonsense = await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`,
+    { defaultSplitPct: 140 });
+  check(nonsense.status === 400, 'and a share over 100% is refused', `status ${nonsense.status}`);
+
+  const agreed = await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`,
+    { defaultSplitPct: 50 });
+  check(agreed.status === 200 && agreed.data?.user?.defaultSplitPct === 50,
+    'the owner sets a standing agreement', agreed.data?.user?.defaultSplitPct);
+
+  const onDeal = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
+  const sp = onDeal.data?.split || {};
+  check(sp.pct === 50 && sp.overridden === false,
+    'which every trip follows without being touched',
+    JSON.stringify({ pct: sp.pct, overridden: sp.overridden }));
+  check(sp.advisorCents + sp.agencyCents === 33333,
+    'and the two halves add back up to the commission exactly',
+    `${sp.advisorCents} + ${sp.agencyCents}`);
+  check(sp.advisorCents === 16667, 'rounding the odd cent to the advisor', sp.advisorCents);
+
+  // The same figure, computed by SQLite rather than JavaScript.
+  const comm = await call(advisor, 'GET', '/api/commissions');
+  const commRow = (comm.data?.rows || []).find((r) => r.id === halfId);
+  check(commRow?.advisor_cents === sp.advisorCents,
+    'the report and the record agree to the cent',
+    `${commRow?.advisor_cents} vs ${sp.advisorCents}`);
+  check(comm.data?.anySplit === true, 'and the page knows there is a split to show');
+
+  // A trip can carry its own figure, and blank puts it back on the agreement.
+  await call(advisor, 'POST', `/api/bookings/${halfId}/quick`, { advisorSplitPct: 80 });
+  const over = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
+  check(over.data?.split?.pct === 80 && over.data?.split?.overridden === true,
+    'one trip can be given its own share', JSON.stringify(over.data?.split));
+  await call(advisor, 'POST', `/api/bookings/${halfId}/quick`, { advisorSplitPct: '' });
+  const back = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
+  check(back.data?.split?.pct === 50 && back.data?.split?.overridden === false,
+    'and clearing it puts the trip back on the agreement, not on nothing',
+    JSON.stringify(back.data?.split));
+
+  // Nought is a real arrangement and must not be read as "no agreement".
+  await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`, { defaultSplitPct: 0 });
+  const houseAccount = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
+  check(houseAccount.data?.split?.pct === 0 && houseAccount.data?.split?.advisorCents === 0,
+    'an advisor on nought keeps nothing, which is not the same as no agreement',
+    JSON.stringify(houseAccount.data?.split));
+
+  const cleared = await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`,
+    { defaultSplitPct: '' });
+  check(cleared.data?.user?.defaultSplitPct === null,
+    'and blank clears the agreement rather than setting it to nought',
+    cleared.data?.user?.defaultSplitPct);
+  const afterClear = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
+  check(afterClear.data?.split?.pct === 100,
+    'which puts them back on keeping all of it', afterClear.data?.split?.pct);
+
+  // An owner reading the combined report sees both sides of the same money.
+  await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`, { defaultSplitPct: 50 });
+  const rep = await call(admin, 'GET', '/api/reports/production?months=12');
+  const line = (rep.data?.byAdvisor || []).find((r) => r.user_id === advisorId);
+  if (line) {
+    check(line.advisor_share_cents + line.agency_share_cents === line.commission_cents,
+      'the combined report splits the same total, never more than it',
+      `${line.advisor_share_cents} + ${line.agency_share_cents} vs ${line.commission_cents}`);
+    check(line.advisor_share_cents < line.commission_cents,
+      'and an associate on a split is not credited with the agency\'s half',
+      `${line.advisor_share_cents} of ${line.commission_cents}`);
+  } else {
+    check(false, 'the combined report lists the associate');
+  }
+
+  await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`, { defaultSplitPct: '' });
+  }
+
   // ---------------------------------------------------------------- tidy --
   step('Clean up');
   await runCleanups();

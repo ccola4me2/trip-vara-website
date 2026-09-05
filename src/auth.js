@@ -41,6 +41,12 @@ function publicUser(u) {
     status: u.status,
     ghlLocationId: u.ghl_location_id,
     ghlUserId: u.ghl_user_id,
+    // Null, not 100. No agreement recorded is a different fact from an
+    // agreement that the advisor keeps everything, and the admin screen has to
+    // be able to tell them apart to show a blank field rather than a number
+    // nobody typed.
+    defaultSplitPct: u.default_split_pct === null || u.default_split_pct === undefined
+      ? null : Number(u.default_split_pct),
     lastLoginAt: u.last_login_at,
   };
 }

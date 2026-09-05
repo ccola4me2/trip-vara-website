@@ -60,13 +60,18 @@ function render(users, counts) {
   }
 
   panel.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>Tools account</th>
+    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>Keeps</th><th>Tools account</th>
       <th>Last seen</th><th></th></tr></thead>
     <tbody>${users.map((u) => `<tr>
       <td><span class="name">${esc(u.name)}</span><div class="muted">${esc(u.email)}</div>
         ${u.role === 'admin' ? '<span class="badge badge-coral">Admin</span>' : ''}</td>
       <td>${esc(u.agencyName || '-')}<div class="muted">${esc(u.phone || '')}</div></td>
       <td><span class="badge ${TONE[u.status] || 'badge-navy'}">${esc(u.status)}</span></td>
+      <td>${u.defaultSplitPct === null
+          ? '<span class="muted">All of it</span>'
+          : `<strong>${esc(String(u.defaultSplitPct))}%</strong>`}
+        <div><button class="btn btn-ghost btn-sm" data-split="${esc(u.id)}"
+          data-pct="${u.defaultSplitPct === null ? '' : esc(String(u.defaultSplitPct))}">Split</button></div></td>
       <td>${u.ghlLocationId
           ? `<code style="font-size:.75rem;">${esc(u.ghlLocationId)}</code>`
           : '<span class="muted">Shared default</span>'}
@@ -85,6 +90,20 @@ function render(users, counts) {
         { method: 'PUT', body: { status: btn.dataset.set } });
       await load();
     } catch (err) { alert(err.message); btn.disabled = false; }
+  }));
+
+  // Blank clears the agreement rather than setting it to nought: an advisor
+  // with no agreement keeps what they bill, and one on 0% keeps none of it.
+  panel.querySelectorAll('[data-split]').forEach((btn) => btn.addEventListener('click', async () => {
+    const pct = prompt(
+      'Percentage of commission this advisor keeps. Blank means they keep all of it.',
+      btn.dataset.pct);
+    if (pct === null) return;
+    try {
+      await api(`/api/admin/advisors/${encodeURIComponent(btn.dataset.split)}/split`,
+        { method: 'PUT', body: { defaultSplitPct: pct } });
+      await load();
+    } catch (err) { alert(err.message); }
   }));
 
   panel.querySelectorAll('[data-bind]').forEach((btn) => btn.addEventListener('click', async () => {

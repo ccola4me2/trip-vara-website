@@ -69,6 +69,39 @@ export async function handleSetAdvisorGhl(request, env, userId) {
 }
 
 /**
+ * Set an advisor's standing share of the commission they bill.
+ *
+ * Owner only, and deliberately so: an associate who could set their own split
+ * could pay themselves. Blank clears the agreement, which is not the same as
+ * setting it to zero, so the two are kept apart all the way down.
+ */
+export async function handleSetAdvisorSplit(request, env, userId) {
+  const { user: admin, response } = await requireAdmin(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const raw = body.defaultSplitPct;
+  let pct = null;
+  if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      return badRequest('A share is a number between 0 and 100, or blank for no agreement.');
+    }
+    pct = Math.round(n * 10) / 10;
+  }
+
+  const updated = await db.setUserSplit(env, userId, pct);
+  if (!updated) return notFound('Advisor not found.');
+
+  await db.logActivity(env, admin.id, 'admin.split',
+    pct === null
+      ? `Cleared the commission split for ${updated.email}`
+      : `Set ${updated.email} to keep ${pct}% of what they bill`,
+    { userId, pct });
+  return json({ ok: true, user: publicUser(updated) });
+}
+
+/**
  * Configuration health, admin only.
  *
  * Reports whether each secret and binding is actually reachable at runtime.

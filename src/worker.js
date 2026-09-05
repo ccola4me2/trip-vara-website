@@ -86,7 +86,8 @@ import {
 } from './library.js';
 import { handleDashboard, handleProduction, handleMonth } from './reports.js';
 import {
-  handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleHealth, handleTestEmail,
+  handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleSetAdvisorSplit,
+  handleHealth, handleTestEmail,
   handleSyncStatus, handleRunSync,
 } from './admin.js';
 import { purgeExpiredSessions } from './db.js';
@@ -226,7 +227,7 @@ async function routeApi(request, env, path, method) {
   const payRemindMatch = path.match(/^\/api\/payments\/([^/]+)\/remind$/);
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
   const bookingStatusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
-  const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
+  const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl|split)$/);
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
@@ -433,9 +434,9 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/admin/advisors' && method === 'GET') return handleListAdvisors(request, env);
   if (advisorMatch && method === 'PUT') {
     const id = decodeURIComponent(advisorMatch[1]);
-    return advisorMatch[2] === 'status'
-      ? handleSetAdvisorStatus(request, env, id)
-      : handleSetAdvisorGhl(request, env, id);
+    if (advisorMatch[2] === 'status') return handleSetAdvisorStatus(request, env, id);
+    if (advisorMatch[2] === 'split') return handleSetAdvisorSplit(request, env, id);
+    return handleSetAdvisorGhl(request, env, id);
   }
 
   return notFound('No such endpoint.');

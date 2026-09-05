@@ -13,6 +13,7 @@
 import { json, badRequest, oneOf, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
+import { SPLIT_PCT_SQL, ADVISOR_SHARE_SQL } from './split.js';
 
 const STATUSES = ['pending', 'invoiced', 'paid'];
 
@@ -53,10 +54,15 @@ export async function handleListCommissions(request, env) {
   const binds = [...scoped.binds];
   if (status) { where.push('b.commission_status = ?'); binds.push(status); }
 
+  // The vendor pays the agency the whole commission; the advisor who booked it
+  // keeps their agreed share. Both are selected because both are real: the
+  // agency chases the first and pays out the second.
+  const pct = SPLIT_PCT_SQL('b.advisor_split_pct', 'u.default_split_pct');
   const { results } = await env.DB.prepare(
     `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date, b.return_date,
             b.gross_cents, b.commission_cents, b.commission_status, b.confirmation_number,
-            b.user_id,
+            b.user_id, ${pct} AS split_pct,
+            ${ADVISOR_SHARE_SQL('b.commission_cents', pct)} AS advisor_cents,
             COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email)
               AS advisor_name
        FROM bookings b LEFT JOIN users u ON u.id = b.user_id
@@ -70,7 +76,12 @@ export async function handleListCommissions(request, env) {
     const daysSince = back
       ? Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${back}T00:00:00Z`)) / 86400000)
       : null;
-    return { ...r, back, daysSince, bucket: bucketFor(daysSince) };
+    // The agency's share is the remainder, so the two halves always add back
+    // up to the commission rather than drifting a cent apart.
+    return {
+      ...r, back, daysSince, bucket: bucketFor(daysSince),
+      agency_cents: (r.commission_cents || 0) - (r.advisor_cents || 0),
+    };
   });
 
   // Only unpaid commission ages. Once it has arrived, how long it took is
@@ -100,6 +111,11 @@ export async function handleListCommissions(request, env) {
     byVendor: Object.values(byVendor).sort((a, b) => b.cents - a.cents),
     totals: {
       owedCents: owed.reduce((n, r) => n + (r.commission_cents || 0), 0),
+      // What the advisors are owed out of it, and what the agency keeps. An
+      // associate reading their own page wants the first; an owner reading the
+      // combined one is looking at the difference.
+      owedAdvisorCents: owed.reduce((n, r) => n + (r.advisor_cents || 0), 0),
+      owedAgencyCents: owed.reduce((n, r) => n + (r.agency_cents || 0), 0),
       owedCount: owed.length,
       // Claimable means they are home and it has not been paid: the number to
       // act on, as opposed to everything that will eventually be due.
@@ -107,10 +123,15 @@ export async function handleListCommissions(request, env) {
         .reduce((n, r) => n + (r.commission_cents || 0), 0),
       paidCents: rows.filter((r) => r.commission_status === 'paid')
         .reduce((n, r) => n + (r.commission_cents || 0), 0),
+      paidAdvisorCents: rows.filter((r) => r.commission_status === 'paid')
+        .reduce((n, r) => n + (r.advisor_cents || 0), 0),
       lateCents: owed.filter((r) => r.bucket === 'older')
         .reduce((n, r) => n + (r.commission_cents || 0), 0),
     },
     today,
+    // Whether any of this is actually split. A sole advisor keeping all of it
+    // should not be shown two identical columns.
+    anySplit: rows.some((r) => Number(r.split_pct) !== 100),
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),
   });
