@@ -54,6 +54,9 @@ import {
   handleListGroups, handleGetGroup, handleCreateGroup, handleUpdateGroup, handleDeleteGroup,
 } from './groups.js';
 import {
+  handleListCredits, handleCreateCredit, handleUpdateCredit, handleDeleteCredit,
+} from './credits.js';
+import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
 } from './automations.js';
@@ -107,6 +110,7 @@ const PAGE_FILES = {
   '/app/pipeline': '/app/pipeline.html',
   '/app/tasks': '/app/tasks.html',
   '/app/groups': '/app/groups.html',
+  '/app/credits': '/app/credits.html',
   '/app/reservations': '/app/reservations.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
@@ -181,6 +185,7 @@ async function routeApi(request, env, path, method) {
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
+  const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
 
   // ---- auth -------------------------------------------------------------
   if (path === '/api/auth/signup' && method === 'POST') return handleSignup(request, env);
@@ -316,6 +321,12 @@ async function routeApi(request, env, path, method) {
   if (groupMatch && method === 'GET') return handleGetGroup(request, env, groupMatch[1]);
   if (groupMatch && method === 'PUT') return handleUpdateGroup(request, env, groupMatch[1]);
   if (groupMatch && method === 'DELETE') return handleDeleteGroup(request, env, groupMatch[1]);
+
+  // Credits a client already holds with a vendor, and when they lapse.
+  if (path === '/api/credits' && method === 'GET') return handleListCredits(request, env);
+  if (path === '/api/credits' && method === 'POST') return handleCreateCredit(request, env);
+  if (creditMatch && method === 'PUT') return handleUpdateCredit(request, env, creditMatch[1]);
+  if (creditMatch && method === 'DELETE') return handleDeleteCredit(request, env, creditMatch[1]);
   if (path === '/api/prefs/dashboard' && method === 'GET') return handleGetLayout(request, env);
   if (path === '/api/prefs/dashboard' && method === 'PUT') return handleSaveLayout(request, env);
   if (path === '/api/prefs/dashboard' && method === 'DELETE') return handleResetLayout(request, env);

@@ -28,6 +28,7 @@ export const PANELS = [
   { id: 'travelling', title: "Who's travelling", hint: 'Leaving soon, away now, just back' },
   { id: 'groups', title: 'Group space', hint: 'Blocks of cabins and when they release' },
   { id: 'deals', title: 'Deals in play', hint: 'Open opportunities by stage' },
+  { id: 'rebook', title: 'Worth a call', hint: 'Past clients with nothing booked, and credits about to lapse' },
   { id: 'trend', title: 'Production trend', hint: 'Booked value by month' },
   { id: 'links', title: 'Quick links', hint: 'Your own shortcuts' },
   { id: 'activity', title: 'Activity', hint: 'What has happened recently' },

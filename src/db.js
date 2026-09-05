@@ -513,6 +513,43 @@ export async function productionBreakdown(env, scope, sinceDate, by = 'type') {
   return results || [];
 }
 
+/**
+ * Clients worth ringing: they have travelled with you and have nothing booked.
+ *
+ * The most reliable rebooking signal an agency has, and the one nobody acts on
+ * because it is invisible. A client who came back from a cruise eleven months
+ * ago and has nothing on the books is not a lapsed client yet; they are a
+ * client about to book with somebody else.
+ *
+ * Matched on client name rather than a contact id, because reservations are
+ * often entered before the CRM record exists and the name is the only thing
+ * both records reliably share.
+ */
+export async function rebookCandidates(env, scope, { today, limit = 25 } = {}) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+  const { results } = await env.DB.prepare(
+    `SELECT b.client_name,
+            MAX(COALESCE(b.return_date, b.depart_date)) AS last_travelled,
+            COUNT(*) AS trips,
+            SUM(b.gross_cents) AS lifetime_cents,
+            MAX(b.supplier) AS last_vendor
+       FROM bookings b
+      WHERE ${scoped.sql}
+        AND b.status IN ('booked','travelled')
+        AND COALESCE(b.return_date, b.depart_date) IS NOT NULL
+        AND COALESCE(b.return_date, b.depart_date) < ?
+      GROUP BY b.client_name
+      HAVING NOT EXISTS (
+        SELECT 1 FROM bookings f
+         WHERE f.client_name = b.client_name
+           AND f.user_id = b.user_id
+           AND f.status IN ('quoted','booked')
+           AND COALESCE(f.return_date, f.depart_date) >= ?)
+      ORDER BY last_travelled DESC LIMIT ?`
+  ).bind(...scoped.binds, today, today, Math.min(Number(limit) || 25, 100)).all();
+  return results || [];
+}
+
 export async function logActivity(env, userId, kind, subject, meta = null) {
   try {
     await env.DB.prepare(
@@ -760,7 +797,17 @@ export async function deletePayment(env, id, userId) {
  * the one that gives them room to collect. Reporting the two as one number
  * hides the only distinction that matters.
  */
-export async function paymentStats(env, scope, { today, soonThrough }) {
+/**
+ * The money figures behind the Payments screen and the dashboard.
+ *
+ * Hard and soft get their own windows because they answer different
+ * questions. A hard date is the vendor's deadline, so the useful horizon is
+ * how much could cancel shortly. A soft date is your own reminder to chase,
+ * which is only worth surfacing while there is still time to act on it: a
+ * fortnight of reminders is a list, a week of them is a plan.
+ */
+export async function paymentStats(env, scope, { today, soonThrough, softThrough }) {
+  const softEnd = softThrough || soonThrough;
   const scoped = scopeWhere(scope);
   const row = await env.DB.prepare(
     `SELECT
@@ -783,7 +830,7 @@ export async function paymentStats(env, scope, { today, soonThrough }) {
                      AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ?
                 THEN 1 ELSE 0 END) AS hard_count
      FROM booking_payments WHERE ${scoped.sql}`
-  ).bind(today, today, today, soonThrough, today, soonThrough,
+  ).bind(today, today, today, softEnd, today, softEnd,
          today, soonThrough, today, soonThrough, ...scoped.binds).first();
 
   return {

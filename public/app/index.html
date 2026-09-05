@@ -118,7 +118,7 @@ function build() {
     <div class="stat"><p class="label">Cancels within 14 days</p>
       <p class="value" style="${p.hardDueCents ? 'color:var(--red-600);' : ''}">${money(p.hardDueCents)}</p>
       <p class="meta">${p.hardCount} vendor deadline${p.hardCount === 1 ? '' : 's'}</p></div>
-    <div class="stat"><p class="label">Reminders next 14 days</p><p class="value">${money(p.softDueCents)}</p>
+    <div class="stat"><p class="label">Reminders next 7 days</p><p class="value">${money(p.softDueCents)}</p>
       <p class="meta">${p.softCount} to chase before the deadline</p></div>
     <div class="stat"><p class="label">Active reservations</p><p class="value">${s.booked}</p>
       <p class="meta">${s.quoted} quoted, ${s.travelled} travelled</p></div>
@@ -223,6 +223,37 @@ const PANELS = {
           <span class="n">${st.count} · ${Math.round((st.count / total) * 100)}%</span></div>`).join('')}`;
     } },
   ], 'active'),
+
+  rebook: () => widget('Worth a call', { href: '/app/credits', label: 'Credits' }, [
+    { key: 'lapsed', label: 'Nothing booked', render: () => {
+      const rows = d.rebook || [];
+      if (!rows.length) return '<p class="wempty">Everyone who has travelled has something booked.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Last trip</th><th class="num">Trips</th><th class="num">Lifetime</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr>
+          <td><span class="name">${esc(r.client_name)}</span>
+            <div class="muted">${esc(r.last_vendor || '')}</div></td>
+          <td>${esc(fmtShort(r.last_travelled))}</td>
+          <td class="num">${r.trips}</td>
+          <td class="num">${esc(money(r.lifetime_cents))}</td></tr>`).join('')}</tbody></table></div>`;
+    } },
+    { key: 'credits', label: 'Credits expiring', render: () => {
+      const rows = (d.credits || []).filter((c) => c.expires_on).slice(0, 12);
+      if (!rows.length) return '<p class="wempty">No credits on file.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Expires</th><th>Client</th><th class="num">Worth</th></tr></thead>
+        <tbody>${rows.map((c) => {
+          const left = daysUntil(c.expires_on);
+          const tone = left === null ? '' : left < 0 ? 'badge-red' : left <= 60 ? 'badge-amber' : 'badge-navy';
+          return `<tr>
+            <td>${esc(fmtShort(c.expires_on))}
+              <div><span class="badge ${tone}">${left < 0 ? 'lapsed' : `${left}d left`}</span></div></td>
+            <td><span class="name">${esc(c.client_name)}</span>
+              <div class="muted">${esc(c.vendor || '')}</div></td>
+            <td class="num">${esc(money(c.amount_cents))}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+    } },
+  ], 'lapsed'),
 
   trend: () => widget('Production trend', { href: '/app/reports', label: 'Full report' }, [
     { key: 'gross', label: 'By month', render: () => trendBars('gross_cents') },

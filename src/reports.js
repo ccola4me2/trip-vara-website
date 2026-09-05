@@ -10,6 +10,7 @@ import * as db from './db.js';
 import { readLayout, PANELS } from './prefs.js';
 import { listTasks } from './tasks.js';
 import { listGroups } from './groups.js';
+import { listCredits } from './credits.js';
 import * as ghl from './ghl.js';
 
 function isoDay(offsetDays = 0) {
@@ -28,11 +29,13 @@ export async function handleDashboard(request, env) {
   const [stats, payStats, payments, activity, recentAdded, recentModified,
          upcoming, traveling, returned] = await Promise.all([
     db.bookingStats(env, scope),
-    // Fourteen days, not sixty. The headline figure is meant to be the thing
-    // you act on this fortnight; a two month net catches so much that the
-    // number stops meaning anything urgent. The Deadlines panel below still
-    // lists sixty days, because a list is a horizon and a headline is not.
-    db.paymentStats(env, scope, { today, soonThrough: isoDay(14) }),
+    // Two windows, because the two dates ask different questions. Hard dates
+    // look out a fortnight: that is what could cancel shortly. Soft dates look
+    // out a week, because a reminder is only useful while there is still time
+    // to act on it. Neither is sixty days, which catches so much that the
+    // number stops reading as urgent. The Deadlines panel below still lists
+    // sixty, because a list is a horizon and a headline is not.
+    db.paymentStats(env, scope, { today, soonThrough: isoDay(14), softThrough: isoDay(7) }),
     db.upcomingPayments(env, scope, isoDay(60)),
     db.recentActivity(env, scope, 8),
     db.recentReservations(env, scope, { by: 'added' }),
@@ -107,6 +110,8 @@ export async function handleDashboard(request, env) {
     byVendor: await db.productionBreakdown(env, scope, isoDay(0), 'vendor'),
     tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
     groups: await listGroups(env, scope, { status: 'open', limit: 12 }).catch(() => []),
+    rebook: await db.rebookCandidates(env, scope, { today, limit: 12 }).catch(() => []),
+    credits: await listCredits(env, scope, { state: 'open', limit: 25 }).catch(() => []),
   });
 }
 
@@ -223,6 +228,22 @@ async function noticesFor(env, user, scope) {
       title: `${releasing.n} group${releasing.n === 1 ? '' : 's'} releasing unsold space within three weeks`,
       detail: 'Cabins you have not sold go back to the vendor on the option date.',
       href: '/app/groups', label: 'Open group space',
+    });
+  }
+
+  const lapsing = await env.DB.prepare(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS cents FROM client_credits c
+      WHERE ${db.scopeWhere(scope, 'c.user_id').sql} AND c.used_on IS NULL
+        AND c.expires_on IS NOT NULL AND c.expires_on <= ? AND c.expires_on >= ?`
+  ).bind(...db.scopeWhere(scope, 'c.user_id').binds, isoDay(90), isoDay(0))
+   .first().catch(() => null);
+
+  if (lapsing && lapsing.n) {
+    out.push({
+      tone: 'warn',
+      title: `${lapsing.n} client credit${lapsing.n === 1 ? '' : 's'} expiring within 90 days`,
+      detail: 'Money your clients have already paid, which the vendor keeps if nobody uses it.',
+      href: '/app/credits', label: 'Open credits',
     });
   }
 

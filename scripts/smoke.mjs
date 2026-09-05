@@ -456,6 +456,80 @@ async function main() {
   check(foreign.status === 400,
     'and a task cannot be linked to another advisor\'s reservation', `status ${foreign.status}`);
 
+  // ---------------------------------------------------- client credits ------
+  step('Credits a client holds with a vendor');
+
+  const badExpiry = await call(advisor, 'POST', '/api/credits', {
+    clientName: 'Backwards', amount: '100', issuedOn: isoDay(0), expiresOn: isoDay(-10),
+  });
+  check(badExpiry.status === 400, 'an expiry before the issue date is refused',
+    `status ${badExpiry.status}`);
+
+  const cr = await call(advisor, 'POST', '/api/credits', {
+    clientName: `Credit Client ${stamp}`, vendor: 'Oceania Cruises', kind: 'credit',
+    amount: '250.00', reference: `FCC-${stamp}`, issuedOn: isoDay(-100), expiresOn: isoDay(40),
+  });
+  const creditId = cr.data?.credit?.id;
+  check(cr.status === 201 && cr.data?.credit?.amount_cents === 25000,
+    'a credit is recorded in cents', cr.data?.credit?.amount_cents);
+  if (creditId) cleanup('the credit', () => call(advisor, 'DELETE', `/api/credits/${creditId}`));
+
+  const lapsed = await call(advisor, 'POST', '/api/credits', {
+    clientName: `Lapsed Client ${stamp}`, amount: '75', expiresOn: isoDay(-5),
+  });
+  if (lapsed.data?.credit?.id) cleanup('the lapsed credit', () =>
+    call(advisor, 'DELETE', `/api/credits/${lapsed.data.credit.id}`));
+
+  const creditList = await call(advisor, 'GET', '/api/credits?state=open');
+  const cs = creditList.data?.stats || {};
+  check(cs.expiringCents >= 25000, 'one expiring inside 90 days is counted', cs.expiringCents);
+  check(cs.lapsedCents >= 7500, 'and one already past its date is reported, not hidden', cs.lapsedCents);
+
+  // Marking it used takes it out of the money at risk without deleting the
+  // record, which is the difference between a credit that was spent and one
+  // that was never there.
+  await call(advisor, 'PUT', `/api/credits/${creditId}`, {
+    clientName: `Credit Client ${stamp}`, amount: '250.00', expiresOn: isoDay(40), usedOn: isoDay(-1),
+  });
+  const afterUse = await call(advisor, 'GET', '/api/credits?state=open');
+  check(!(afterUse.data?.credits || []).some((c) => c.id === creditId),
+    'marking one used takes it off the unused list');
+  const usedList = await call(advisor, 'GET', '/api/credits?state=used');
+  check((usedList.data?.credits || []).some((c) => c.id === creditId),
+    'but keeps it on the record');
+
+  const ownerCredit = await call(admin, 'PUT', `/api/credits/${creditId}`, {
+    clientName: 'Not yours', amount: '1',
+  });
+  check(ownerCredit.status === 404, 'an owner cannot rewrite an associate\'s credit',
+    `status ${ownerCredit.status}`);
+
+  // ------------------------------------------------------ worth a call ------
+  step('Clients worth ringing');
+
+  const past = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Lapsed Traveller ${stamp}`, supplier: 'Celebrity Cruises',
+    departDate: isoDay(-400), returnDate: isoDay(-393), gross: '3200', status: 'travelled',
+  });
+  if (past.data?.booking?.id) cleanup('the past reservation', () =>
+    call(advisor, 'DELETE', `/api/bookings/${past.data.booking.id}`));
+
+  let callList = await call(advisor, 'GET', '/api/dashboard');
+  check((callList.data?.rebook || []).some((r) => r.client_name === `Lapsed Traveller ${stamp}`),
+    'someone who travelled and has nothing booked is worth a call');
+
+  // The whole point of the query: booking them again takes them off the list.
+  const rebooked = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Lapsed Traveller ${stamp}`, supplier: 'Celebrity Cruises',
+    departDate: isoDay(90), gross: '4000', status: 'booked',
+  });
+  if (rebooked.data?.booking?.id) cleanup('the rebooking', () =>
+    call(advisor, 'DELETE', `/api/bookings/${rebooked.data.booking.id}`));
+
+  callList = await call(advisor, 'GET', '/api/dashboard');
+  check(!(callList.data?.rebook || []).some((r) => r.client_name === `Lapsed Traveller ${stamp}`),
+    'and booking them again takes them off the list');
+
   // ------------------------------------------------- dashboard layout ------
   step('The dashboard remembers how you arranged it');
 
