@@ -27,15 +27,20 @@ export async function handleListLeads(request, env) {
   return json({ ...result, syncing: !state || state.status !== 'complete' });
 }
 
+/**
+ * One contact, and nothing else. This used to answer with `notes: []`, which
+ * read as "this contact has no notes" when in truth it had never looked. The
+ * key is gone rather than empty: see /detail for a contact with its notes.
+ */
 export async function handleGetLead(request, env, contactId) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
   const local = await db.localContact(env, contactId);
-  if (local) return json({ contact: local, notes: [] });
+  if (local) return json({ contact: local });
   try {
     const contact = await ghl.getContact(env, contactId);
     if (!contact) return json({ error: 'Contact not found.' }, 404);
-    return json({ contact, notes: [] });
+    return json({ contact });
   } catch (e) {
     return ghl.ghlErrorResponse(e);
   }

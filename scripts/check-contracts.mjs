@@ -130,6 +130,34 @@ function hasSampleRows(value, depth = 0) {
   return Object.entries(value).some(([k, v]) => k !== 'unavailable' && hasSampleRows(v, depth + 1));
 }
 
+/**
+ * Names of the arrays in a response that came back empty.
+ *
+ * A response is not uniformly verifiable. The form detail endpoint answers
+ * with a populated `form.fields` and an empty `submissions`, and the old
+ * hasSampleRows saw one populated array anywhere and declared the whole
+ * response fit to judge. It then reported `contactId`, a field that only ever
+ * appears on a submission, as one the API does not return. It does return it;
+ * there was simply no submission to carry it.
+ *
+ * Rather than pretend to know which collection each field came from, the
+ * checker names the empty ones and downgrades a mismatch to a warning when
+ * any exist. Certainty it does not have is worse than a gap it admits to.
+ */
+function emptyCollections(value, path = '', out = [], depth = 0) {
+  if (depth > 4 || value === null || typeof value !== 'object') return out;
+  if (Array.isArray(value)) {
+    if (!value.length) out.push(path || 'response');
+    else value.slice(0, 5).forEach((v) => emptyCollections(v, path, out, depth + 1));
+    return out;
+  }
+  for (const [k, v] of Object.entries(value)) {
+    if (k === 'unavailable') continue;
+    emptyCollections(v, path ? `${path}.${k}` : k, out, depth + 1);
+  }
+  return out;
+}
+
 async function main() {
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
@@ -150,6 +178,7 @@ async function main() {
     try { html = readFileSync(file, 'utf8'); } catch { continue; }
 
     const have = new Set();
+    const empties = new Set();
     let sampled = true;
     let called = 0;
     let skipped = null;
@@ -172,6 +201,7 @@ async function main() {
       const payload = await r.json();
       collectKeys(payload, have);
       if (!hasSampleRows(payload)) sampled = false;
+      for (const name of emptyCollections(payload)) empties.add(name);
     }
 
     if (!called) {
@@ -197,7 +227,14 @@ async function main() {
       (/[A-Z_]/.test(f) || have.size === 0)
     );
 
-    if (missing.length) {
+    if (missing.length && empties.size) {
+      // Part of the response came back empty, so some of these fields may
+      // simply have had no row to appear on. Say so instead of guessing.
+      unverified += 1;
+      console.log(`\n~     ${file}`);
+      for (const f of missing) console.log(`        reads .${f}, not seen in the response`);
+      console.log(`        empty in this environment: ${[...empties].join(', ')}`);
+    } else if (missing.length) {
       problems += missing.length;
       console.log(`\nFAIL  ${file}`);
       for (const f of missing) console.log(`        reads .${f}, response has no such field`);

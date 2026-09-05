@@ -93,7 +93,29 @@ It signs in, fetches the endpoint behind each page, and compares every field
 the page reads against what actually came back. A page whose response has no
 rows is reported as unverifiable rather than passed or failed, because an empty
 table and a misspelled field look identical and guessing is what makes a
-checker not worth running.
+checker not worth running. The same applies within a response: if one
+collection came back empty, a field missing from it is reported as
+unverifiable, and the empty collection is named.
+
+### Smoke test
+
+```bash
+npx wrangler dev --local          # in one terminal
+npm run check:smoke               # in another
+```
+
+The contract checker asks whether a page reads fields the API returns. It says
+nothing about whether a sequence of requests does the right thing, and three of
+this portal's paths were only ever exercised by a real person doing a real
+thing weeks apart:
+
+- signup, pending, admin approval, first sign in
+- a hosted form submission arriving as a lead
+- an automation firing from that submission and running
+
+The smoke test drives all three end to end against a local dev server in under
+a second, plus a reservation and the soft/hard schedule built from it. It
+cleans up after itself, including when it bails early.
 
 ## Deploying
 

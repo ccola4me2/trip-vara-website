@@ -138,6 +138,10 @@ export async function handleSaveForm(request, env, id = null) {
   const name = clean(body.name, 120);
   if (!name) return badRequest('Give the form a name.');
 
+  // Remembered before the insert below assigns one, so the status code can
+  // still tell a create from an update.
+  const isNew = !id;
+
   const fields = parseFields(body.fields);
   if (!fields.length) return badRequest('Add at least one field.');
 
@@ -172,7 +176,7 @@ export async function handleSaveForm(request, env, id = null) {
 
   const row = await env.DB.prepare('SELECT * FROM forms WHERE id = ? AND location_id = ?')
     .bind(id, locationId).first();
-  return json({ ok: true, form: hydrate(row) }, id ? 200 : 201);
+  return json({ ok: true, form: hydrate(row) }, isNew ? 201 : 200);
 }
 
 export async function handleDeleteForm(request, env, id) {
