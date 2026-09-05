@@ -102,6 +102,7 @@ const NAV = [
   { group: 'Content' },
   { href: '/app/formbuilder', label: 'Forms', icon: 'M9 12h6m-6 4h6M8 4h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4h6' },
   { href: '/app/forms', label: 'Imported forms', icon: 'M9 12h6m-6 4h6M8 4h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4h6' },
+  { href: '/app/automations', label: 'Automations', icon: 'M13 2 4.5 13H11l-1 9 8.5-11H12l1-9Z' },
   { href: '/app/marketing', label: 'Marketing', icon: 'M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1Zm14-3a5 5 0 0 1 0 8' },
   { href: '/app/library', label: 'Media', icon: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6Zm2 10 4-4 3 3 3-3 4 4M9 9.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z' },
 

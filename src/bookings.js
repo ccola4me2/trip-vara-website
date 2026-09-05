@@ -8,6 +8,8 @@
 import { json, badRequest, notFound, clean, cleanDate, toCents, oneOf, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
+import * as ghl from './ghl.js';
+import { fireTrigger } from './automations.js';
 
 const PRODUCT_TYPES = ['cruise', 'resort', 'package', 'air', 'other'];
 const STATUSES = ['booked', 'quoted', 'travelled', 'cancelled'];
@@ -92,6 +94,15 @@ export async function handleCreateBooking(request, env) {
   const booking = await db.createBooking(env, user.id, fields);
   await db.logActivity(env, user.id, 'booking.create',
     `Added booking for ${booking.client_name}`, { id: booking.id });
+  await fireTrigger(env, ghl.locationFor(env, user), 'booking.created', {
+    bookingId: booking.id,
+    contactId: booking.ghl_contact_id || null,
+    name: booking.client_name,
+    supplier: booking.supplier || '',
+    product: booking.product_name || '',
+    depart_date: booking.depart_date || '',
+    final_payment_due: booking.final_payment_due || '',
+  });
   return json({ ok: true, booking }, 201);
 }
 

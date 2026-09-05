@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automations | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Automations</h1><p class="sub">When something happens, do these things. Runs on its own.</p></div>
+      <div class="toolbar" style="margin:0;">
+        <button class="btn btn-ghost btn-sm" id="run-now">Run due steps</button>
+        <button class="btn btn-primary btn-sm" id="new-auto">New automation</button>
+      </div>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section class="card" id="panel"><p class="spinner">Loading...</p></section>
+      <section class="card" id="detail" hidden></section>
+    </div>
+  </div>
+</div>
+
+<dialog id="builder">
+  <form id="builder-form" method="dialog">
+    <div class="card-head"><h2 id="builder-title">New automation</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="dialog-body">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="name">Name</label>
+        <input id="name" name="name" required placeholder="New enquiry follow up"></div>
+      <div class="field"><label for="description">What it does</label>
+        <input id="description" name="description" placeholder="Thanks them, waits a day, then reminds me to call"></div>
+
+      <div class="field"><label for="triggerType">When this happens</label>
+        <select id="triggerType" name="triggerType">
+          <option value="form.submitted">Someone submits a form</option>
+          <option value="contact.created">A new contact is added</option>
+          <option value="booking.created">A booking is created</option>
+          <option value="booking.final_payment_due">A final payment falls due</option>
+        </select></div>
+      <div class="field" id="form-filter-field" hidden>
+        <label for="formId">Which form</label>
+        <select id="formId" name="formId"><option value="">Any form</option></select>
+      </div>
+
+      <p style="font-size:.8rem;font-weight:600;color:var(--navy-800);margin:1.4rem 0 .5rem;">Then do this, in order</p>
+      <div id="steps"></div>
+      <div class="toolbar" style="margin-top:.6rem;">
+        <select id="add-type" aria-label="Step type">
+          <option value="send_email">Send an email</option>
+          <option value="wait">Wait</option>
+          <option value="send_sms">Send a text</option>
+          <option value="add_tag">Add a tag</option>
+          <option value="add_note">Add a note</option>
+          <option value="create_task">Create a task for me</option>
+          <option value="notify_team">Notify the team</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" type="button" id="add-step">Add step</button>
+      </div>
+      <p class="field-hint" style="margin-top:.8rem;">Use <code>{{first_name}}</code>, <code>{{name}}</code>
+      or <code>{{email}}</code> anywhere in a message and it gets filled in. Unknown ones become blank
+      rather than showing to the client.</p>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-danger" type="button" id="delete-auto" hidden>Delete</button>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Save automation</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, timeAgo, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const panel = document.getElementById('panel');
+const detail = document.getElementById('detail');
+const dlg = document.getElementById('builder');
+const form = document.getElementById('builder-form');
+const stepsEl = document.getElementById('steps');
+const delBtn = document.getElementById('delete-auto');
+let editingId = null;
+let cache = [];
+
+const TRIGGER_LABEL = {
+  'form.submitted': 'Form submitted',
+  'contact.created': 'Contact added',
+  'booking.created': 'Booking created',
+  'booking.final_payment_due': 'Final payment due',
+};
+const STATUS_TONE = { done: 'badge-green', waiting: 'badge-amber', pending: 'badge-navy', failed: 'badge-red', cancelled: 'badge-navy' };
+
+function stepRow(s = { action: 'send_email' }) {
+  const row = document.createElement('div');
+  row.className = 's-row card';
+  row.style.cssText = 'padding:.9rem;margin-bottom:.6rem;';
+  row.dataset.action = s.action;
+
+  const head = `<div class="row-between" style="margin-bottom:.6rem;">
+      <strong style="font-size:.82rem;color:var(--navy-800);">${esc(labelFor(s.action))}</strong>
+      <button class="icon-btn" type="button" aria-label="Remove step">&times;</button></div>`;
+
+  let bodyHtml = '';
+  if (s.action === 'wait') {
+    bodyHtml = `<div class="field" style="margin:0;"><label>Wait for</label>
+      <select class="s-minutes">
+        ${[['60','1 hour'],['240','4 hours'],['1440','1 day'],['2880','2 days'],['4320','3 days'],
+           ['10080','1 week'],['20160','2 weeks'],['43200','30 days']]
+          .map(([v,l]) => `<option value="${v}"${String(s.minutes)===v?' selected':''}>${l}</option>`).join('')}
+      </select></div>`;
+  } else if (s.action === 'send_email' || s.action === 'notify_team') {
+    bodyHtml = `<div class="field" style="margin:0 0 .6rem;">
+        <input class="s-subject" placeholder="Subject" value="${esc(s.subject || '')}"></div>
+      <textarea class="s-body" placeholder="Hi {{first_name}}, ...">${esc(s.body || '')}</textarea>`;
+  } else if (s.action === 'send_sms') {
+    bodyHtml = `<textarea class="s-body" placeholder="Hi {{first_name}}, ...">${esc(s.body || '')}</textarea>`;
+  } else if (s.action === 'add_tag') {
+    bodyHtml = `<input class="s-tag" placeholder="Tag name" value="${esc(s.tag || '')}">`;
+  } else if (s.action === 'add_note') {
+    bodyHtml = `<textarea class="s-body" placeholder="Note to add to the contact">${esc(s.body || '')}</textarea>`;
+  } else if (s.action === 'create_task') {
+    bodyHtml = `<div class="field-row" style="margin:0;">
+      <div class="field" style="margin:0;"><input class="s-title" placeholder="Call them about the quote" value="${esc(s.title || '')}"></div>
+      <div class="field" style="margin:0;"><input class="s-due" type="number" min="0" max="365"
+        value="${esc(String(s.dueInDays ?? 1))}" aria-label="Due in days"><p class="field-hint">Days from now</p></div>
+    </div>`;
+  }
+
+  row.innerHTML = head + bodyHtml;
+  row.querySelector('.icon-btn').addEventListener('click', () => row.remove());
+  return row;
+}
+
+function labelFor(a) {
+  return {
+    wait: 'Wait', send_email: 'Send an email', send_sms: 'Send a text',
+    add_tag: 'Add a tag', add_note: 'Add a note', create_task: 'Create a task',
+    notify_team: 'Notify the team',
+  }[a] || a;
+}
+
+function readSteps() {
+  return [...stepsEl.querySelectorAll('.s-row')].map((r) => {
+    const action = r.dataset.action;
+    const v = (sel) => (r.querySelector(sel) ? r.querySelector(sel).value : '');
+    if (action === 'wait') return { action, minutes: Number(v('.s-minutes')) };
+    if (action === 'send_email' || action === 'notify_team') return { action, subject: v('.s-subject'), body: v('.s-body') };
+    if (action === 'send_sms' || action === 'add_note') return { action, body: v('.s-body') };
+    if (action === 'add_tag') return { action, tag: v('.s-tag') };
+    if (action === 'create_task') return { action, title: v('.s-title'), dueInDays: Number(v('.s-due')) };
+    return { action };
+  });
+}
+
+async function openBuilder(a) {
+  editingId = a ? a.id : null;
+  form.reset();
+  stepsEl.innerHTML = '';
+  form.querySelector('.notice-error').hidden = true;
+  document.getElementById('builder-title').textContent = a ? 'Edit automation' : 'New automation';
+  delBtn.hidden = !a;
+
+  // Populate the form filter from our own forms.
+  try {
+    const { forms } = await api('/api/myforms');
+    document.getElementById('formId').innerHTML = '<option value="">Any form</option>' +
+      forms.map((f) => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('');
+  } catch { /* the filter just stays as "any form" */ }
+
+  if (a) {
+    form.elements.name.value = a.name;
+    form.elements.description.value = a.description || '';
+    form.elements.triggerType.value = a.triggerType;
+    if (a.triggerConfig && a.triggerConfig.formId) form.elements.formId.value = a.triggerConfig.formId;
+    a.steps.forEach((s) => stepsEl.appendChild(stepRow(s)));
+  } else {
+    stepsEl.appendChild(stepRow({ action: 'send_email', subject: 'Thanks for getting in touch',
+      body: 'Hi {{first_name}},\n\nThanks for reaching out. I will come back to you shortly with some options.\n\nBrent' }));
+  }
+  syncTriggerFields();
+  dlg.showModal();
+}
+
+function syncTriggerFields() {
+  document.getElementById('form-filter-field').hidden =
+    form.elements.triggerType.value !== 'form.submitted';
+}
+form.elements.triggerType.addEventListener('change', syncTriggerFields);
+
+function render(list) {
+  cache = list;
+  if (!list.length) {
+    panel.innerHTML = '<div class="empty"><h3>No automations yet</h3><p>Build one and it runs by itself whenever its trigger fires.</p></div>';
+    return;
+  }
+  panel.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Automation</th><th>Trigger</th><th class="num">Steps</th>
+      <th class="num">Started</th><th class="num">In flight</th><th></th></tr></thead>
+    <tbody>${list.map((a) => `<tr>
+      <td><span class="name">${esc(a.name)}</span>
+        ${a.description ? `<div class="muted">${esc(a.description)}</div>` : ''}
+        <div><span class="badge ${a.active ? 'badge-green' : 'badge-navy'}">${a.active ? 'on' : 'off'}</span>
+          ${a.failedRuns ? `<span class="badge badge-red">${a.failedRuns} failed</span>` : ''}</div></td>
+      <td><span class="badge badge-navy">${esc(TRIGGER_LABEL[a.triggerType] || a.triggerType)}</span></td>
+      <td class="num">${a.steps.length}</td>
+      <td class="num">${a.runsStarted}</td>
+      <td class="num"><button class="btn btn-ghost btn-sm" data-detail="${esc(a.id)}">${a.activeRuns}</button></td>
+      <td class="num"><button class="btn btn-ghost btn-sm" data-edit="${esc(a.id)}">Edit</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+
+  panel.querySelectorAll('[data-edit]').forEach((b) =>
+    b.addEventListener('click', () => openBuilder(cache.find((x) => x.id === b.dataset.edit))));
+  panel.querySelectorAll('[data-detail]').forEach((b) =>
+    b.addEventListener('click', () => showDetail(b.dataset.detail)));
+}
+
+async function showDetail(id) {
+  detail.hidden = false;
+  detail.innerHTML = '<p class="spinner">Loading...</p>';
+  try {
+    const d = await api(`/api/automations/${encodeURIComponent(id)}`);
+    detail.innerHTML = `<div class="card-head"><h2>${esc(d.automation.name)} activity</h2></div>
+      <div class="split" style="padding:1.25rem;">
+        <div><h3 style="font-size:.9rem;margin-bottom:.6rem;">Runs</h3>
+          ${d.runs.length ? `<ul class="rows" style="border:1px solid var(--navy-100);border-radius:10px;">
+            ${d.runs.map((r) => `<li><div class="row-between">
+              <div><div class="t">${esc(r.contact_name || r.contact_email || 'Contact')}</div>
+                <div class="m">step ${r.step_index}${r.last_error ? ' · ' + esc(r.last_error) : ''}</div></div>
+              <div style="text-align:right;"><span class="badge ${STATUS_TONE[r.status] || 'badge-navy'}">${esc(r.status)}</span>
+                <div class="when">${esc(timeAgo(r.created_at))}</div></div></div></li>`).join('')}</ul>`
+            : '<p class="muted">No runs yet.</p>'}</div>
+        <div><h3 style="font-size:.9rem;margin-bottom:.6rem;">Step log</h3>
+          ${d.logs.length ? `<ul class="rows" style="border:1px solid var(--navy-100);border-radius:10px;">
+            ${d.logs.map((l) => `<li><div class="row-between">
+              <div><div class="t">${esc(labelFor(l.action))}</div>
+                <div class="m">${esc(l.detail || '')}</div></div>
+              <div style="text-align:right;">
+                <span class="badge ${l.status === 'ok' ? 'badge-green' : l.status === 'error' ? 'badge-red' : 'badge-navy'}">${esc(l.status)}</span>
+                <div class="when">${esc(timeAgo(l.created_at))}</div></div></div></li>`).join('')}</ul>`
+            : '<p class="muted">Nothing logged yet.</p>'}</div>
+      </div>`;
+    detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) { showError(detail, err); }
+}
+
+document.getElementById('new-auto').addEventListener('click', () => openBuilder(null));
+document.getElementById('add-step').addEventListener('click', () =>
+  stepsEl.appendChild(stepRow({ action: document.getElementById('add-type').value })));
+dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+
+document.getElementById('run-now').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  e.target.textContent = 'Running...';
+  try {
+    const { result } = await api('/api/automations/run', { method: 'POST', body: {} });
+    await load();
+    alert(`Processed ${result.processed} run${result.processed === 1 ? '' : 's'}. ` +
+          `${result.done} finished, ${result.waiting} waiting, ${result.failed} failed.`);
+  } catch (err) { showError(document.getElementById('err'), err); }
+  finally { e.target.disabled = false; e.target.textContent = 'Run due steps'; }
+});
+
+delBtn.addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Delete this automation? Anything currently mid-run is cancelled.')) return;
+  await api(`/api/automations/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
+  dlg.close();
+  detail.hidden = true;
+  await load();
+});
+
+onSubmit(form, async (values) => {
+  const steps = readSteps();
+  if (!steps.length) throw new Error('Add at least one step.');
+  const path = editingId ? `/api/automations/${encodeURIComponent(editingId)}` : '/api/automations';
+  await api(path, { method: editingId ? 'PUT' : 'POST', body: { ...values, steps } });
+  dlg.close();
+  await load();
+});
+
+async function load() {
+  panel.innerHTML = '<p class="spinner">Loading...</p>';
+  try { render((await api('/api/automations')).automations); }
+  catch (err) { showError(document.getElementById('err'), err); panel.innerHTML = ''; }
+}
+await load();
+</script>
+</body></html>

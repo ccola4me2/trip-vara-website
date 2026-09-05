@@ -254,3 +254,42 @@ export async function sendTestEmail(env, to) {
     response: body,
   };
 }
+
+/**
+ * An email sent by an automation step.
+ *
+ * Unlike the transactional templates above, the body is written by an advisor
+ * in the automation builder, so it is escaped and line breaks are converted
+ * rather than trusted as HTML. Someone pasting an angle bracket into a
+ * follow-up should not be able to break the message or inject markup.
+ *
+ * This one throws on failure, deliberately. The automation engine needs to
+ * know a send failed so it can retry, where a signup email failing must never
+ * break the signup.
+ */
+export async function sendAutomationEmail(env, to, subject, body) {
+  if (!env.RESEND_API_KEY) throw new Error('Email is not configured (RESEND_API_KEY).');
+  if (!to) throw new Error('No recipient address.');
+
+  const html = layout(env, {
+    heading: subject,
+    body: `<p style="margin:0;">${escapeHtml(body).replace(/\n/g, '<br>')}</p>`,
+  });
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || 'Trip Vara <noreply@tripvaratravel.com>',
+      to: [to],
+      subject,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Resend returned ${res.status}. ${detail.slice(0, 200)}`);
+  }
+  return { ok: true };
+}

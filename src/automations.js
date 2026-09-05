@@ -1,0 +1,429 @@
+// Trip Vara's own automation engine.
+//
+// How it works, because the shape matters more than any individual function:
+//
+//   A run is a durable row, not an in-memory job. A Worker invocation lasts
+//   seconds and an automation can wait days between steps, so progress lives
+//   in the database. Each run records which step it is on and when it is next
+//   due. A cron claims whatever is due and advances it.
+//
+//   Steps execute until one of three things happens: the list ends, a wait
+//   step defers the run, or an action throws. A throw is retried a few times
+//   with backoff and then the run is marked failed with the reason kept, so a
+//   transient email hiccup does not silently drop somebody's follow-up.
+//
+//   Triggers only enqueue. They never execute inline, because the request that
+//   fired the trigger, a form submission say, must not be slowed down or made
+//   to fail by an automation that is misconfigured.
+
+import { uid, now, clean, oneOf } from './util.js';
+import * as ghl from './ghl.js';
+import { sendAutomationEmail } from './email.js';
+
+export const TRIGGERS = [
+  'form.submitted',
+  'contact.created',
+  'booking.created',
+  'booking.final_payment_due',
+];
+
+export const ACTIONS = [
+  'wait', 'send_email', 'send_sms', 'add_tag', 'add_note', 'create_task', 'notify_team',
+];
+
+const MAX_RUNS_PER_PASS = 25;
+const MAX_STEPS_PER_PASS = 20;
+const MAX_ATTEMPTS = 4;
+
+// ---------------------------------------------------------------------------
+// Definitions
+// ---------------------------------------------------------------------------
+export function parseSteps(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const out = [];
+  for (const s of list.slice(0, 40)) {
+    const action = oneOf(s.action, ACTIONS);
+    const step = { action };
+    if (action === 'wait') {
+      step.minutes = Math.max(1, Math.min(Number(s.minutes) || 60, 60 * 24 * 90));
+    } else if (action === 'send_email') {
+      step.subject = clean(s.subject, 200);
+      step.body = clean(s.body, 6000);
+      if (!step.subject || !step.body) continue;
+    } else if (action === 'send_sms') {
+      step.body = clean(s.body, 800);
+      if (!step.body) continue;
+    } else if (action === 'add_tag') {
+      step.tag = clean(s.tag, 80);
+      if (!step.tag) continue;
+    } else if (action === 'add_note') {
+      step.body = clean(s.body, 2000);
+      if (!step.body) continue;
+    } else if (action === 'create_task') {
+      step.title = clean(s.title, 160);
+      step.dueInDays = Math.max(0, Math.min(Number(s.dueInDays) || 1, 365));
+      if (!step.title) continue;
+    } else if (action === 'notify_team') {
+      step.subject = clean(s.subject, 200) || 'Automation notification';
+      step.body = clean(s.body, 4000);
+      if (!step.body) continue;
+    }
+    out.push(step);
+  }
+  return out;
+}
+
+export function hydrateAutomation(row) {
+  if (!row) return null;
+  let steps = [];
+  let cfg = {};
+  try { steps = JSON.parse(row.steps_json); } catch { steps = []; }
+  try { cfg = row.trigger_config_json ? JSON.parse(row.trigger_config_json) : {}; } catch { cfg = {}; }
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    triggerType: row.trigger_type,
+    triggerConfig: cfg,
+    steps,
+    active: row.active === 1,
+    runsStarted: row.runs_started || 0,
+    runsDone: row.runs_done || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Templating
+//
+// Deliberately tiny: {{first_name}} style substitution against the run's
+// context, with anything unknown replaced by empty string rather than left as
+// a visible placeholder. A client should never receive "Hi {{first_name}}".
+// ---------------------------------------------------------------------------
+export function fill(template, context) {
+  return String(template || '').replace(/\{\{\s*([a-z0-9_.]+)\s*\}\}/gi, (_, key) => {
+    const value = key.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), context);
+    return value == null ? '' : String(value);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Enqueue
+// ---------------------------------------------------------------------------
+/**
+ * Starts every active automation matching a trigger. Never throws: a broken
+ * automation must not break the thing that fired it.
+ */
+export async function fireTrigger(env, locationId, triggerType, context = {}) {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM automations
+        WHERE location_id = ? AND trigger_type = ? AND active = 1`
+    ).bind(locationId, triggerType).all();
+
+    for (const row of results || []) {
+      const a = hydrateAutomation(row);
+      if (!a.steps.length) continue;
+
+      // trigger_config narrows which events match, e.g. one specific form.
+      if (a.triggerConfig.formId && a.triggerConfig.formId !== context.formId) continue;
+
+      const ts = now();
+      await env.DB.prepare(
+        `INSERT INTO automation_runs
+           (id, automation_id, location_id, contact_id, contact_email, contact_name,
+            context_json, step_index, status, next_run_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?)`
+      ).bind(uid(), a.id, locationId, context.contactId || null,
+             context.email || null, context.name || null,
+             JSON.stringify(context), ts, ts, ts).run();
+
+      await env.DB.prepare('UPDATE automations SET runs_started = runs_started + 1 WHERE id = ?')
+        .bind(a.id).run();
+    }
+  } catch (e) {
+    console.error('fireTrigger', triggerType, e);
+  }
+}
+
+async function log(env, run, stepIndex, action, status, detail) {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO automation_logs (id, run_id, automation_id, step_index, action, status, detail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(uid(), run.id, run.automation_id, stepIndex, action, status,
+           detail ? String(detail).slice(0, 500) : null, now()).run();
+  } catch (e) {
+    console.error('automation log', e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+async function runStep(env, run, step, context) {
+  switch (step.action) {
+    case 'send_email': {
+      const to = context.email;
+      if (!to) return { status: 'skipped', detail: 'no email address on the contact' };
+      await sendAutomationEmail(env, to, fill(step.subject, context), fill(step.body, context));
+      return { status: 'ok', detail: `emailed ${to}` };
+    }
+    case 'send_sms': {
+      if (!context.contactId) return { status: 'skipped', detail: 'no contact to message' };
+      await ghl.sendMessage(env, {
+        contactId: context.contactId,
+        type: 'SMS',
+        message: fill(step.body, context),
+      });
+      return { status: 'ok', detail: 'sms sent' };
+    }
+    case 'add_tag': {
+      if (!context.contactId) return { status: 'skipped', detail: 'no contact' };
+      const current = await ghl.getContact(env, context.contactId).catch(() => null);
+      const tags = new Set([...(current?.tags || []), fill(step.tag, context)]);
+      await ghl.updateContact(env, context.contactId, { tags: [...tags] });
+      return { status: 'ok', detail: `tagged ${step.tag}` };
+    }
+    case 'add_note': {
+      if (!context.contactId) return { status: 'skipped', detail: 'no contact' };
+      await ghl.createContactNote(env, context.contactId, fill(step.body, context));
+      return { status: 'ok', detail: 'note added' };
+    }
+    case 'create_task': {
+      if (!context.contactId) return { status: 'skipped', detail: 'no contact' };
+      const due = new Date(Date.now() + (step.dueInDays || 0) * 86400000).toISOString();
+      await ghl.createContactTask(env, context.contactId, {
+        title: fill(step.title, context), dueDate: due,
+      });
+      return { status: 'ok', detail: 'task created' };
+    }
+    case 'notify_team': {
+      const to = env.NOTIFY_EMAIL;
+      if (!to) return { status: 'skipped', detail: 'NOTIFY_EMAIL is not set' };
+      await sendAutomationEmail(env, to, fill(step.subject, context), fill(step.body, context));
+      return { status: 'ok', detail: `notified ${to}` };
+    }
+    default:
+      return { status: 'skipped', detail: `unknown action ${step.action}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Engine
+// ---------------------------------------------------------------------------
+/** Advances one run as far as it can go. Returns its final status. */
+async function advanceRun(env, run) {
+  const autoRow = await env.DB.prepare('SELECT * FROM automations WHERE id = ?')
+    .bind(run.automation_id).first();
+  const automation = hydrateAutomation(autoRow);
+
+  if (!automation || !automation.active) {
+    await env.DB.prepare("UPDATE automation_runs SET status='cancelled', updated_at=? WHERE id=?")
+      .bind(now(), run.id).run();
+    return 'cancelled';
+  }
+
+  let context = {};
+  try { context = run.context_json ? JSON.parse(run.context_json) : {}; } catch { context = {}; }
+  context.email = context.email || run.contact_email || '';
+  context.name = context.name || run.contact_name || '';
+  context.contactId = context.contactId || run.contact_id || null;
+  const parts = String(context.name || '').split(/\s+/);
+  context.first_name = context.first_name || parts[0] || '';
+  context.last_name = context.last_name || parts.slice(1).join(' ') || '';
+
+  let index = run.step_index;
+
+  for (let n = 0; n < MAX_STEPS_PER_PASS; n++) {
+    if (index >= automation.steps.length) {
+      await env.DB.prepare("UPDATE automation_runs SET status='done', step_index=?, updated_at=? WHERE id=?")
+        .bind(index, now(), run.id).run();
+      await env.DB.prepare('UPDATE automations SET runs_done = runs_done + 1 WHERE id = ?')
+        .bind(automation.id).run();
+      return 'done';
+    }
+
+    const step = automation.steps[index];
+
+    if (step.action === 'wait') {
+      const due = now() + step.minutes * 60;
+      await env.DB.prepare(
+        "UPDATE automation_runs SET status='waiting', step_index=?, next_run_at=?, attempts=0, updated_at=? WHERE id=?"
+      ).bind(index + 1, due, now(), run.id).run();
+      await log(env, run, index, 'wait', 'ok', `waiting ${step.minutes} minutes`);
+      return 'waiting';
+    }
+
+    try {
+      const res = await runStep(env, run, step, context);
+      await log(env, run, index, step.action, res.status, res.detail);
+      index += 1;
+      await env.DB.prepare('UPDATE automation_runs SET step_index=?, attempts=0, updated_at=? WHERE id=?')
+        .bind(index, now(), run.id).run();
+    } catch (e) {
+      const attempts = (run.attempts || 0) + 1;
+      const message = String(e && e.message ? e.message : e).slice(0, 400);
+      await log(env, run, index, step.action, 'error', message);
+
+      if (attempts >= MAX_ATTEMPTS) {
+        await env.DB.prepare(
+          "UPDATE automation_runs SET status='failed', attempts=?, last_error=?, updated_at=? WHERE id=?"
+        ).bind(attempts, message, now(), run.id).run();
+        return 'failed';
+      }
+      // Back off and try this same step again on a later pass.
+      await env.DB.prepare(
+        "UPDATE automation_runs SET status='waiting', attempts=?, last_error=?, next_run_at=?, updated_at=? WHERE id=?"
+      ).bind(attempts, message, now() + attempts * 300, now(), run.id).run();
+      return 'retrying';
+    }
+  }
+
+  // Hit the per-pass ceiling. Leave it due immediately so the next pass
+  // continues rather than stalling a long automation.
+  await env.DB.prepare(
+    "UPDATE automation_runs SET status='pending', step_index=?, next_run_at=?, updated_at=? WHERE id=?"
+  ).bind(index, now(), now(), run.id).run();
+  return 'continuing';
+}
+
+/** One scheduled pass over everything that is due. */
+export async function processDueRuns(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM automation_runs
+      WHERE status IN ('pending','waiting') AND next_run_at <= ?
+      ORDER BY next_run_at ASC LIMIT ?`
+  ).bind(now(), MAX_RUNS_PER_PASS).all();
+
+  const out = { processed: 0, done: 0, waiting: 0, failed: 0 };
+  for (const run of results || []) {
+    try {
+      const status = await advanceRun(env, run);
+      out.processed += 1;
+      if (status === 'done') out.done += 1;
+      if (status === 'waiting') out.waiting += 1;
+      if (status === 'failed') out.failed += 1;
+    } catch (e) {
+      console.error('advanceRun', run.id, e);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Portal API
+// ---------------------------------------------------------------------------
+import { json, badRequest, notFound, readJson } from './util.js';
+import { requireUser } from './auth.js';
+import * as db from './db.js';
+
+export async function handleListAutomations(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+  const locationId = ghl.locationFor(env, user);
+
+  const { results } = await env.DB.prepare(
+    `SELECT a.*,
+       (SELECT COUNT(*) FROM automation_runs r WHERE r.automation_id = a.id AND r.status IN ('pending','waiting')) AS active_runs,
+       (SELECT COUNT(*) FROM automation_runs r WHERE r.automation_id = a.id AND r.status = 'failed') AS failed_runs
+     FROM automations a WHERE a.location_id = ? ORDER BY a.updated_at DESC`
+  ).bind(locationId).all();
+
+  return json({
+    automations: (results || []).map((r) => ({
+      ...hydrateAutomation(r),
+      activeRuns: r.active_runs || 0,
+      failedRuns: r.failed_runs || 0,
+    })),
+    triggers: TRIGGERS,
+    actions: ACTIONS,
+  });
+}
+
+export async function handleGetAutomation(request, env, id) {
+  const { response } = await requireUser(request, env);
+  if (response) return response;
+
+  const row = await env.DB.prepare('SELECT * FROM automations WHERE id = ?').bind(id).first();
+  if (!row) return notFound('Automation not found.');
+
+  const { results: runs } = await env.DB.prepare(
+    `SELECT id, contact_name, contact_email, status, step_index, next_run_at, last_error, created_at
+       FROM automation_runs WHERE automation_id = ? ORDER BY created_at DESC LIMIT 50`
+  ).bind(id).all();
+
+  const { results: logs } = await env.DB.prepare(
+    `SELECT step_index, action, status, detail, created_at
+       FROM automation_logs WHERE automation_id = ? ORDER BY created_at DESC LIMIT 100`
+  ).bind(id).all();
+
+  return json({ automation: hydrateAutomation(row), runs: runs || [], logs: logs || [] });
+}
+
+export async function handleSaveAutomation(request, env, id = null) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const name = clean(body.name, 120);
+  if (!name) return badRequest('Give the automation a name.');
+
+  const triggerType = oneOf(body.triggerType, TRIGGERS);
+  const steps = parseSteps(body.steps);
+  if (!steps.length) return badRequest('Add at least one step.');
+
+  // A run that opens with a wait and never acts is almost always a mistake,
+  // and it is invisible until someone wonders why nothing happened.
+  if (steps.every((s) => s.action === 'wait')) {
+    return badRequest('This automation only waits. Add a step that does something.');
+  }
+
+  const locationId = ghl.locationFor(env, user);
+  const cfg = {};
+  if (clean(body.formId, 64)) cfg.formId = clean(body.formId, 64);
+  const ts = now();
+
+  if (id) {
+    const res = await env.DB.prepare(
+      `UPDATE automations SET name=?, description=?, trigger_type=?, trigger_config_json=?,
+         steps_json=?, active=?, updated_at=? WHERE id=? AND location_id=?`
+    ).bind(name, clean(body.description, 400), triggerType, JSON.stringify(cfg),
+           JSON.stringify(steps), body.active === false ? 0 : 1, ts, id, locationId).run();
+    if (!res.meta || res.meta.changes === 0) return notFound('Automation not found.');
+    await db.logActivity(env, user.id, 'automation.update', `Updated ${name}`, { id });
+  } else {
+    id = uid();
+    await env.DB.prepare(
+      `INSERT INTO automations (id, location_id, name, description, trigger_type,
+         trigger_config_json, steps_json, active, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, locationId, name, clean(body.description, 400), triggerType,
+           JSON.stringify(cfg), JSON.stringify(steps),
+           body.active === false ? 0 : 1, user.id, ts, ts).run();
+    await db.logActivity(env, user.id, 'automation.create', `Created ${name}`, { id });
+  }
+
+  const row = await env.DB.prepare('SELECT * FROM automations WHERE id = ?').bind(id).first();
+  return json({ ok: true, automation: hydrateAutomation(row) });
+}
+
+export async function handleDeleteAutomation(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+  const res = await env.DB.prepare('DELETE FROM automations WHERE id = ? AND location_id = ?')
+    .bind(id, ghl.locationFor(env, user)).run();
+  if (!res.meta || res.meta.changes === 0) return notFound('Automation not found.');
+  await db.logActivity(env, user.id, 'automation.delete', 'Deleted an automation', { id });
+  return json({ ok: true });
+}
+
+/** Runs a pass now rather than waiting for the cron. Useful while testing one. */
+export async function handleRunAutomations(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+  const result = await processDueRuns(env);
+  await db.logActivity(env, user.id, 'automation.run', 'Ran a pass', result);
+  return json({ ok: true, result });
+}

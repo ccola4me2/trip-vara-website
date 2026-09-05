@@ -12,6 +12,7 @@ import { json, badRequest, notFound, uid, now, clean, isValidEmail, normalizeEma
 import * as ghl from './ghl.js';
 import { upsertContact } from './sync.js';
 import { hydrateForm } from './formbuilder.js';
+import { fireTrigger } from './automations.js';
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -170,6 +171,7 @@ export async function handlePublicSubmit(request, env, slug) {
   // Push the contact upstream so messaging and automations still see it. Best
   // effort on purpose: losing a lead because the CRM was rate limiting would
   // be far worse than a contact arriving a few minutes late.
+  let contactId = null;
   if (email || phone) {
     try {
       const parts = (name || '').split(/\s+/);
@@ -181,6 +183,7 @@ export async function handlePublicSubmit(request, env, slug) {
         source: `Trip Vara form: ${form.name}`,
       });
       if (contact && contact.id) {
+        contactId = contact.id;
         await upsertContact(env, row.location_id, contact);
         await env.DB.prepare('UPDATE form_submissions SET contact_id = ? WHERE id = ?')
           .bind(contact.id, submissionId).run();
@@ -188,6 +191,23 @@ export async function handlePublicSubmit(request, env, slug) {
     } catch (e) {
       console.error('form contact push', e);
     }
+  }
+
+  // Kick off any automations listening for this. Enqueue only, never execute
+  // inline: a misconfigured automation must not slow down or fail a lead
+  // submission.
+  const context = {
+    formId: form.id, formName: form.name, formSlug: form.slug,
+    contactId: contactId || null, name, email, phone, ...data,
+  };
+  await fireTrigger(env, row.location_id, 'form.submitted', context);
+
+  // A form submission that produced a new contact is also a new contact, and
+  // someone building a "welcome new contact" automation reasonably expects it
+  // to cover leads that arrive by form. Only fires when a contact was actually
+  // created, so it never double-fires for an anonymous submission.
+  if (contactId) {
+    await fireTrigger(env, row.location_id, 'contact.created', context);
   }
 
   return json({

@@ -37,6 +37,10 @@ import {
 } from './formbuilder.js';
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
 import {
+  handleListAutomations, handleGetAutomation, handleSaveAutomation,
+  handleDeleteAutomation, handleRunAutomations, processDueRuns,
+} from './automations.js';
+import {
   handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
 } from './library.js';
 import { handleDashboard, handleProduction } from './reports.js';
@@ -75,6 +79,7 @@ const PAGE_FILES = {
   '/app/billing': '/app/billing.html',
   '/app/forms': '/app/forms.html',
   '/app/formbuilder': '/app/formbuilder.html',
+  '/app/automations': '/app/automations.html',
   '/app/crm': '/app/crm.html',
   '/app/marketing': '/app/marketing.html',
   '/app/catalog': '/app/catalog.html',
@@ -105,6 +110,8 @@ export default {
     ctx.waitUntil(
       runSync(env, locationFor(env, null)).catch((e) => console.error('sync', e))
     );
+    // Advance any automation runs that are due.
+    ctx.waitUntil(processDueRuns(env).catch((e) => console.error('automations', e)));
   },
 };
 
@@ -134,6 +141,7 @@ async function routeApi(request, env, path, method) {
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
   const publicFormMatch = path.match(/^\/api\/public\/forms\/([^/]+)$/);
+  const autoMatch = path.match(/^\/api\/automations\/([^/]+)$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl)$/);
 
   // ---- auth -------------------------------------------------------------
@@ -211,6 +219,14 @@ async function routeApi(request, env, path, method) {
   if (ownFormMatch && method === 'GET') return handleGetForm(request, env, ownFormMatch[1]);
   if (ownFormMatch && method === 'PUT') return handleSaveForm(request, env, ownFormMatch[1]);
   if (ownFormMatch && method === 'DELETE') return handleDeleteForm(request, env, ownFormMatch[1]);
+
+  // Automations.
+  if (path === '/api/automations' && method === 'GET') return handleListAutomations(request, env);
+  if (path === '/api/automations' && method === 'POST') return handleSaveAutomation(request, env, null);
+  if (path === '/api/automations/run' && method === 'POST') return handleRunAutomations(request, env);
+  if (autoMatch && autoMatch[1] !== 'run' && method === 'GET') return handleGetAutomation(request, env, autoMatch[1]);
+  if (autoMatch && method === 'PUT') return handleSaveAutomation(request, env, autoMatch[1]);
+  if (autoMatch && method === 'DELETE') return handleDeleteAutomation(request, env, autoMatch[1]);
 
   // Public submission endpoint for a hosted form. Unauthenticated by design.
   if (publicFormMatch && method === 'POST') {

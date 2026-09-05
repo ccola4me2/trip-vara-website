@@ -5,6 +5,7 @@ import { requireUser } from './auth.js';
 import * as ghl from './ghl.js';
 import * as db from './db.js';
 import { upsertContact } from './sync.js';
+import { fireTrigger } from './automations.js';
 
 export async function handleListLeads(request, env) {
   const { user, response } = await requireUser(request, env);
@@ -64,6 +65,9 @@ export async function handleCreateLead(request, env) {
     // contact is in the list the moment the dialog closes.
     if (contact && contact.id) await upsertContact(env, locationId, contact);
     await db.logActivity(env, user.id, 'lead.create', `Added lead ${contact.name}`, { contactId: contact.id });
+    await fireTrigger(env, locationId, 'contact.created', {
+      contactId: contact.id, name: contact.name, email: contact.email, phone: contact.phone,
+    });
     return json({ ok: true, contact }, 201);
   } catch (e) {
     return ghl.ghlErrorResponse(e);
