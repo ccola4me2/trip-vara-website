@@ -3,6 +3,12 @@
 // Every send is best effort: if RESEND_API_KEY is not configured, or the API
 // call fails, the calling request still succeeds. Account creation must never
 // fail because an email did not go out.
+//
+// The exception is sendAutomationEmail at the bottom, which throws so the
+// automation engine can record what happened, and distinguishes a failure
+// worth retrying from one that is not.
+
+import { PermanentError } from './util.js';
 
 const BRAND_NAVY = '#1b3a5f';
 const BRAND_CORAL = '#f1705b';
@@ -268,8 +274,11 @@ export async function sendTestEmail(env, to) {
  * break the signup.
  */
 export async function sendAutomationEmail(env, to, subject, body) {
-  if (!env.RESEND_API_KEY) throw new Error('Email is not configured (RESEND_API_KEY).');
-  if (!to) throw new Error('No recipient address.');
+  // Neither of these improves by waiting five minutes and asking again.
+  if (!env.RESEND_API_KEY) {
+    throw new PermanentError('Email is not configured: the RESEND_API_KEY secret is not set on the Worker.');
+  }
+  if (!to) throw new PermanentError('No recipient address.');
 
   const html = layout(env, {
     heading: subject,
@@ -289,7 +298,13 @@ export async function sendAutomationEmail(env, to, subject, body) {
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`Resend returned ${res.status}. ${detail.slice(0, 200)}`);
+    const message = `Resend returned ${res.status}. ${detail.slice(0, 200)}`;
+    // 429 is rate limiting and 5xx is Resend having a bad day: both are worth
+    // another go. A 401, 403 or 422 is a bad key, an unverified sending
+    // domain or an address Resend will not accept, and those stay broken
+    // until someone changes something.
+    const transient = res.status === 429 || res.status >= 500;
+    throw transient ? new Error(message) : new PermanentError(message);
   }
   return { ok: true };
 }

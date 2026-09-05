@@ -11,12 +11,15 @@
 //   step defers the run, or an action throws. A throw is retried a few times
 //   with backoff and then the run is marked failed with the reason kept, so a
 //   transient email hiccup does not silently drop somebody's follow-up.
+//   A PermanentError skips the retries: an unset API key or an unverified
+//   sending domain will not fix itself, and a run left waiting on one reads
+//   as patience on the automation screen when it is really a broken step.
 //
 //   Triggers only enqueue. They never execute inline, because the request that
 //   fired the trigger, a form submission say, must not be slowed down or made
 //   to fail by an automation that is misconfigured.
 
-import { uid, now, clean, oneOf } from './util.js';
+import { uid, now, clean, oneOf, PermanentError } from './util.js';
 import * as ghl from './ghl.js';
 import { sendAutomationEmail } from './email.js';
 
@@ -275,11 +278,16 @@ async function advanceRun(env, run) {
     } catch (e) {
       const attempts = (run.attempts || 0) + 1;
       const message = String(e && e.message ? e.message : e).slice(0, 400);
+      const permanent = e instanceof PermanentError || e?.permanent === true ||
+        (e instanceof ghl.GhlError && e.detail && e.detail.code === 'not_configured');
       await log(env, run, index, step.action, 'error', message);
 
-      if (attempts >= MAX_ATTEMPTS) {
+      if (permanent || attempts >= MAX_ATTEMPTS) {
+        // next_run_at is zeroed with it. Nothing claims a failed run, but a
+        // failed row still carrying a future retry time reads as though one is
+        // coming. Zero rather than NULL because the column is NOT NULL.
         await env.DB.prepare(
-          "UPDATE automation_runs SET status='failed', attempts=?, last_error=?, updated_at=? WHERE id=?"
+          "UPDATE automation_runs SET status='failed', attempts=?, last_error=?, next_run_at=0, updated_at=? WHERE id=?"
         ).bind(attempts, message, now(), run.id).run();
         return 'failed';
       }

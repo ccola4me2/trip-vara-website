@@ -94,12 +94,15 @@ async function runCleanups() {
 }
 class Bail extends Error {}
 
+// Both live at module scope so the finally below can still reach them.
+const admin = jar();
+let advisorId = null;
+
 async function main() {
   console.log(`Smoke test against ${BASE}`);
 
   // ---------------------------------------------------------------- admin --
   step('Admin signs in');
-  const admin = jar();
   const login = await call(admin, 'POST', '/api/auth/login',
     { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   if (!check(login.status === 200, 'admin signs in', `status ${login.status}`)) {
@@ -124,8 +127,11 @@ async function main() {
   const list = await call(admin, 'GET', '/api/admin/advisors');
   const created = (list.data?.users || []).find((a) => a.email === ADVISOR_EMAIL);
   if (!check(created, 'the signup shows up for the admin')) throw new Bail('No advisor to approve.');
-  cleanup('the test advisor', () =>
-    call(admin, 'PUT', `/api/admin/advisors/${created.id}/status`, { status: 'suspended' }));
+  // Deliberately not registered with the other cleanups: suspending the
+  // advisor kills their session, and the checks after cleanup are made as the
+  // advisor. Registered here it ran first and those checks then passed against
+  // 401 bodies, which is worse than not running them.
+  advisorId = created.id;
   check(created.status === 'pending', 'and shows up as pending', created.status);
 
   const approve = await call(admin, 'PUT', `/api/admin/advisors/${created.id}/status`,
@@ -238,19 +244,21 @@ async function main() {
   detail = await call(advisor, 'GET', `/api/automations/${automationId}`);
   const run = (detail.data?.runs || [])[0];
   // What "advanced correctly" means depends on the environment. With email
-  // configured the run should finish. Without it, the send throws, and the
-  // interesting question is whether the engine keeps the run and schedules a
-  // retry or loses it. Both are worth asserting; neither is worth skipping.
+  // configured the run should finish. Without it the send throws, and the
+  // run should fail immediately with the reason on it: retrying a missing API
+  // key four times leaves it sitting in `waiting`, which reads as patience
+  // when it is really a broken automation nobody is being told about.
   const health = await call(admin, 'GET', '/api/admin/health');
   const mailConfigured = Boolean(health.data?.email?.resendKeyPresent);
   if (mailConfigured) {
     check(run && run.status === 'done',
       'and it runs to completion', run ? `${run.status}: ${run.last_error || ''}` : 'no run');
   } else {
-    check(run && run.status === 'waiting' && run.next_run_at && run.last_error,
-      'and, with email unconfigured, it is held for retry rather than lost',
-      run ? `${run.status}, retry ${run.next_run_at || 'none'}: ${run.last_error || 'no error recorded'}` : 'no run');
-    console.log('        (email is not configured here, so the send cannot complete)');
+    check(run && run.status === 'failed' && /RESEND_API_KEY/.test(run.last_error || ''),
+      'and, with email unconfigured, it fails at once and says why',
+      run ? `${run.status}: ${run.last_error || 'no error recorded'}` : 'no run');
+    check(run && !run.next_run_at,
+      'without scheduling a retry that cannot help', run ? `retry at ${run.next_run_at}` : 'no run');
   }
   check((detail.data?.logs || []).length >= 1,
     'leaving a log of what it did', `${(detail.data?.logs || []).length} log line(s)`);
@@ -259,12 +267,16 @@ async function main() {
   step('Clean up');
   await runCleanups();
 
+  // Both of these assert an absence, so they have to prove the request worked
+  // first. An error body has no payments in it either.
   const gone = await call(advisor, 'GET', '/api/payments?state=all');
-  check(!(gone.data?.payments || []).some((p) => p.booking_id === bookingId),
-    'deleting a reservation takes its payments with it');
+  check(gone.status === 200 && Array.isArray(gone.data?.payments) &&
+    !gone.data.payments.some((p) => p.booking_id === bookingId),
+    'deleting a reservation takes its payments with it', `status ${gone.status}`);
   const formsLeft = await call(advisor, 'GET', '/api/myforms');
-  check(!(formsLeft.data?.forms || []).some((f) => f.id === form.id),
-    'and nothing the test created is left behind');
+  check(formsLeft.status === 200 && Array.isArray(formsLeft.data?.forms) &&
+    !formsLeft.data.forms.some((f) => f.id === form.id),
+    'and nothing the test created is left behind', `status ${formsLeft.status}`);
 }
 
 const started = Date.now();
@@ -278,6 +290,13 @@ main()
     // suspended advisor is deliberate: suspending is the closest thing this
     // portal has to deleting an account, and an active one would keep working.
     await runCleanups();
+    // Last, because it ends the advisor's session. Suspending is the closest
+    // thing this portal has to deleting an account, and leaving it active
+    // would keep a stale login working.
+    if (advisorId) {
+      await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/status`, { status: 'suspended' })
+        .catch(() => {});
+    }
     console.log(
       `\n${failures ? `${failures} of ${checks} checks failed.` : `All ${checks} checks passed.`}` +
       ` (${((Date.now() - started) / 1000).toFixed(1)}s)`

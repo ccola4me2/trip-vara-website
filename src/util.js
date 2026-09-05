@@ -191,3 +191,22 @@ export async function readJson(request) {
     return {};
   }
 }
+
+/**
+ * An error that retrying cannot fix.
+ *
+ * The automation engine retries a failed step four times with backoff, which
+ * is right for a timeout or a 500 and useless for a missing API key: nothing
+ * changes between attempts, and the run sits in `waiting` for twenty minutes
+ * pretending it might yet succeed. Worse, it reads as "waiting" on the
+ * automation screen, so an unconfigured or revoked key looks like patience
+ * rather than a broken automation. Throw this instead and the run fails at
+ * once, with the reason on the record.
+ */
+export class PermanentError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PermanentError';
+    this.permanent = true;
+  }
+}
