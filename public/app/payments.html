@@ -13,20 +13,25 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Payments</h1><p class="sub">What each client owes on their trip, and what they have paid so far.</p></div>
-      <button class="btn btn-primary btn-sm" id="new-payment">Record a client payment</button>
+      <div><h1>Payments</h1><p class="sub">Client payments to suppliers: what is due, what has been paid, what is late.</p></div>
+      <button class="btn btn-primary btn-sm" id="new-payment">Post a payment</button>
     </header>
     <div class="content">
       <div id="err"></div>
+      <div class="notice notice-info">
+        Clients pay suppliers directly. Nothing here is money Trip Vara holds. Your own
+        earnings are the commission on each booking, tracked under
+        <a href="/app/bookings">Bookings</a> and totalled on <a href="/app/reports">Reports</a>.
+      </div>
       <section id="stats" class="stat-grid"></section>
       <div class="tabs">
         <button class="tab" type="button" data-state="outstanding" aria-selected="true">Outstanding</button>
-        <button class="tab" type="button" data-state="paid" aria-selected="false">Paid</button>
+        <button class="tab" type="button" data-state="paid" aria-selected="false">Posted</button>
         <button class="tab" type="button" data-state="all" aria-selected="false">Everything</button>
       </div>
       <section class="card" id="panel"><p class="spinner">Loading...</p></section>
       <section class="card">
-        <div class="card-head"><h2>What each client still owes</h2></div>
+        <div class="card-head"><h2>Balance by booking</h2></div>
         <div id="balances"></div>
       </section>
     </div>
@@ -35,7 +40,7 @@
 
 <dialog id="pay-dialog">
   <form id="pay-form" method="dialog">
-    <div class="card-head"><h2 id="pay-title">Record a client payment</h2>
+    <div class="card-head"><h2 id="pay-title">Post a payment</h2>
       <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
     <div class="dialog-body">
       <div class="notice notice-error" hidden></div>
@@ -55,19 +60,19 @@
       <div class="field-row">
         <div class="field"><label for="dueDate">Date it is due</label>
           <input id="dueDate" name="dueDate" type="date"></div>
-        <div class="field"><label for="paidDate">Date they paid</label>
+        <div class="field"><label for="paidDate">Date paid</label>
           <input id="paidDate" name="paidDate" type="date">
-          <p class="field-hint">Leave blank if the client has not paid it yet.</p></div>
+          <p class="field-hint">Leave blank until the supplier confirms it.</p></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="method">How they paid</label>
+        <div class="field"><label for="method">Paid by</label>
           <select id="method" name="method">
             <option value="card">Card</option><option value="ach">ACH</option>
             <option value="check">Check</option><option value="cash">Cash</option>
             <option value="transfer">Transfer</option><option value="other">Other</option>
           </select></div>
         <div class="field"><label for="reference">Reference</label>
-          <input id="reference" name="reference" placeholder="Confirmation or receipt no."></div>
+          <input id="reference" name="reference" placeholder="Supplier confirmation number"></div>
       </div>
       <div class="field"><label for="notes">Notes</label><textarea id="notes" name="notes"></textarea></div>
     </div>
@@ -98,7 +103,7 @@ let bookings = [];
 const KIND_LABEL = { deposit: 'Deposit', installment: 'Part payment', final: 'Final balance', refund: 'Refund' };
 
 function statusOf(p, today) {
-  if (p.paid_date) return { label: 'paid', tone: 'badge-green' };
+  if (p.paid_date) return { label: 'posted', tone: 'badge-green' };
   if (!p.due_date) return { label: 'unscheduled', tone: 'badge-navy' };
   if (p.due_date < today) {
     const d = Math.abs(daysUntil(p.due_date));
@@ -116,15 +121,15 @@ function render(d) {
       <p class="value" style="${s.overdueCents ? 'color:var(--red-600);' : ''}">${money(s.overdueCents)}</p>
       <p class="meta">${s.overdueCount} client payment${s.overdueCount === 1 ? '' : 's'} past due</p></div>
     <div class="stat"><p class="label">Due in 30 days</p><p class="value">${money(s.dueSoonCents)}</p>
-      <p class="meta">Client payments coming up</p></div>
-    <div class="stat"><p class="label">Paid by clients</p><p class="value">${money(s.collectedCents)}</p>
-      <p class="meta">Money collected on trips</p></div>
-    <div class="stat"><p class="label">Clients still owe</p><p class="value">${money(s.outstandingCents)}</p>
-      <p class="meta">Due but not yet paid</p></div>`;
+      <p class="meta">Chase these before they slip</p></div>
+    <div class="stat"><p class="label">Paid to suppliers</p><p class="value">${money(s.collectedCents)}</p>
+      <p class="meta">Posted against bookings</p></div>
+    <div class="stat"><p class="label">Still due</p><p class="value">${money(s.outstandingCents)}</p>
+      <p class="meta">Clients owe this to suppliers</p></div>`;
 
   if (!d.payments.length) {
     panel.innerHTML = state === 'paid'
-      ? '<div class="empty"><h3>No client payments yet</h3><p>Payments you mark as paid appear here.</p></div>'
+      ? '<div class="empty"><h3>Nothing posted yet</h3><p>Payments you mark as paid appear here.</p></div>'
       : '<div class="empty"><h3>Nothing outstanding</h3><p>Add a deposit amount and dates to a booking, then build its schedule below.</p></div>';
   } else {
     panel.innerHTML = `<div class="table-wrap"><table>
@@ -139,11 +144,11 @@ function render(d) {
             <div class="muted">${esc(p.product_name && p.supplier ? p.supplier : '')}</div></td>
           <td><span class="badge badge-navy">${esc(KIND_LABEL[p.kind] || p.kind)}</span></td>
           <td><span class="badge ${st.tone}">${esc(st.label)}</span>
-            <div class="muted">${esc(p.paid_date ? 'Paid ' + dateFmt(p.paid_date) + (p.method ? ' · ' + p.method : '')
+            <div class="muted">${esc(p.paid_date ? 'Posted ' + dateFmt(p.paid_date) + (p.method ? ' · ' + p.method : '')
                                    : p.due_date ? dateFmt(p.due_date) : '')}</div></td>
           <td class="num">${money(p.amount_cents)}</td>
           <td class="num" style="white-space:nowrap;">
-            ${!p.paid_date ? `<button class="btn btn-primary btn-sm" data-paid="${esc(p.id)}">Mark paid</button>` : ''}
+            ${!p.paid_date ? `<button class="btn btn-primary btn-sm" data-paid="${esc(p.id)}">Mark posted</button>` : ''}
             <button class="btn btn-ghost btn-sm" data-edit="${esc(p.id)}">Edit</button></td>
         </tr>`;
       }).join('')}</tbody></table></div>`;
@@ -160,7 +165,7 @@ function render(d) {
   bookings = d.balances;
   balancesEl.innerHTML = d.balances.length
     ? `<div class="table-wrap"><table>
-        <thead><tr><th>Booking</th><th class="num">Trip cost</th><th class="num">Paid</th>
+        <thead><tr><th>Booking</th><th class="num">Trip cost</th><th class="num">Posted</th>
           <th class="num">Scheduled</th><th class="num">Unbilled</th><th></th></tr></thead>
         <tbody>${d.balances.map((b) => `<tr>
           <td><span class="name">${esc(b.client_name)}</span>
@@ -188,7 +193,7 @@ function openDialog(p) {
   editingId = p ? p.id : null;
   form.reset();
   form.querySelector('.notice-error').hidden = true;
-  document.getElementById('pay-title').textContent = p ? 'Edit payment' : 'Record a client payment';
+  document.getElementById('pay-title').textContent = p ? 'Edit payment' : 'Post a payment';
   delBtn.hidden = !p;
   document.getElementById('bookingId').innerHTML = bookings.length
     ? bookings.map((b) => `<option value="${esc(b.id)}">${esc(b.client_name)} — ${esc(b.product_name || b.supplier || 'booking')}</option>`).join('')

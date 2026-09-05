@@ -52,15 +52,15 @@ function render(data) {
   const s = data.stats;
   const rate = s.grossCents ? (s.commissionCents / s.grossCents) * 100 : 0;
   statsEl.innerHTML = `
-    <div class="stat"><p class="label">Total volume</p><p class="value">${money(s.grossCents)}</p>
-      <p class="meta">${s.booked + s.travelled} booked or travelled</p></div>
-    <div class="stat"><p class="label">Total commission</p><p class="value">${money(s.commissionCents)}</p>
-      <p class="meta">${money(s.commissionPaidCents)} received</p></div>
+    <div class="stat"><p class="label">Trips booked</p><p class="value">${money(s.grossCents)}</p>
+      <p class="meta">Value of travel sold, not your revenue</p></div>
+    <div class="stat"><p class="label">Your earnings</p><p class="value">${money(s.commissionCents)}</p>
+      <p class="meta">${money(s.commissionPaidCents)} paid to you by suppliers</p></div>
     <div class="stat"><p class="label">Effective rate</p><p class="value">${rate.toFixed(1)}%</p>
-      <p class="meta">Commission over volume</p></div>
+      <p class="meta">Commission as a share of trips booked</p></div>
     <div class="stat"><p class="label">Outstanding</p>
       <p class="value">${money(s.commissionCents - s.commissionPaidCents)}</p>
-      <p class="meta">Earned, not yet received</p></div>`;
+      <p class="meta">Commission earned, not yet paid to you</p></div>`;
 
   if (!data.byMonth.length) {
     chart.innerHTML = '<div class="empty"><h3>Nothing to chart yet</h3><p>Bookings with a departure date and a booked status show up here.</p></div>';

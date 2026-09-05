@@ -1,11 +1,13 @@
-// What a client owes on their trip, and what they have paid.
+// Client payments to travel suppliers.
 //
-// "Deposit" here means the money a client pays up front to hold a trip, which
-// is what a travel agency tracks. It is not a bank deposit, and nothing in
-// this module touches an agency's own accounts.
+// The agency never handles this money. A client pays the cruise line or resort
+// directly; the advisor posts and tracks those payments so nothing slips past
+// a supplier deadline and cancels a booking. "Deposit" is the amount a client
+// pays up front to hold a trip, not a bank deposit.
 //
-// The shape is the one a supplier imposes on a booking: a deposit to hold it,
-// optional part payments, and a final balance due by a deadline.
+// The agency's own revenue is the commission a supplier pays it, which lives
+// on the booking and is deliberately kept out of these totals. Mixing the two
+// would make it look like the agency turned over the full trip cost.
 
 import { json, badRequest, notFound, uid, now, clean, cleanDate, toCents, oneOf, readJson } from './util.js';
 import { requireUser } from './auth.js';
