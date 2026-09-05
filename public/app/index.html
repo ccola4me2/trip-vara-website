@@ -222,6 +222,25 @@ const PANELS = {
     { key: 'unknown', label: 'Nothing on file', render: () =>
       documentTable((d.documents || []).filter((r) => r.kind === 'unknown'),
         'Every traveller leaving in the next few months has a passport recorded.') },
+    // Not a sales prompt. Declined is already a different fact from not asked,
+    // and if something goes wrong on a trip the difference between "they
+    // turned it down" and "nobody raised it" is the advisor's whole position.
+    { key: 'insurance', label: 'Insurance not discussed', render: () => {
+      const rows = d.insurance || [];
+      if (!rows.length) return '<p class="wempty">Every upcoming trip has insurance recorded one way or the other.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Trip</th><th>Departing</th><th></th></tr></thead>
+        <tbody>${rows.slice(0, 15).map((b) => `<tr>
+          <td><a class="name" href="/app/reservation?id=${esc(b.id)}">${esc(b.client_name)}</a>
+            <div class="muted">${esc(b.supplier || '')}</div></td>
+          <td>${esc(b.product_name || '-')}</td>
+          <td>${esc(fmtShort(b.depart_date))}
+            <div class="muted">in ${b.days_to_departure}d</div></td>
+          <td>${b.past_final_payment
+            ? '<span class="badge badge-red">final payment passed</span>'
+            : '<span class="badge badge-amber">still time</span>'}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+    } },
   ], 'expiring'),
 
   groups: () => widget('Group space', { href: '/app/groups', label: 'All groups' }, [

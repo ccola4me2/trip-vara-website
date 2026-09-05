@@ -123,6 +123,10 @@ export async function handleDashboard(request, env) {
     // Back from a trip and not yet rung. The one contact in the whole arc that
     // nothing goes wrong when you skip, which is why it gets skipped.
     welcome: await db.welcomeHomeCandidates(env, scope, { today }).catch(() => []),
+    // Trips where nobody has asked about insurance. Declined is a different
+    // fact from not asked, and the difference is the advisor's position if
+    // something goes wrong.
+    insurance: await db.insuranceExposure(env, scope, { today }).catch(() => []),
     pinned: await db.listClients(env, scope, { pinnedOnly: true, limit: 12 }).catch(() => []),
     // Always the reader's own target, whatever scope the rest of the screen
     // is showing. A target you did not set is not your target.

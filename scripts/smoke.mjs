@@ -2177,6 +2177,55 @@ async function main() {
     `status ${notYours.status}`);
   }
 
+  // ------------------------------------------------ insurance exposure -----
+  {
+  step('Trips where nobody asked about insurance');
+
+  const silent = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Uninsured ${stamp}`, supplier: 'Viking', status: 'booked',
+    departDate: isoDay(45), returnDate: isoDay(55), gross: '9000',
+    finalPaymentDue: isoDay(-5),
+  });
+  const silentId = silent.data?.booking?.id;
+  if (silentId) cleanup('the uninsured reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${silentId}`));
+
+  const asked = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Declined ${stamp}`, supplier: 'Viking', status: 'booked',
+    departDate: isoDay(50), gross: '9000', insuranceStatus: 'declined',
+  });
+  if (asked.data?.booking?.id) cleanup('the declined reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${asked.data.booking.id}`));
+
+  const gone = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Already Went ${stamp}`, supplier: 'Viking', status: 'booked',
+    departDate: isoDay(-40), returnDate: isoDay(-30), gross: '9000',
+  });
+  if (gone.data?.booking?.id) cleanup('the past reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${gone.data.booking.id}`));
+
+  const dash = await call(advisor, 'GET', '/api/dashboard');
+  const rows = dash.data?.insurance || [];
+  const row = rows.find((b) => b.id === silentId);
+
+  check(row, 'a trip where nobody asked is listed',
+    JSON.stringify(rows.map((b) => b.client_name)));
+  check(row?.days_to_departure >= 44 && row?.days_to_departure <= 46,
+    'with how long there is to do something about it', row?.days_to_departure);
+
+  // A fact about this reservation, not a claim about what an insurer will
+  // accept, which varies by policy and is not this software's to assert.
+  check(row?.past_final_payment === true,
+    'and whether the vendor deadline has already gone', row?.past_final_payment);
+
+  // The whole reason the two are stored apart: "they turned it down" and
+  // "nobody raised it" are different positions if something goes wrong.
+  check(!rows.some((b) => b.client_name === `Declined ${stamp}`),
+    'a trip where they declined is not chased, because that was asked and answered');
+  check(!rows.some((b) => b.client_name === `Already Went ${stamp}`),
+    'and a trip that has already gone is not on a list of things to do about it');
+  }
+
   // ------------------------------------------------------- birthdays -------
   {
   step('Birthdays, which is what the date of birth was collected for');

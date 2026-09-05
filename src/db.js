@@ -567,6 +567,48 @@ export async function productionBreakdown(env, scope, sinceDate, by = 'type') {
 }
 
 /**
+ * Trips where insurance was never discussed.
+ *
+ * insurance_status has had four values since the day travellers stopped being
+ * a headcount, and one of them, "unknown", means nobody has asked. It has been
+ * stored on every reservation and shown on none but its own, which makes it a
+ * field an advisor fills in for nobody.
+ *
+ * The reason to surface it is not sales. Declined is already a different fact
+ * from not asked, kept apart deliberately, because if something goes wrong on
+ * a trip the difference between "they turned it down" and "nobody raised it"
+ * is the advisor's whole position. This lists the second one while there is
+ * still time to make it the first.
+ *
+ * Ordered by departure, soonest first, because that is the order the chance to
+ * do anything about it runs out.
+ */
+export async function insuranceExposure(env, scope, { today, limit = 20 } = {}) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date,
+            b.final_payment_due, b.gross_cents, ${ADVISOR_NAME}
+       FROM bookings b LEFT JOIN users u ON u.id = b.user_id
+      WHERE ${scoped.sql}
+        AND b.status IN ('quoted','booked')
+        AND (b.insurance_status IS NULL OR b.insurance_status = 'unknown')
+        AND b.depart_date IS NOT NULL AND b.depart_date >= ?
+      ORDER BY b.depart_date ASC
+      LIMIT ?`
+  ).bind(...scoped.binds, today, Math.min(Number(limit) || 20, 100)).all();
+
+  return (results || []).map((b) => ({
+    ...b,
+    days_to_departure: Math.round(
+      (Date.parse(`${b.depart_date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000),
+    // Whether the vendor's own deadline has already gone. Reported as a fact
+    // about this reservation rather than a claim about what any insurer will
+    // accept, which varies by policy and is not this software's to assert.
+    past_final_payment: Boolean(b.final_payment_due && b.final_payment_due < today),
+  }));
+}
+
+/**
  * Clients who are back and have not been rung.
  *
  * The call after a trip is where reviews, referrals and the next booking come
