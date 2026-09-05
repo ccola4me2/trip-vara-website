@@ -311,6 +311,21 @@ const PANELS = {
         </tr>`).join('')}</tbody></table></div>`;
     } },
 
+    { key: 'birthdays', label: 'Birthdays', render: () => {
+      const rows = d.birthdays || [];
+      if (!rows.length) return '<p class="wempty">No birthdays in the next month, or none recorded.</p>';
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Who</th><th>When</th><th class="num">Trips</th></tr></thead>
+        <tbody>${rows.map((p) => `<tr>
+          <td><a class="name" href="/app/client?name=${encodeURIComponent(p.client_name)}">${esc(p.name)}</a>
+            ${p.email ? `<div class="muted">${esc(p.email)}</div>` : ''}</td>
+          <td>${esc(fmtShort(p.on))}
+            <div class="muted">${p.in_days === 0 ? 'today' : `in ${p.in_days}d`}${
+              p.turning ? ` &middot; turning ${p.turning}` : ''}</div></td>
+          <td class="num">${p.trips}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+    } },
+
     { key: 'credits', label: 'Credits expiring', render: () => {
       const rows = (d.credits || []).filter((c) => c.expires_on).slice(0, 12);
       if (!rows.length) return '<p class="wempty">No credits on file.</p>';

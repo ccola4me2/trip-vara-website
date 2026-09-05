@@ -9,7 +9,7 @@ import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { readLayout, PANELS } from './prefs.js';
 import { listTasks } from './tasks.js';
-import { documentWatch } from './travellers.js';
+import { documentWatch, upcomingBirthdays } from './travellers.js';
 import { listGroups } from './groups.js';
 import { listCredits } from './credits.js';
 import { goalProgress } from './goals.js';
@@ -117,6 +117,9 @@ export async function handleDashboard(request, env) {
     // Quotes nobody has answered, and quotes nobody has sent. Neither shows up
     // in production, on the to do list, or anywhere else on this screen.
     quotes: await db.quoteFollowUps(env, scope, { limit: 12 }).catch(() => []),
+    // A date of birth collected on every traveller and shown nowhere is a
+    // field an advisor fills in for nothing.
+    birthdays: await upcomingBirthdays(env, scope, { today }).catch(() => []),
     pinned: await db.listClients(env, scope, { pinnedOnly: true, limit: 12 }).catch(() => []),
     // Always the reader's own target, whatever scope the rest of the screen
     // is showing. A target you did not set is not your target.

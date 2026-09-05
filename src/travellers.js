@@ -300,3 +300,65 @@ export async function handleDocumentWatch(request, env) {
     advisors: await db.advisorOptions(env, user),
   });
 }
+
+/**
+ * Birthdays coming up among people who have travelled with you.
+ *
+ * The date of birth has been collected since travellers became people rather
+ * than a headcount, on the stated grounds that a birthday is a reason to make
+ * contact that costs nothing and is welcome. It has been collected and never
+ * once shown, which makes it a field an advisor fills in for nothing.
+ *
+ * Deduplicated by person, because someone who has sailed with you four times
+ * has four traveller rows and one birthday, and a list that says their name
+ * four times is a list nobody trusts.
+ */
+export async function upcomingBirthdays(env, scope, { today, days = 30, limit = 12 } = {}) {
+  const scoped = db.scopeWhere(scope, 't.user_id');
+  const { results } = await env.DB.prepare(
+    `SELECT t.name, t.dob, t.email, MAX(b.depart_date) AS last_trip,
+            COUNT(DISTINCT b.id) AS trips,
+            MAX(b.client_name) AS client_name
+       FROM travellers t
+       JOIN bookings b ON b.id = t.booking_id
+      WHERE ${scoped.sql} AND t.dob IS NOT NULL AND t.dob != ''
+        AND b.status IN ('booked','travelled')
+      GROUP BY t.name, t.dob
+      LIMIT 500`
+  ).bind(...scoped.binds).all();
+
+  const from = Date.parse(`${today}T00:00:00Z`);
+  const out = [];
+
+  for (const r of results || []) {
+    const dob = String(r.dob);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) continue;
+    const md = dob.slice(5);
+
+    // The next time this date comes round, which is this year's unless it has
+    // already gone, and never February 29 in a year that has no such day.
+    let next = null;
+    for (const year of [Number(today.slice(0, 4)), Number(today.slice(0, 4)) + 1]) {
+      const candidate = `${year}-${md}`;
+      const at = Date.parse(`${candidate}T00:00:00Z`);
+      if (!Number.isFinite(at)) continue;
+      if (new Date(at).toISOString().slice(0, 10) !== candidate) continue;
+      if (at >= from) { next = candidate; break; }
+    }
+    if (!next) continue;
+
+    const inDays = Math.round((Date.parse(`${next}T00:00:00Z`) - from) / 86400000);
+    if (inDays > days) continue;
+
+    out.push({
+      name: r.name, dob, email: r.email || null, client_name: r.client_name,
+      trips: r.trips, last_trip: r.last_trip,
+      on: next, in_days: inDays,
+      // Only when the year is real. Ages are guessed often enough elsewhere
+      // in the world without this adding to it.
+      turning: Number(dob.slice(0, 4)) > 1900 ? Number(next.slice(0, 4)) - Number(dob.slice(0, 4)) : null,
+    });
+  }
+
+  return out.sort((a, b) => a.in_days - b.in_days).slice(0, limit);
+}

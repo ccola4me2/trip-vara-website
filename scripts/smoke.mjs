@@ -1821,6 +1821,72 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // ------------------------------------------------------- birthdays -------
+  {
+  step('Birthdays, which is what the date of birth was collected for');
+
+  // The month and day of a date some days from now, with a birth year on it.
+  // February 29 is stepped over rather than handled: a leap day birthday is a
+  // real thing this code skips deliberately, and a test that fails one week in
+  // four years is worse than one that does not cover it.
+  const birthdayIn = (days, year) => {
+    for (const d of [days, days + 1]) {
+      const md = isoDay(d).slice(5);
+      if (md !== '02-29') return `${year}-${md}`;
+    }
+    return `${year}-01-01`;
+  };
+
+  const bTrip = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Birthday ${stamp}`, supplier: 'Azamara', status: 'travelled',
+    departDate: isoDay(-90), returnDate: isoDay(-80),
+  });
+  const bId = bTrip.data?.booking?.id;
+  if (bId) cleanup('the birthday reservation', () => call(advisor, 'DELETE', `/api/bookings/${bId}`));
+
+  const soonBirthday = birthdayIn(5, 1975);
+  await call(advisor, 'POST', `/api/bookings/${bId}/travellers`,
+    { name: `Cake Soon ${stamp}`, dob: soonBirthday, email: `cake-${stamp}@example.com`, isLead: true });
+  await call(advisor, 'POST', `/api/bookings/${bId}/travellers`,
+    { name: `Cake Later ${stamp}`, dob: birthdayIn(200, 1980) });
+  // Yesterday's birthday rolls to next year, which is not "in the next month".
+  await call(advisor, 'POST', `/api/bookings/${bId}/travellers`,
+    { name: `Cake Passed ${stamp}`, dob: birthdayIn(-1, 1990) });
+  await call(advisor, 'POST', `/api/bookings/${bId}/travellers`,
+    { name: `No Date ${stamp}` });
+
+  // The same person on a second trip, because four sailings is four traveller
+  // rows and one birthday.
+  const bTrip2 = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Birthday ${stamp}`, supplier: 'Azamara', status: 'booked',
+    departDate: isoDay(120), returnDate: isoDay(130),
+  });
+  const bId2 = bTrip2.data?.booking?.id;
+  if (bId2) cleanup('the second birthday reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${bId2}`));
+  await call(advisor, 'POST', `/api/bookings/${bId2}/travellers`,
+    { name: `Cake Soon ${stamp}`, dob: soonBirthday });
+
+  const dash = await call(advisor, 'GET', '/api/dashboard');
+  const cakes = (dash.data?.birthdays || []).filter((r) => r.name.endsWith(stamp));
+  const soon = cakes.find((r) => r.name === `Cake Soon ${stamp}`);
+
+  check(soon, 'a birthday in the next few days is listed', JSON.stringify(cakes.map((c) => c.name)));
+  check(soon?.in_days >= 4 && soon?.in_days <= 7,
+    'with how many days away it is', soon?.in_days);
+  check(soon?.turning === Number(soon?.on?.slice(0, 4)) - 1975,
+    'and the age they are turning, worked from the year on file', soon?.turning);
+
+  check(cakes.filter((r) => r.name === `Cake Soon ${stamp}`).length === 1,
+    'somebody who has sailed twice appears once, not twice');
+  check(!cakes.some((r) => r.name === `Cake Later ${stamp}`),
+    'a birthday half a year out is not in the next month');
+  check(!cakes.some((r) => r.name === `Cake Passed ${stamp}`),
+    'and one that has just gone rolls to next year rather than reading as due');
+  check(!cakes.some((r) => r.name === `No Date ${stamp}`),
+    'a traveller with no date of birth is not guessed at');
+  }
+
   // -------------------------------------------------- commission split -----
   // Deliberately last but one: it changes what this advisor is recorded as
   // keeping, and every earlier check reads those same figures. Cleared again

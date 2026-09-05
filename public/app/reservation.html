@@ -518,6 +518,9 @@ function render() {
     <dt>Insurance</dt><dd>${INSURANCE[b.insurance_status] || esc(b.insurance_status || '-')}</dd>
     <dt>Booked by</dt><dd>${esc(b.booking_method || '-')}</dd>
     <dt>Commission</dt><dd>${money(b.commission_cents)} <span class="muted">${esc(b.commission_status)}</span></dd>
+    ${b.quote_sent_at ? `<dt>Quote sent</dt><dd>${esc(timeAgo(b.quote_sent_at))}${
+      b.quote_sent_count > 1 ? ` &middot; ${b.quote_sent_count} times` : ''}</dd>` : ''}
+    ${b.statement_sent_at ? `<dt>Statement sent</dt><dd>${esc(timeAgo(b.statement_sent_at))}</dd>` : ''}
     ${d.split && d.split.pct !== 100 ? `<dt>You keep</dt><dd>${money(d.split.advisorCents)}
       <span class="muted">${esc(String(d.split.pct))}% ${d.split.overridden
         ? 'set on this trip' : 'by your standing agreement'}; the agency keeps ${
@@ -666,6 +669,8 @@ async function statement() {
   }
 
   body.innerHTML = `
+    ${p.alreadySent ? `<div class="notice notice-info">Already sent ${esc(timeAgo(p.alreadySent))}${
+      p.sentCount > 1 ? `, ${p.sentCount} times in all` : ''}.</div>` : ''}
     <dl class="pairs" style="margin-bottom:1rem;">
       <dt>To</dt><dd>${esc(s.clientName)} &lt;${esc(p.to)}&gt;</dd>
       <dt>Replies to</dt><dd>${esc(s.advisorEmail)}</dd>
