@@ -319,17 +319,28 @@ export async function scanTimeTriggers(env, locationId, { withinDays = 7 } = {})
   const through = new Date(Date.now() + withinDays * 86400000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
 
+  // Only the payments belonging to advisors on this sub-account.
+  //
+  // This swept every advisor's payments in the database and fired the calling
+  // location's automations against all of them. On the cron that was merely
+  // wrong; from the "run automations" button it was one advisor's client data
+  // flowing into another advisor's automation, which can send an email or an
+  // SMS from their CRM account. An advisor's own location wins, falling back
+  // to the agency default, which is exactly how locationFor resolves it for
+  // every other call.
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.kind, p.amount_cents, p.due_date,
             b.client_name, b.supplier, b.product_name, b.depart_date, b.ghl_contact_id
        FROM booking_payments p
        JOIN bookings b ON b.id = p.booking_id
-      WHERE p.paid_date IS NULL
+       JOIN users u ON u.id = p.user_id
+      WHERE COALESCE(NULLIF(u.ghl_location_id, ''), ?) = ?
+        AND p.paid_date IS NULL
         AND p.due_date IS NOT NULL
         AND p.due_date >= ? AND p.due_date <= ?
         AND b.status IN ('quoted','booked')
       LIMIT 200`
-  ).bind(today, through).all();
+  ).bind(env.GHL_DEFAULT_LOCATION_ID || '', locationId, today, through).all();
 
   let fired = 0;
   for (const row of results || []) {

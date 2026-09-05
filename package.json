@@ -5,13 +5,15 @@
   "type": "module",
   "description": "Trip Vara advisor portal: a travel-advisor CRM front end over GoHighLevel, on Cloudflare Workers + D1.",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:migrate": "wrangler d1 migrations apply trip-vara --remote",
-    "db:migrate:local": "wrangler d1 migrations apply trip-vara --local",
     "check:columns": "node scripts/check-columns.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
-    "check:smoke": "node scripts/smoke.mjs"
+    "check:scope": "node scripts/check-scope.mjs",
+    "check:smoke": "node scripts/smoke.mjs",
+    "db:migrate": "wrangler d1 migrations apply trip-vara --remote",
+    "db:migrate:local": "wrangler d1 migrations apply trip-vara --local",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "precheck:columns": "node scripts/check-scope.mjs"
   },
   "devDependencies": {
     "wrangler": "^3.90.0"
