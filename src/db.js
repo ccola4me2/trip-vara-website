@@ -280,7 +280,7 @@ const BOOKING_COLUMNS = `
   id, user_id, ghl_contact_id, ghl_opportunity_id, client_name, supplier,
   product_type, product_name, destination, confirmation_number, depart_date,
   return_date, deposit_due, final_payment_due, travellers, gross_cents, deposit_cents,
-  commission_cents, commission_status, status, notes, group_id, client_id,
+  commission_cents, commission_status, status, notes, group_id, client_id, vendor_id,
   created_at, updated_at
 `;
 
@@ -293,7 +293,7 @@ const BOOKING_COLUMNS_B = `
   b.product_type, b.product_name, b.destination, b.confirmation_number, b.depart_date,
   b.return_date, b.deposit_due, b.final_payment_due, b.travellers, b.gross_cents,
   b.deposit_cents, b.commission_cents, b.commission_status, b.status, b.notes,
-  b.group_id, b.client_id, b.created_at, b.updated_at
+  b.group_id, b.client_id, b.vendor_id, b.created_at, b.updated_at
 `;
 
 export async function listBookings(env, scope, { status, search, limit = 200 } = {}) {
@@ -332,15 +332,15 @@ export async function createBooking(env, userId, f) {
         product_type, product_name, destination, confirmation_number,
         depart_date, return_date, deposit_due, final_payment_due, travellers,
         gross_cents, deposit_cents, commission_cents, commission_status, status, notes,
-        group_id, client_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        group_id, client_id, vendor_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, userId, f.ghlContactId || null, f.ghlOpportunityId || null,
     f.clientName, f.supplier || null, f.productType, f.productName || null,
     f.destination || null, f.confirmationNumber || null,
     f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
     f.travellers, f.grossCents, f.depositCents || 0, f.commissionCents, f.commissionStatus,
-    f.status, f.notes || null, f.groupId || null, f.clientId || null, ts, ts
+    f.status, f.notes || null, f.groupId || null, f.clientId || null, f.vendorId || null, ts, ts
   ).run();
   return getBooking(env, id, userId);
 }
@@ -352,14 +352,15 @@ export async function updateBooking(env, id, userId, f) {
        product_type = ?, product_name = ?, destination = ?, confirmation_number = ?,
        depart_date = ?, return_date = ?, deposit_due = ?, final_payment_due = ?,
        travellers = ?, gross_cents = ?, deposit_cents = ?, commission_cents = ?, commission_status = ?,
-       status = ?, notes = ?, group_id = ?, client_id = ?, updated_at = ?
+       status = ?, notes = ?, group_id = ?, client_id = ?, vendor_id = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(
     f.ghlContactId || null, f.ghlOpportunityId || null, f.clientName, f.supplier || null,
     f.productType, f.productName || null, f.destination || null, f.confirmationNumber || null,
     f.departDate, f.returnDate, f.depositDue, f.finalPaymentDue,
     f.travellers, f.grossCents, f.depositCents || 0, f.commissionCents, f.commissionStatus,
-    f.status, f.notes || null, f.groupId || null, f.clientId || null, now(), id, userId
+    f.status, f.notes || null, f.groupId || null, f.clientId || null, f.vendorId || null,
+    now(), id, userId
   ).run();
   if (!res.meta || res.meta.changes === 0) return null;
   return getBooking(env, id, userId);

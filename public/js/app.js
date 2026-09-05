@@ -110,6 +110,7 @@ const NAV = [
       { href: '/app/payments', label: 'Payments Due' },
       { href: '/app/commissions', label: 'Commission owed' },
       { href: '/app/billing', label: 'Invoices' },
+      { href: '/app/vendors', label: 'Vendors' },
       { href: '/app/catalog', label: 'Vendor products' },
     ],
   },

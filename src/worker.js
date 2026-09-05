@@ -66,6 +66,9 @@ import {
 } from './catalogapi.js';
 import { importCatalogStep } from './catalog.js';
 import {
+  handleListVendors, handleUpdateVendor, handleMergeVendors, handleSuggestDates,
+} from './vendors.js';
+import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
 } from './automations.js';
@@ -128,6 +131,7 @@ const PAGE_FILES = {
   '/app/clients': '/app/clients.html',
   '/app/import': '/app/import.html',
   '/app/complete': '/app/complete.html',
+  '/app/vendors': '/app/vendors.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
   '/app/settings': '/app/settings.html',
@@ -212,6 +216,7 @@ async function routeApi(request, env, path, method) {
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
   const clientMatch = path.match(/^\/api\/clients\/([^/]+)$/);
+  const vendorMatch = path.match(/^\/api\/vendors\/([^/]+)$/);
 
   // ---- auth -------------------------------------------------------------
   if (path === '/api/auth/signup' && method === 'POST') return handleSignup(request, env);
@@ -370,6 +375,12 @@ async function routeApi(request, env, path, method) {
 
   // The sailing catalog: a real vendor, ship and pair of dates, rather than
   // whatever was typed.
+  // Vendors: spelling, and the terms they trade on.
+  if (path === '/api/vendors' && method === 'GET') return handleListVendors(request, env);
+  if (path === '/api/vendors/merge' && method === 'POST') return handleMergeVendors(request, env);
+  if (path === '/api/vendors/suggest-dates' && method === 'GET') return handleSuggestDates(request, env);
+  if (vendorMatch && method === 'PUT') return handleUpdateVendor(request, env, vendorMatch[1]);
+
   if (path === '/api/catalog/lines' && method === 'GET') return handleCatalogLines(request, env);
   if (path === '/api/catalog/ships' && method === 'GET') return handleCatalogShips(request, env);
   if (path === '/api/catalog/dates' && method === 'GET') return handleCatalogDates(request, env);

@@ -33,6 +33,7 @@ const PAGES = [
   ['public/app/commissions.html', ['/api/commissions']],
   ['public/app/client.html', ['detail-client:/api/bookings']],
   ['public/app/clients.html', ['/api/clients']],
+  ['public/app/vendors.html', ['/api/vendors', '/api/vendors/suggest-dates']],
   ['public/app/complete.html', ['/api/bookings', '/api/catalog/suggest']],
   ['public/app/reservation.html', ['detail-record:/api/bookings',
     'post:|/api/payments?state=outstanding|/api/payments/{id}/remind']],

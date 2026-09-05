@@ -599,6 +599,81 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // ------------------------------------------------------------- vendors ----
+  {
+  step('Vendors, their spelling and their terms');
+
+  // Two spellings of one vendor, exactly as a pasted book produces.
+  const v1 = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Vendor A ${stamp}`, supplier: `Kestrel Cruises ${stamp}`,
+    departDate: isoDay(200), gross: '3000', commission: '300', status: 'booked',
+  });
+  const v2 = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Vendor B ${stamp}`, supplier: `Kestrel Cruises ${stamp} - Ocean`,
+    departDate: isoDay(220), gross: '4000', commission: '400', status: 'booked',
+  });
+  for (const r of [v1, v2]) {
+    if (r.data?.booking?.id) cleanup('a vendor reservation', () =>
+      call(advisor, 'DELETE', `/api/bookings/${r.data.booking.id}`));
+  }
+
+  const vlist = await call(advisor, 'GET', '/api/vendors');
+  const mine2 = (vlist.data?.vendors || []).filter((v) => v.name.includes(`Kestrel Cruises ${stamp}`));
+  check(mine2.length === 2, 'booking a vendor creates its record', `${mine2.length} vendor(s)`);
+  check(mine2.some((v) => v.trips === 1), 'with its reservations counted');
+
+  const group = (vlist.data?.stats?.possibleDuplicates || [])
+    .find((g) => g.some((v) => v.name.includes(`Kestrel Cruises ${stamp}`)));
+  check(group && group.length === 2,
+    'and two spellings of one name are offered as a possible duplicate',
+    group && group.map((v) => v.name).join(' / '));
+
+  // Every duplicate offered has to be mergeable, which means every vendor in
+  // the group has to belong to the caller. Grouping across advisors offers a
+  // merge that would quietly move nothing.
+  const everyGroupIsMine = (vlist.data?.stats?.possibleDuplicates || []).every((g) =>
+    g.every((v) => (vlist.data.vendors.find((x) => x.id === v.id) || {}).user_id
+      === (vlist.data.vendors.find((x) => x.id === g[0].id) || {}).user_id));
+  check(everyGroupIsMine, 'and a group never spans two advisors');
+
+  const keep = group.find((v) => v.trips === 1) || group[0];
+  const merged = await call(advisor, 'POST', '/api/vendors/merge', {
+    keep: keep.id, drop: group.filter((v) => v.id !== keep.id).map((v) => v.id),
+  });
+  check(merged.data?.reservationsMoved >= 1, 'merging moves the reservations',
+    JSON.stringify(merged.data));
+
+  const afterMerge = await call(advisor, 'GET', '/api/bookings?q=Kestrel');
+  const suppliers = new Set((afterMerge.data?.bookings || []).map((b) => b.supplier));
+  check(suppliers.size === 1,
+    'and rewrites the name on them, so a report stops splitting', [...suppliers].join(' / '));
+
+  // Terms turn a departure into a deadline, which is the only reason an
+  // imported reservation is any use.
+  await call(advisor, 'PUT', `/api/vendors/${keep.id}`, { name: keep.name, finalDays: 90 });
+  const dates = await call(advisor, 'GET', '/api/vendors/suggest-dates');
+  const forMine = (dates.data?.suggestions || []).filter((sg) => sg.vendor === keep.name);
+  check(forMine.length >= 1, 'a vendor with terms suggests a final payment date',
+    `${forMine.length} suggestion(s)`);
+  const one = forMine[0];
+  const expected = new Date(Date.parse(`${one.departDate}T00:00:00Z`) - 90 * 86400000)
+    .toISOString().slice(0, 10);
+  check(one.suggested === expected, 'worked back from departure by the vendor\'s own terms',
+    `${one.suggested} vs ${expected}`);
+
+  // Suggested, never applied. A vendor's standard terms are a good guess, and
+  // a date written in by software cannot be told apart afterwards from one an
+  // advisor confirmed.
+  const stillEmpty = await call(advisor, 'GET', `/api/bookings/${one.id}`);
+  check(!stillEmpty.data?.booking?.final_payment_due,
+    'and nothing is written until it is applied');
+
+  const notYourVendor = await call(admin, 'PUT', `/api/vendors/${keep.id}`,
+    { name: 'Hijacked', finalDays: 1 });
+  check(notYourVendor.status === 404, 'an owner cannot rewrite an associate\'s vendor',
+    `status ${notYourVendor.status}`);
+  }
+
   // ------------------------------------------------------------- catalog ----
   {
   step('The sailing catalog');

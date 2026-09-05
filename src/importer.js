@@ -12,6 +12,7 @@
 import { json, badRequest, clean, cleanDate, toCents, oneOf, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
+import { resolveVendor } from './vendors.js';
 
 const MAX_ROWS = 500;
 
@@ -238,6 +239,7 @@ export async function handleRunImport(request, env) {
 
     try {
       const clientId = await db.resolveClient(env, user.id, row.clientName);
+      const vendorId = await resolveVendor(env, user.id, row.supplier);
       await db.createBooking(env, user.id, {
         clientName: row.clientName,
         supplier: row.supplier,
@@ -257,6 +259,7 @@ export async function handleRunImport(request, env) {
         status: row.status,
         notes: 'Imported',
         clientId,
+        vendorId,
       });
       created += 1;
       // Within one paste as well as against the database, so a list pasted

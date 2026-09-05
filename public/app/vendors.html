@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendors | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Vendors</h1><p class="sub">Who you sell, how they spell their name, and when they want the balance.</p></div>
+      <span id="scope"></span>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="stats" class="stat-grid"></section>
+
+      <section class="card" id="dupe-card" hidden style="margin-top:1.25rem;">
+        <div class="card-head"><h2>These look like the same vendor</h2></div>
+        <div class="card-pad" id="dupes"></div>
+      </section>
+
+      <section class="card" id="suggest-card" hidden style="margin-top:1.25rem;">
+        <div class="card-head"><h2>Final payment dates their terms imply</h2>
+          <button class="btn btn-primary btn-sm" id="apply-dates">Apply them</button></div>
+        <div id="suggested"></div>
+      </section>
+
+      <section class="card" style="margin-top:1.25rem;">
+        <div class="card-head"><h2>All vendors</h2></div>
+        <div id="panel"><p class="spinner">Loading...</p></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <form id="vendor-form" method="dialog">
+    <div class="card-head"><h2 id="dlg-title">Vendor</h2>
+      <button class="btn btn-ghost btn-sm" type="button" id="close">Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="name">Name</label>
+        <input id="name" name="name" maxlength="120" required>
+        <p class="field-hint">Renaming carries every reservation with it, so reports stay in one row.</p></div>
+      <div class="field-row">
+        <div class="field"><label for="finalDays">Balance due, days before departure</label>
+          <input id="finalDays" name="finalDays" type="number" min="0" max="730" placeholder="90">
+          <p class="field-hint">Their standard terms. Used to suggest a date, never to set one silently.</p></div>
+        <div class="field"><label for="depositDays">Deposit due, days after booking</label>
+          <input id="depositDays" name="depositDays" type="number" min="0" max="365" placeholder="7"></div>
+      </div>
+      <div class="field"><label for="commissionPct">Usual commission (%)</label>
+        <input id="commissionPct" name="commissionPct" type="number" min="0" max="100" step="0.1" placeholder="16"></div>
+      <div class="field-row">
+        <div class="field"><label for="phone">Agent phone</label>
+          <input id="phone" name="phone" type="tel" maxlength="40"></div>
+        <div class="field"><label for="email">Agent email</label>
+          <input id="email" name="email" type="email" maxlength="160"></div>
+      </div>
+      <div class="field"><label for="portalUrl">Booking portal</label>
+        <input id="portalUrl" name="portalUrl" type="url" placeholder="https://..."></div>
+      <div class="field"><label for="notes">Notes</label>
+        <textarea id="notes" name="notes" maxlength="2000"></textarea></div>
+    </div>
+    <div class="card-foot"><button class="btn btn-primary" type="submit">Save vendor</button></div>
+  </form>
+</dialog>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, showError, onSubmit,
+         mountScopePicker, advisorParam } from '/js/app.js';
+const ME = (await mountShell()).id;
+
+const panel = document.getElementById('panel');
+const err = document.getElementById('err');
+const dlg = document.getElementById('dlg');
+const form = document.getElementById('vendor-form');
+let cache = [];
+
+function render(d) {
+  cache = d.vendors;
+  const s = d.stats;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Vendors</p><p class="value">${s.total}</p>
+      <p class="meta">${s.unused} with nothing booked</p></div>
+    <div class="stat"><p class="label">With terms recorded</p><p class="value">${s.withTerms}</p>
+      <p class="meta">Can suggest a final payment date</p></div>
+    <div class="stat"><p class="label">Possible duplicates</p>
+      <p class="value" style="${s.possibleDuplicates.length ? 'color:var(--amber-600);' : ''}">${s.possibleDuplicates.length}</p>
+      <p class="meta">Names that may be one vendor</p></div>`;
+
+  const dupeCard = document.getElementById('dupe-card');
+  dupeCard.hidden = !s.possibleDuplicates.length;
+  if (s.possibleDuplicates.length) {
+    document.getElementById('dupes').innerHTML = `
+      <p class="field-hint" style="margin:0 0 .9rem;">Each set is spelled differently but may be one
+        vendor. Folding them together rewrites the name on every reservation, so reports stop
+        splitting. Only you can tell whether they really are the same.</p>
+      ${s.possibleDuplicates.map((group, gi) => `<div class="dupe-group">
+        ${group.map((v, vi) => `<label class="dupe-option">
+          <input type="radio" name="keep-${gi}" value="${esc(v.id)}"${vi === 0 ? ' checked' : ''}>
+          <span><span class="t">${esc(v.name)}</span>
+            <span class="m">${v.trips} reservation${v.trips === 1 ? '' : 's'}</span></span>
+        </label>`).join('')}
+        <button class="btn btn-secondary btn-sm" data-merge="${gi}">Keep the ticked one</button>
+      </div>`).join('')}`;
+
+    document.querySelectorAll('[data-merge]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const gi = Number(btn.dataset.merge);
+        const group = s.possibleDuplicates[gi];
+        const keep = document.querySelector(`input[name="keep-${gi}"]:checked`).value;
+        const drop = group.map((v) => v.id).filter((x) => x !== keep);
+        btn.disabled = true;
+        try {
+          const res = await api('/api/vendors/merge', { method: 'POST', body: { keep, drop } });
+          err.innerHTML = `<div class="notice notice-ok">Folded into ${esc(res.keptName)}.
+            ${res.reservationsMoved} reservation${res.reservationsMoved === 1 ? '' : 's'} moved.</div>`;
+          await load();
+        } catch (e) { showError(err, e); btn.disabled = false; }
+      });
+    });
+  }
+
+  panel.innerHTML = d.vendors.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Vendor</th><th>Terms</th><th class="num">Trips</th>
+          <th class="num">Volume</th><th class="num">Commission</th><th></th></tr></thead>
+        <tbody>${d.vendors.map((v) => `<tr>
+          <td><span class="name">${esc(v.name)}</span>
+            ${v.portal_url ? `<div><a class="muted" href="${esc(v.portal_url)}"
+              target="_blank" rel="noopener noreferrer">booking portal</a></div>` : ''}</td>
+          <td>${v.final_days
+            ? `balance ${v.final_days}d before departure`
+            : '<span class="muted">not recorded</span>'}
+            ${v.undated ? `<div class="muted">${v.undated} trip${v.undated === 1 ? '' : 's'} with no date</div>` : ''}</td>
+          <td class="num">${v.trips}</td>
+          <td class="num">${money(v.gross_cents)}</td>
+          <td class="num">${money(v.commission_cents)}</td>
+          <td class="num">${v.user_id === ME
+            ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(v.id)}">Edit</button>`
+            : '<span class="muted">view only</span>'}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>No vendors yet</h3>
+        <p>A vendor record appears the first time you book one.</p></div>`;
+
+  panel.querySelectorAll('[data-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => openEdit(cache.find((v) => v.id === btn.dataset.edit)));
+  });
+}
+
+function openEdit(v) {
+  if (!v) return;
+  form.dataset.id = v.id;
+  document.getElementById('dlg-title').textContent = v.name;
+  form.querySelector('.notice-error').hidden = true;
+  const set = (n, val) => { const el = form.elements[n]; if (el) el.value = val ?? ''; };
+  set('name', v.name); set('finalDays', v.final_days); set('depositDays', v.deposit_days);
+  set('commissionPct', v.commission_pct); set('phone', v.phone); set('email', v.email);
+  set('portalUrl', v.portal_url); set('notes', v.notes);
+  dlg.showModal();
+}
+
+async function offerDates() {
+  let d;
+  try { d = await api('/api/vendors/suggest-dates'); } catch { return; }
+  const card = document.getElementById('suggest-card');
+  card.hidden = !d.suggestions.length;
+  if (!d.suggestions.length) return;
+
+  document.getElementById('suggested').innerHTML = `
+    <p class="field-hint" style="padding:0 1.25rem;margin:0 0 .8rem;">
+      Worked out from each vendor's standard terms. A guess, not a fact: a group, a promotion or a
+      late booking all move the real date, so check anything that matters before relying on it.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Client</th><th>Vendor</th><th>Departing</th><th>Balance due</th></tr></thead>
+      <tbody>${d.suggestions.map((sg) => `<tr>
+        <td><a class="name" href="/app/reservation?id=${esc(sg.id)}">${esc(sg.clientName)}</a></td>
+        <td>${esc(sg.vendor)}<div class="muted">${sg.finalDays}d before</div></td>
+        <td>${esc(dateFmt(sg.departDate))}</td>
+        <td>${esc(dateFmt(sg.suggested))}
+          ${sg.alreadyPassed ? '<div><span class="badge badge-red">already passed</span></div>' : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+
+  document.getElementById('apply-dates').onclick = async () => {
+    const btn = document.getElementById('apply-dates');
+    btn.disabled = true;
+    let done = 0;
+    try {
+      for (const sg of d.suggestions) {
+        await api(`/api/bookings/${encodeURIComponent(sg.id)}/quick`,
+          { method: 'POST', body: { finalPaymentDue: sg.suggested } });
+        done += 1;
+      }
+      err.innerHTML = `<div class="notice notice-ok">${done} final payment date${done === 1 ? '' : 's'} set.</div>`;
+      await load();
+    } catch (e) { showError(err, e); }
+    finally { btn.disabled = false; }
+  };
+}
+
+async function load() {
+  try {
+    const d = await api(`/api/vendors${advisorParam() ? '?' + advisorParam() : ''}`);
+    mountScopePicker(document.getElementById('scope'), d, load);
+    render(d);
+    await offerDates();
+  } catch (e) { showError(panel, e); }
+}
+
+document.getElementById('close').addEventListener('click', () => dlg.close());
+onSubmit(form, async (values) => {
+  await api(`/api/vendors/${encodeURIComponent(form.dataset.id)}`, { method: 'PUT', body: values });
+  dlg.close();
+  await load();
+});
+
+await load();
+</script>
+</body></html>

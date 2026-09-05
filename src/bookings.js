@@ -10,6 +10,7 @@ import { requireUser } from './auth.js';
 import * as db from './db.js';
 import * as ghl from './ghl.js';
 import { fireTrigger } from './automations.js';
+import { resolveVendor } from './vendors.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
 // tell a transfer from a tour from travel insurance, which meant "travel by
@@ -198,6 +199,7 @@ export async function handleCreateBooking(request, env) {
   // to maintain a separate list of people before they can take a reservation.
   fields.clientId = await db.resolveClient(env, user.id, fields.clientName,
     { ghlContactId: fields.ghlContactId });
+  fields.vendorId = await resolveVendor(env, user.id, fields.supplier);
   const booking = await db.createBooking(env, user.id, fields);
   await db.logActivity(env, user.id, 'booking.create',
     `Added booking for ${booking.client_name}`, { id: booking.id });
@@ -294,6 +296,7 @@ export async function handleUpdateBooking(request, env, id) {
 
   fields.clientId = await db.resolveClient(env, user.id, fields.clientName,
     { ghlContactId: fields.ghlContactId });
+  fields.vendorId = await resolveVendor(env, user.id, fields.supplier);
   const booking = await db.updateBooking(env, id, user.id, fields);
   if (!booking) return notFound('Booking not found.');
   await db.logActivity(env, user.id, 'booking.update',

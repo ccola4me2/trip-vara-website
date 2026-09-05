@@ -632,6 +632,17 @@ table.grid td.num input { text-align: right; }
 table.grid input.wanted { border-color: var(--coral-200); background: var(--coral-50); }
 table.grid input:focus { border-color: var(--navy-400); background: #fff; }
 
+/* Vendor duplicate groups */
+.dupe-group {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  border: 1px solid var(--navy-100); border-radius: 9px; padding: .6rem .7rem; margin-bottom: .5rem;
+}
+.dupe-option { display: flex; align-items: center; gap: .45rem; margin: 0; font-weight: 400; cursor: pointer; }
+.dupe-option input { width: auto; flex: none; }
+.dupe-option .t { font-size: .86rem; font-weight: 600; color: var(--navy-800); }
+.dupe-option .m { display: block; font-size: .72rem; color: var(--ink-400); }
+.dupe-group button { margin-left: auto; }
+
 /* Targets */
 .goal-aim { font-size: 1.05rem; color: var(--navy-800); font-weight: 600; margin: 0; line-height: 1.5; }
 .goal-edge { font-size: .88rem; color: var(--ink-500); margin: .5rem 0 0; }
