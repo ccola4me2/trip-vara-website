@@ -18,8 +18,39 @@
     </header>
     <div class="content">
       <div id="err"></div>
+      <section class="card" style="margin-bottom:1.5rem;">
+        <div class="card-head"><h2>Paste one confirmation</h2></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin:0 0 .9rem;">
+            Paste the confirmation email from the vendor and this reads what it can off it: the
+            number, the ship, the dates, the cabin, the guests, the money. Nothing is saved until
+            you have checked it, and every field shows the line it came from, because vendor
+            confirmations have no standard shape and this will misread some of them.
+          </p>
+          <div class="field">
+            <textarea id="conf-text" rows="7" placeholder="Confirmation Number: 54455257
+Cruise Line: Holland America Line
+Ship: Nieuw Amsterdam
+Sailing Date: 06/12/2027
+Guest 1: COLE/DEBORAH"></textarea>
+          </div>
+          <button class="btn btn-secondary" type="button" id="conf-read">Read it</button>
+          <div class="notice notice-error" id="conf-error" hidden></div>
+        </div>
+        <div id="conf-result" hidden>
+          <div class="card-pad" style="border-top:1px solid var(--navy-100);">
+            <p class="label" style="margin:0 0 .6rem;">What it read</p>
+            <div id="conf-fields"></div>
+            <p class="field-hint" id="conf-missing" style="margin:.8rem 0 0;"></p>
+          </div>
+          <div class="card-foot">
+            <button class="btn btn-primary" type="button" id="conf-create">Create the reservation</button>
+          </div>
+        </div>
+      </section>
+
       <section class="card">
-        <div class="card-head"><h2>Paste your reservations</h2></div>
+        <div class="card-head"><h2>Paste a list of reservations</h2></div>
         <div class="card-pad">
           <p class="field-hint" style="margin:0 0 .9rem;">
             Select the rows in your other system, copy, and paste them below. A heading row is
@@ -66,6 +97,81 @@
 <script type="module">
 import { api, mountShell, esc, money, showError } from '/js/app.js';
 await mountShell();
+
+/**
+ * Reading a vendor confirmation instead of retyping it.
+ *
+ * Every field is editable and shows the line it was read from. The advisor is
+ * confirming what was read rather than trusting it: confirmations have no
+ * standard shape, this will misread some of them, and a wrong sail date
+ * nobody saw is a missed holiday.
+ */
+const CONF_FIELDS = [
+  ['clientName', 'Client'],
+  ['supplier', 'Vendor'],
+  ['productName', 'Ship or product'],
+  ['confirmationNumber', 'Confirmation number'],
+  ['departDate', 'Departing'],
+  ['returnDate', 'Returning'],
+  ['destination', 'Destination or itinerary'],
+  ['cabin', 'Cabin'],
+  ['cabinCategory', 'Category'],
+  ['travellers', 'Travellers'],
+  ['gross', 'Trip total'],
+  ['deposit', 'Deposit'],
+  ['finalPaymentDue', 'Final payment due'],
+];
+
+const confErr = document.getElementById('conf-error');
+const confResult = document.getElementById('conf-result');
+
+document.getElementById('conf-read').addEventListener('click', async () => {
+  confErr.hidden = true;
+  confResult.hidden = true;
+  let read;
+  try {
+    read = await api('/api/import/confirmation',
+      { method: 'POST', body: { text: document.getElementById('conf-text').value } });
+  } catch (e) { confErr.textContent = e.message; confErr.hidden = false; return; }
+
+  document.getElementById('conf-fields').innerHTML = CONF_FIELDS.map(([key, label]) => {
+    const value = read.fields[key];
+    const source = read.from[key];
+    return `<div class="field" style="margin-bottom:.7rem;">
+      <label for="cf-${key}">${esc(label)}</label>
+      <input id="cf-${key}" data-conf="${key}" value="${esc(value === undefined ? '' : String(value))}">
+      <p class="field-hint" style="margin:.2rem 0 0;">${source
+        ? 'read from: ' + esc(source)
+        : '<span style="color:var(--ink-500);">not found, fill it in if you need it</span>'}</p>
+    </div>`;
+  }).join('');
+
+  const gaps = CONF_FIELDS.filter(([k]) => read.fields[k] === undefined).map(([, l]) => l);
+  document.getElementById('conf-missing').textContent = gaps.length
+    ? `Nothing found for: ${gaps.join(', ')}.`
+    : 'Every field was found. Check them anyway.';
+  confResult.hidden = false;
+});
+
+document.getElementById('conf-create').addEventListener('click', async () => {
+  const btn = document.getElementById('conf-create');
+  confErr.hidden = true;
+  const body = { status: 'booked' };
+  document.querySelectorAll('[data-conf]').forEach((el) => {
+    if (el.value.trim()) body[el.dataset.conf] = el.value.trim();
+  });
+  if (!body.clientName) {
+    confErr.textContent = 'A reservation needs a client name.';
+    confErr.hidden = false;
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const res = await api('/api/bookings', { method: 'POST', body });
+    location.href = `/app/reservation?id=${encodeURIComponent(res.booking.id)}`;
+  } catch (e) { confErr.textContent = e.message; confErr.hidden = false; btn.disabled = false; }
+});
+
 
 const err = document.getElementById('err');
 const paste = document.getElementById('paste');

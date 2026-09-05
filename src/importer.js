@@ -61,7 +61,7 @@ function splitLine(line) {
  * means every screen, email and vendor confirmation reads backwards, so it is
  * turned around on the way in rather than lived with forever.
  */
-function personName(raw) {
+export function personName(raw) {
   const value = clean(raw, 120);
   if (!value) return '';
   const parts = value.split(',');
@@ -78,7 +78,7 @@ function personName(raw) {
  * is what the client thinks they bought, and a report grouped by the pair is
  * a report grouped by nothing.
  */
-function splitVendor(raw) {
+export function splitVendor(raw) {
   const value = clean(raw, 200);
   const match = value.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
   if (!match) return { supplier: value.slice(0, 120), productName: '' };
@@ -93,7 +93,7 @@ function splitVendor(raw) {
 }
 
 /** m/d/yy, m/d/yyyy, yyyy-mm-dd and d Mon yyyy, or nothing. */
-function anyDate(raw) {
+export function anyDate(raw) {
   const value = String(raw || '').trim();
   if (!value) return null;
 

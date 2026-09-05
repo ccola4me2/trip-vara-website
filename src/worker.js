@@ -26,6 +26,7 @@ import {
   handleUpdateBooking, handleQuickUpdate, handleDeleteBooking, handleWelcomed,
 } from './bookings.js';
 import { markReturnedTripsTravelled } from './db.js';
+import { handleReadConfirmation } from './confirm.js';
 import { handleStatement } from './statement.js';
 import {
   handleAddOption, handleUpdateOption, handleDeleteOption, handleChooseOption,
@@ -431,6 +432,8 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/prefs/dashboard' && method === 'GET') return handleGetLayout(request, env);
   if (path === '/api/prefs/dashboard' && method === 'PUT') return handleSaveLayout(request, env);
   if (path === '/api/prefs/dashboard' && method === 'DELETE') return handleResetLayout(request, env);
+  // Reading a vendor confirmation instead of retyping it.
+  if (path === '/api/import/confirmation' && method === 'POST') return handleReadConfirmation(request, env);
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);
   if (path === '/api/month' && method === 'GET') return handleMonth(request, env);
   if (path === '/api/goals' && method === 'GET') return handleGetGoals(request, env);

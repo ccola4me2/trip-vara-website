@@ -1854,6 +1854,75 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // ------------------------------------------- reading a confirmation ------
+  {
+  step('Reading a vendor confirmation instead of retyping it');
+
+  const confirmation = [
+    'Thank you for your booking.',
+    '',
+    `Confirmation Number: HAL${stamp}`,
+    'Cruise Line: Holland America Line',
+    'Ship: Nieuw Amsterdam',
+    `Sailing Date: ${isoDay(300)}`,
+    `Disembarkation: ${isoDay(307)}`,
+    'Stateroom: VA 8102',
+    'Stateroom Category: Verandah',
+    'Guest 1: COLE/DEBORAH',
+    'Guest 2: COLE/MARTIN',
+    'Grand Total: $1,996.00',
+    'Deposit: $600.00',
+    `Final Payment Due: ${isoDay(200)}`,
+    '',
+    'Please note your total is due on the date shown above.',
+  ].join('\n');
+
+  const read = await call(advisor, 'POST', '/api/import/confirmation', { text: confirmation });
+  const f = read.data?.fields || {};
+  check(read.status === 200, 'a confirmation can be read', `status ${read.status}`);
+  check(f.confirmationNumber === `HAL${stamp}` && f.supplier === 'Holland America Line'
+    && f.productName === 'Nieuw Amsterdam',
+    'the number, the vendor and the ship come off it',
+    JSON.stringify({ c: f.confirmationNumber, s: f.supplier, p: f.productName }));
+  check(f.departDate === isoDay(300) && f.returnDate === isoDay(307),
+    'and both dates', `${f.departDate} to ${f.returnDate}`);
+  check(f.gross === '1996.00' && f.deposit === '600.00',
+    'and the money, without the prose about it',
+    `${f.gross} / ${f.deposit}`);
+
+  // "your total is due on the date shown above" is a sentence about a total,
+  // not a total. Labels are only read at the start of a line for this reason.
+  check(f.gross === '1996.00', 'a label inside a sentence is not mistaken for a value');
+
+  // Cruise lines write names in capitals, and a client record that keeps them
+  // greets somebody as "Hello DEBORAH COLE" in every email they get.
+  check(f.clientName === 'Deborah Cole' && f.travellers === 2,
+    'guests are counted and their names put back into normal case',
+    `${f.clientName}, ${f.travellers}`);
+
+  // The advisor is confirming what was read, not trusting it.
+  check(read.data?.from?.gross === 'Grand Total: $1,996.00',
+    'every field says which line it came from', read.data?.from?.gross);
+
+  const nonsense = await call(advisor, 'POST', '/api/import/confirmation',
+    { text: 'Dear client, we look forward to welcoming you aboard next spring. Kind regards.' });
+  check(nonsense.status === 400,
+    'prose with no labelled lines is refused rather than half read',
+    `status ${nonsense.status}`);
+
+  const tiny = await call(advisor, 'POST', '/api/import/confirmation', { text: 'hi' });
+  check(tiny.status === 400, 'and so is nothing much', `status ${tiny.status}`);
+
+  // A return before a departure is a misread. Dropped, because an advisor is
+  // likelier to accept a filled field than to notice a wrong one.
+  const backwards = await call(advisor, 'POST', '/api/import/confirmation', {
+    text: `Confirmation Number: X1\nSailing Date: ${isoDay(300)}\nReturn Date: ${isoDay(200)}`,
+  });
+  check(backwards.data?.fields?.returnDate === undefined,
+    'a return date before the departure is dropped rather than saved',
+    backwards.data?.fields?.returnDate);
+  }
+
   // ------------------------------------------------ cancellation terms -----
   {
   step('What the client loses if they cancel');
