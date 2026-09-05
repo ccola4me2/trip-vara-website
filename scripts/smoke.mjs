@@ -659,6 +659,55 @@ async function main() {
   check((clientMade.data?.clients || []).some((c) => c.name === 'Manuel Montoro'),
     'and importing creates the client records too');
 
+  // -------------------------------------------------- filling in the gaps ---
+  step('Filling in what an import could not carry');
+
+  const bare = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Bare Import ${stamp}`, supplier: 'Carnival', confirmationNumber: `BARE-${stamp}`,
+    departDate: isoDay(150), status: 'booked',
+  });
+  const bareId = bare.data?.booking?.id;
+  if (bareId) cleanup('the bare reservation', () => call(advisor, 'DELETE', `/api/bookings/${bareId}`));
+  check(bare.data?.booking?.gross_cents === 0 && !bare.data?.booking?.final_payment_due,
+    'an imported reservation starts with no cost and no deadline');
+
+  // The whole point of a partial update: touch one field, leave the rest.
+  const one = await call(advisor, 'POST', `/api/bookings/${bareId}/quick`, { gross: '4250.00' });
+  check(one.data?.booking?.gross_cents === 425000, 'one field can be set on its own',
+    one.data?.booking?.gross_cents);
+  check(one.data?.booking?.client_name === `Bare Import ${stamp}`
+        && one.data.booking.supplier === 'Carnival'
+        && one.data.booking.depart_date === isoDay(150),
+    'and everything it was not told about is left alone',
+    JSON.stringify({ n: one.data?.booking?.client_name, s: one.data?.booking?.supplier }));
+
+  const dated = await call(advisor, 'POST', `/api/bookings/${bareId}/quick`,
+    { finalPaymentDue: isoDay(60) });
+  check(dated.data?.booking?.final_payment_due === isoDay(60)
+        && dated.data.booking.gross_cents === 425000,
+    'a second field does not undo the first', dated.data?.booking?.final_payment_due);
+
+  // The same rules the full dialog enforces, checked against what would be
+  // stored rather than only what was sent.
+  const tooMuch = await call(advisor, 'POST', `/api/bookings/${bareId}/quick`,
+    { commission: '99999.00' });
+  check(tooMuch.status === 400,
+    'commission above the trip cost is refused even when the cost was not sent',
+    `status ${tooMuch.status}`);
+
+  const backwards = await call(advisor, 'POST', `/api/bookings/${bareId}/quick`,
+    { returnDate: isoDay(140) });
+  check(backwards.status === 400, 'and a return before the departure already on file',
+    `status ${backwards.status}`);
+
+  const empty = await call(advisor, 'POST', `/api/bookings/${bareId}/quick`, { nonsense: 1 });
+  check(empty.status === 400, 'a request that names no known field changes nothing',
+    `status ${empty.status}`);
+
+  const notYours = await call(admin, 'POST', `/api/bookings/${bareId}/quick`, { gross: '1.00' });
+  check(notYours.status === 404, 'and an owner cannot quick edit an associate\'s reservation',
+    `status ${notYours.status}`);
+
   // ---------------------------------------------------- the client record ---
   step('One client on one screen');
 

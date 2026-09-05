@@ -623,6 +623,15 @@ tbody tr[data-href] { cursor: pointer; }
 .pairs dt { font-size: .78rem; color: var(--ink-400); font-weight: 600; }
 .pairs dd { margin: 0; font-size: .86rem; color: var(--navy-800); }
 
+/* Editable grid: filling in what an import could not carry */
+table.grid td { padding: .35rem .5rem; vertical-align: middle; }
+table.grid input {
+  padding: .35rem .45rem; font-size: .82rem; border-radius: 6px; min-width: 7rem;
+}
+table.grid td.num input { text-align: right; }
+table.grid input.wanted { border-color: var(--coral-200); background: var(--coral-50); }
+table.grid input:focus { border-color: var(--navy-400); background: #fff; }
+
 /* Targets */
 .goal-aim { font-size: 1.05rem; color: var(--navy-800); font-weight: 600; margin: 0; line-height: 1.5; }
 .goal-edge { font-size: .88rem; color: var(--ink-500); margin: .5rem 0 0; }

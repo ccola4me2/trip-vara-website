@@ -213,6 +213,78 @@ export async function handleCreateBooking(request, env) {
   return json({ ok: true, booking }, 201);
 }
 
+/**
+ * Fill in one or two fields without sending the whole reservation back.
+ *
+ * An import brings in the skeleton a list can carry: client, vendor, ship,
+ * departure, confirmation. Everything that matters afterwards, the trip cost,
+ * the commission and the vendor's deadline, has to be typed in. Doing that
+ * through the full edit dialog is eighty dialogs, which is the sort of task
+ * that never gets finished.
+ *
+ * Only the fields present in the request are touched. A partial update that
+ * quietly blanks what it was not told about is worse than no partial update.
+ */
+const QUICK_FIELDS = {
+  gross: ['gross_cents', (v) => toCents(v)],
+  commission: ['commission_cents', (v) => toCents(v)],
+  deposit: ['deposit_cents', (v) => toCents(v)],
+  departDate: ['depart_date', (v) => cleanDate(v)],
+  returnDate: ['return_date', (v) => cleanDate(v)],
+  depositDue: ['deposit_due', (v) => cleanDate(v)],
+  finalPaymentDue: ['final_payment_due', (v) => cleanDate(v)],
+  confirmationNumber: ['confirmation_number', (v) => clean(v, 80)],
+  supplier: ['supplier', (v) => clean(v, 120)],
+  productName: ['product_name', (v) => clean(v, 160)],
+  status: ['status', (v) => oneOf(v, STATUSES)],
+  productType: ['product_type', (v) => oneOf(v, PRODUCT_TYPES)],
+  commissionStatus: ['commission_status', (v) => oneOf(v, COMMISSION_STATUSES)],
+};
+
+export async function handleQuickUpdate(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const sets = [];
+  const binds = [];
+
+  for (const [key, [column, coerce]] of Object.entries(QUICK_FIELDS)) {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+    sets.push(`${column} = ?`);
+    binds.push(coerce(body[key]));
+  }
+  if (!sets.length) return badRequest('Nothing to change.');
+
+  const before = await db.getBooking(env, id, user.id);
+  if (!before) return notFound('Reservation not found.');
+
+  // Checked against what will actually be stored rather than what was sent,
+  // so a commission typed into a row whose value is already recorded is
+  // refused the same way the dialog refuses it.
+  const gross = Object.prototype.hasOwnProperty.call(body, 'gross')
+    ? toCents(body.gross) : (before.gross_cents || 0);
+  const commission = Object.prototype.hasOwnProperty.call(body, 'commission')
+    ? toCents(body.commission) : (before.commission_cents || 0);
+  if (gross > 0 && commission > gross) {
+    return badRequest('Commission cannot exceed the trip cost.');
+  }
+
+  const depart = Object.prototype.hasOwnProperty.call(body, 'departDate')
+    ? cleanDate(body.departDate) : before.depart_date;
+  const back = Object.prototype.hasOwnProperty.call(body, 'returnDate')
+    ? cleanDate(body.returnDate) : before.return_date;
+  if (depart && back && back < depart) {
+    return badRequest('The return date cannot be before the departure date.');
+  }
+
+  await env.DB.prepare(
+    `UPDATE bookings SET ${sets.join(', ')}, updated_at = ? WHERE id = ? AND user_id = ?`
+  ).bind(...binds, Math.floor(Date.now() / 1000), id, user.id).run();
+
+  return json({ ok: true, booking: await db.getBooking(env, id, user.id) });
+}
+
 export async function handleUpdateBooking(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;

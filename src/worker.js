@@ -23,7 +23,7 @@ import {
 } from './pipeline.js';
 import {
   handleListBookings, handleGetBooking, handleBookingRecord, handleCreateBooking,
-  handleUpdateBooking, handleDeleteBooking,
+  handleUpdateBooking, handleQuickUpdate, handleDeleteBooking,
 } from './bookings.js';
 import {
   handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
@@ -122,6 +122,7 @@ const PAGE_FILES = {
   '/app/client': '/app/client.html',
   '/app/clients': '/app/clients.html',
   '/app/import': '/app/import.html',
+  '/app/complete': '/app/complete.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
   '/app/settings': '/app/settings.html',
@@ -182,6 +183,7 @@ async function routeApi(request, env, path, method) {
   const oppMatch = path.match(/^\/api\/opportunities\/([^/]+)$/);
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const recordMatch = path.match(/^\/api\/bookings\/([^/]+)\/record$/);
+  const quickMatch = path.match(/^\/api\/bookings\/([^/]+)\/quick$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
@@ -247,6 +249,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/bookings' && method === 'GET') return handleListBookings(request, env);
   if (path === '/api/bookings' && method === 'POST') return handleCreateBooking(request, env);
   if (recordMatch && method === 'GET') return handleBookingRecord(request, env, recordMatch[1]);
+  if (quickMatch && method === 'POST') return handleQuickUpdate(request, env, quickMatch[1]);
   if (bookingMatch && method === 'GET') return handleGetBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'PUT') return handleUpdateBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'DELETE') return handleDeleteBooking(request, env, bookingMatch[1]);
