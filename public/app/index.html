@@ -84,6 +84,28 @@ function widget(title, link, tabs, initial) {
   return el;
 }
 
+function documentTable(rows, empty) {
+  if (!rows.length) return `<p class="wempty">${esc(empty)}</p>`;
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Traveller</th><th>Trip</th><th>Departing</th><th>Passport</th></tr></thead>
+    <tbody>${rows.slice(0, 15).map((r) => {
+      const days = daysUntil(r.depart_date);
+      return `<tr>
+        <td><span class="name">${esc(r.name)}</span>
+          <div class="muted">${esc(r.client_name)}</div></td>
+        <td><a href="/app/reservation?id=${esc(r.booking_id)}">${
+          esc(r.product_name || r.supplier || 'reservation')}</a></td>
+        <td>${esc(fmtShort(r.depart_date))}
+          ${days !== null && days <= 60
+            ? `<div><span class="badge ${days <= 30 ? 'badge-red' : 'badge-amber'}">in ${days}d</span></div>`
+            : ''}</td>
+        <td><span class="badge ${r.kind === 'expiring' ? 'badge-red' : 'badge-amber'}">${
+          esc(r.detail)}</span>
+          ${r.passport_expiry ? `<div class="muted">expires ${esc(fmtShort(r.passport_expiry))}</div>` : ''}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
 function reservationTable(rows, cols) {
   if (!rows.length) return '';
   return `<div class="table-wrap"><table><thead><tr>${
@@ -189,6 +211,18 @@ const PANELS = {
     { key: 'traveling', label: 'Away now', render: () => reservationTable(d.current.traveling, CUR_COLS) },
     { key: 'returned', label: 'Just back', render: () => reservationTable(d.current.returned, CUR_COLS) },
   ], 'upcoming'),
+
+  // Two tabs, not one list, because the two say different things. One is
+  // "this passport will be refused"; the other is "nobody has asked". Mixing
+  // them would put a certainty and a question under the same heading.
+  documents: () => widget('Before they travel', null, [
+    { key: 'expiring', label: 'Will be refused', render: () =>
+      documentTable((d.documents || []).filter((r) => r.kind === 'expiring'),
+        'No passport on file expires too close to a trip.') },
+    { key: 'unknown', label: 'Nothing on file', render: () =>
+      documentTable((d.documents || []).filter((r) => r.kind === 'unknown'),
+        'Every traveller leaving in the next few months has a passport recorded.') },
+  ], 'expiring'),
 
   groups: () => widget('Group space', { href: '/app/groups', label: 'All groups' }, [
     { key: 'upcoming', label: 'Open blocks', render: () => {

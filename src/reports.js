@@ -9,6 +9,7 @@ import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { readLayout, PANELS } from './prefs.js';
 import { listTasks } from './tasks.js';
+import { documentWatch } from './travellers.js';
 import { listGroups } from './groups.js';
 import { listCredits } from './credits.js';
 import { goalProgress } from './goals.js';
@@ -120,6 +121,9 @@ export async function handleDashboard(request, env) {
       .catch(() => null),
     commission: await commissionSummary(env, scope, today).catch(() => null),
     credits: await listCredits(env, scope, { state: 'open', limit: 25 }).catch(() => []),
+    // The rule that decides whether somebody gets on the plane, applied to
+    // every upcoming trip rather than only to the one you happen to have open.
+    documents: await documentWatch(env, scope, { today }).catch(() => []),
   });
 }
 

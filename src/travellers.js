@@ -219,3 +219,84 @@ export async function handleDeleteAmenity(request, env, id) {
   if (!res.meta || res.meta.changes === 0) return notFound('Amenity not found.');
   return json({ ok: true });
 }
+
+/**
+ * Everyone whose documents will stop them travelling, across the whole book.
+ *
+ * passportProblem has been right about a passport since the day it was
+ * written, and useless, because it only ran when somebody opened that one
+ * reservation. An advisor with eighty trips on the go does not open eighty
+ * reservations to check. So the same rule is applied across every upcoming
+ * trip at once, which is the only form in which it can actually save a
+ * holiday.
+ *
+ * Two kinds of problem, kept apart because they need different sentences:
+ *
+ *   A passport that will be refused. The six month rule, checked against the
+ *   trip's own return date, so a passport valid today still fails if it runs
+ *   out four months after they land.
+ *
+ *   A passport nobody has recorded. Silence is not evidence that a client
+ *   holds a valid passport; it is evidence that nobody has asked. Only raised
+ *   as the trip gets close, because an empty field eighteen months out is
+ *   normal and flagging it would train the advisor to ignore the panel.
+ */
+export async function documentWatch(env, scope, { today, askWithinDays = 120 } = {}) {
+  const scoped = db.scopeWhere(scope, 't.user_id');
+  const { results } = await env.DB.prepare(
+    `SELECT t.id, t.name, t.passport_number, t.passport_expiry,
+            b.id AS booking_id, b.client_name, b.product_name, b.supplier,
+            b.depart_date, b.return_date
+       FROM travellers t
+       JOIN bookings b ON b.id = t.booking_id
+      WHERE ${scoped.sql}
+        AND b.status = 'booked'
+        AND b.depart_date IS NOT NULL AND b.depart_date >= ?
+      ORDER BY b.depart_date ASC
+      LIMIT 300`
+  ).bind(...scoped.binds, today).all();
+
+  const askBy = new Date(Date.parse(`${today}T00:00:00Z`) + askWithinDays * 86400000)
+    .toISOString().slice(0, 10);
+
+  const rows = [];
+  for (const r of results || []) {
+    const back = r.return_date || r.depart_date;
+    const warning = passportProblem(r, back);
+
+    if (warning) {
+      rows.push({ ...r, kind: 'expiring', detail: warning });
+      continue;
+    }
+    // Nothing recorded, and close enough that it is now a question worth
+    // asking rather than a field nobody has filled in yet.
+    if (!r.passport_expiry && r.depart_date <= askBy) {
+      rows.push({
+        ...r, kind: 'unknown',
+        detail: r.passport_number ? 'no expiry date recorded' : 'no passport recorded',
+      });
+    }
+  }
+
+  return rows;
+}
+
+export async function handleDocumentWatch(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const scope = db.scopeFor(env, user, request);
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = await documentWatch(env, scope, { today });
+
+  return json({
+    travellers: rows,
+    today,
+    counts: {
+      expiring: rows.filter((r) => r.kind === 'expiring').length,
+      unknown: rows.filter((r) => r.kind === 'unknown').length,
+    },
+    scope: db.scopeLabel(scope, user),
+    advisors: await db.advisorOptions(env, user),
+  });
+}

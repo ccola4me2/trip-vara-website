@@ -18,7 +18,10 @@ const BASE = process.argv[2] || 'http://127.0.0.1:8787';
 const EMAIL = process.argv[3] || 'local@test.dev';
 const PASSWORD = process.argv[4] || 'local-test-12345';
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 // Which endpoint feeds which page.
 const PAGES = [
@@ -182,7 +185,74 @@ function emptyCollections(value, path = '', out = [], depth = 0) {
   return out;
 }
 
+/**
+ * Does every page's script still parse?
+ *
+ * A stricter question than the contract check below and a much cheaper one,
+ * added because a function declaration went into the middle of an object
+ * literal and shipped. Every check passed: the smoke test only talks to the
+ * API, and the contract check reads field names out of the page text without
+ * caring whether the file around them is valid JavaScript. The browser cared.
+ * The whole dashboard rendered as an empty shell, and the only evidence was a
+ * line in a console nobody had open.
+ *
+ * Parsed rather than run, so a page that needs a browser is still checked.
+ */
+function checkPageSyntax() {
+  const root = new URL('..', import.meta.url).pathname;
+  const dir = mkdtempSync(join(tmpdir(), 'tv-syntax-'));
+  const files = [];
+
+  (function walk(at) {
+    for (const entry of readdirSync(at, { withFileTypes: true })) {
+      const full = join(at, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.html')) files.push(full);
+    }
+  })(join(root, 'public'));
+
+  let broken = 0;
+  let scripts = 0;
+
+  for (const file of files.sort()) {
+    const html = readFileSync(file, 'utf8');
+    let n = 0;
+    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+      const [, attrs, body] = m;
+      if (/\bsrc\s*=/i.test(attrs)) continue;
+      const type = (attrs.match(/type\s*=\s*["']([^"']+)["']/i) || [, ''])[1].toLowerCase();
+      // Anything that is not JavaScript is somebody else's data.
+      if (type && !['module', 'text/javascript', 'application/javascript'].includes(type)) continue;
+      if (!body.trim()) continue;
+
+      n += 1;
+      scripts += 1;
+      // A module and a classic script have different grammars, so each is
+      // parsed as what the page says it is.
+      const path = join(dir, `s${scripts}${type === 'module' ? '.mjs' : '.js'}`);
+      writeFileSync(path, body);
+      try {
+        execFileSync(process.execPath, ['--check', path], { stdio: 'pipe' });
+      } catch (e) {
+        broken += 1;
+        const detail = String(e.stderr || e.message)
+          .split('\n').find((l) => /SyntaxError/.test(l)) || 'did not parse';
+        console.log(`FAIL  ${relative(root, file)} script ${n}`);
+        console.log(`        ${detail.trim()}`);
+        console.log('        the page will not run at all, whatever its contract says');
+      }
+    }
+  }
+
+  if (!broken) console.log(`ok    ${scripts} page scripts parse`);
+  return broken;
+}
+
 async function main() {
+  // Offline and instant, so it runs before anything needs a server. A page
+  // that does not parse cannot honour a contract either.
+  const brokenSyntax = checkPageSyntax();
+
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -307,12 +377,15 @@ async function main() {
     }
   }
 
+  if (brokenSyntax) {
+    console.log(`\n${brokenSyntax} page script(s) do not parse.`);
+  }
   console.log(
     problems
       ? `\n${problems} contract mismatch(es).`
       : `\nAll verifiable page contracts match.${unverified ? ` ${unverified} page(s) had no sample data to check against.` : ''}`
   );
-  process.exit(problems ? 1 : 0);
+  process.exit(problems || brokenSyntax ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(2); });

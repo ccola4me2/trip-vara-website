@@ -1668,6 +1668,90 @@ async function main() {
     !(reset.data.layout.widgets[0] || {}).hidden,
     'and reset puts the default back');
 
+  // ------------------------------------------------ documents to travel ----
+  {
+  step('Passports that will stop somebody travelling');
+
+  // Departing in 40 days, home in 50. A passport running out 60 days from now
+  // is valid on the day they fly and inside the six month rule on the day they
+  // land, which is the case an expiry date alone never catches.
+  const soon = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Docs Soon ${stamp}`, supplier: 'Silversea', status: 'booked',
+    productName: 'Adriatic', departDate: isoDay(40), returnDate: isoDay(50),
+  });
+  const soonId = soon.data?.booking?.id;
+  if (soonId) cleanup('the documents reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${soonId}`));
+
+  await call(advisor, 'POST', `/api/bookings/${soonId}/travellers`,
+    { name: `Rune Short ${stamp}`, passportNumber: 'EXP1', passportExpiry: isoDay(60), isLead: true });
+  await call(advisor, 'POST', `/api/bookings/${soonId}/travellers`,
+    { name: `Vera Valid ${stamp}`, passportNumber: 'OK1', passportExpiry: isoDay(2000) });
+  await call(advisor, 'POST', `/api/bookings/${soonId}/travellers`,
+    { name: `Nils Nothing ${stamp}` });
+
+  // The same silence, on a trip far enough out that it is not yet a question.
+  const later = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Docs Later ${stamp}`, supplier: 'Silversea', status: 'booked',
+    departDate: isoDay(300), returnDate: isoDay(310),
+  });
+  const laterId = later.data?.booking?.id;
+  if (laterId) cleanup('the far off reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${laterId}`));
+  await call(advisor, 'POST', `/api/bookings/${laterId}/travellers`,
+    { name: `Wilma Waiting ${stamp}` });
+
+  // A quote is not a commitment, so nobody needs chasing for a passport yet.
+  const quote = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Docs Quote ${stamp}`, supplier: 'Silversea', status: 'quoted',
+    departDate: isoDay(45), returnDate: isoDay(52),
+  });
+  const quoteId = quote.data?.booking?.id;
+  if (quoteId) cleanup('the quoted reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${quoteId}`));
+  await call(advisor, 'POST', `/api/bookings/${quoteId}/travellers`,
+    { name: `Quinn Quoted ${stamp}` });
+
+  const docs = await call(advisor, 'GET', '/api/documents');
+  const by = Object.fromEntries((docs.data?.travellers || []).map((r) => [r.name, r]));
+
+  check(docs.status === 200, 'the document watch answers', `status ${docs.status}`);
+  check(by[`Rune Short ${stamp}`]?.kind === 'expiring',
+    'a passport inside six months of the return date is raised',
+    by[`Rune Short ${stamp}`]?.detail);
+  check(/six months/.test(by[`Rune Short ${stamp}`]?.detail || ''),
+    'and says why, rather than just flagging a date');
+
+  check(!by[`Vera Valid ${stamp}`], 'a passport good for years is left alone');
+
+  // Silence is not evidence that a client holds a valid passport.
+  check(by[`Nils Nothing ${stamp}`]?.kind === 'unknown',
+    'a traveller with no passport on a trip leaving soon is raised separately',
+    by[`Nils Nothing ${stamp}`]?.detail);
+
+  // The same empty field a year out is normal, and raising it would train
+  // whoever reads this panel to stop reading it.
+  check(!by[`Wilma Waiting ${stamp}`],
+    'while the same silence on a trip ten months out is not a problem yet');
+  check(!by[`Quinn Quoted ${stamp}`], 'and a quote is not chased for documents');
+
+  check(docs.data?.counts?.expiring >= 1 && docs.data?.counts?.unknown >= 1,
+    'the two kinds are counted apart',
+    JSON.stringify(docs.data?.counts));
+
+  // An owner watching the agency sees an associate's travellers; the associate
+  // sees only their own, the same rule as everything else.
+  const ownerDocs = await call(admin, 'GET', '/api/documents');
+  check((ownerDocs.data?.travellers || []).some((r) => r.name === `Rune Short ${stamp}`),
+    'an owner sees an associate\'s document problems');
+
+  const onDash = await call(advisor, 'GET', '/api/dashboard');
+  check((onDash.data?.documents || []).some((r) => r.name === `Rune Short ${stamp}`),
+    'and it reaches the dashboard, which is where it will actually be read');
+  check((onDash.data?.panels || []).some((p) => p.id === 'documents'),
+    'as a panel that can be arranged like any other');
+  }
+
   // -------------------------------------------------- commission split -----
   // Deliberately last but one: it changes what this advisor is recorded as
   // keeping, and every earlier check reads those same figures. Cleared again

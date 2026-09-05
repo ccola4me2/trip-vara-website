@@ -72,6 +72,7 @@ import {
 import {
   handleAddTraveller, handleUpdateTraveller, handleDeleteTraveller,
   handleAddAmenity, handleUpdateAmenity, handleDeleteAmenity,
+  handleDocumentWatch,
 } from './travellers.js';
 import {
   handleAddPriceLine, handleUpdatePriceLine, handleDeletePriceLine,
@@ -425,6 +426,8 @@ async function routeApi(request, env, path, method) {
     return handleSetCommissionStatus(request, env);
   }
   if (path === '/api/reports/production' && method === 'GET') return handleProduction(request, env);
+  // Everyone whose documents will stop them travelling, across the whole book.
+  if (path === '/api/documents' && method === 'GET') return handleDocumentWatch(request, env);
 
   // ---- admin ------------------------------------------------------------
   if (path === '/api/admin/health' && method === 'GET') return handleHealth(request, env);
