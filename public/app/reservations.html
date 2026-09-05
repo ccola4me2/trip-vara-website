@@ -119,6 +119,34 @@
             <option value="paid">Paid</option>
           </select></div>
       </div>
+      <div class="field-row">
+        <div class="field"><label for="cabinCategory">Category</label>
+          <input id="cabinCategory" name="cabinCategory" maxlength="120"
+                 placeholder="Picturesque Oceanview Stateroom"></div>
+        <div class="field"><label for="cabin">Cabin</label>
+          <input id="cabin" name="cabin" maxlength="40" placeholder="1223"></div>
+      </div>
+      <div class="field"><label for="itinerary">Itinerary</label>
+        <input id="itinerary" name="itinerary" maxlength="200" placeholder="4 Night Caribbean (Bahamas)"></div>
+      <div class="field-row">
+        <div class="field"><label for="insuranceStatus">Travel insurance</label>
+          <select id="insuranceStatus" name="insuranceStatus">
+            <option value="unknown">Not discussed yet</option>
+            <option value="purchased">Purchased through us</option>
+            <option value="declined">Client declined</option>
+            <option value="covered_elsewhere">Covered by another policy</option>
+            <option value="purchased_outside">Bought elsewhere</option>
+          </select>
+          <p class="field-hint">Recording a decline protects you later. Leaving it blank does not.</p></div>
+        <div class="field"><label for="bookingMethod">Booked by</label>
+          <select id="bookingMethod" name="bookingMethod">
+            <option value="direct">Direct with the vendor</option>
+            <option value="portal">Vendor portal</option>
+            <option value="phone">Phone</option>
+            <option value="group">From group space</option>
+            <option value="other">Other</option>
+          </select></div>
+      </div>
       <div class="field"><label for="notes">Notes</label><textarea id="notes" name="notes"></textarea></div>
     </div>
     <div class="dialog-foot">
@@ -226,6 +254,9 @@ function openEdit(b) {
   set('depositDue', b.deposit_due); set('finalPaymentDue', b.final_payment_due);
   set('travellers', b.travellers); set('status', b.status);
   set('commissionStatus', b.commission_status); set('notes', b.notes);
+  set('cabin', b.cabin); set('cabinCategory', b.cabin_category);
+  set('itinerary', b.itinerary); set('bookingMethod', b.booking_method);
+  set('insuranceStatus', b.insurance_status);
   set('gross', (b.gross_cents / 100).toFixed(2));
   set('deposit', ((b.deposit_cents || 0) / 100).toFixed(2));
   set('commission', (b.commission_cents / 100).toFixed(2));
@@ -337,6 +368,7 @@ pickDate.addEventListener('change', () => {
   const set = (n, v) => { const el = form.elements[n]; if (el && v) el.value = v; };
   set('supplier', row.cruise_line);
   set('productName', row.ship);
+  set('itinerary', row.name);
   set('destination', row.destination);
   set('departDate', row.depart_date);
   set('returnDate', row.return_date);

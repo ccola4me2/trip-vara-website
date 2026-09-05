@@ -25,6 +25,11 @@
       <section id="money" class="stat-grid"></section>
       <div class="split" style="margin-top:1.5rem;">
         <div>
+          <section class="card" style="margin-bottom:1.5rem;">
+            <div class="card-head"><h2>Travellers</h2>
+              <span id="traveller-actions"></span></div>
+            <div id="travellers"></div>
+          </section>
           <section class="card">
             <div class="card-head"><h2>Payment schedule</h2>
               <span id="schedule-actions"></span></div>
@@ -52,6 +57,11 @@
               <a class="btn btn-ghost btn-sm" href="/app/credits">All credits</a></div>
             <div id="credits"></div>
           </section>
+          <section class="card" style="margin-top:1.5rem;">
+            <div class="card-head"><h2>Amenities</h2>
+              <span id="amenity-actions"></span></div>
+            <div id="amenities"></div>
+          </section>
           <section class="card" style="margin-top:1.5rem;" id="group-card" hidden>
             <div class="card-head"><h2>Sold from a group</h2></div>
             <div class="card-pad" id="group"></div>
@@ -61,6 +71,78 @@
     </div>
   </div>
 </div>
+
+<dialog id="traveller-dlg">
+  <form id="traveller-form" method="dialog">
+    <div class="card-head"><h2 id="traveller-title">Traveller</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-traveller>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="t-name">Full name, as on the passport</label>
+        <input id="t-name" name="name" maxlength="120" required>
+        <p class="field-hint">Vendors match documents on this, not on what the client is called.</p></div>
+      <div class="field-row">
+        <div class="field"><label for="t-dob">Date of birth</label>
+          <input id="t-dob" name="dob" type="date"></div>
+        <div class="field"><label for="t-phone">Phone</label>
+          <input id="t-phone" name="phone" type="tel" maxlength="40"></div>
+      </div>
+      <div class="field"><label for="t-email">Email</label>
+        <input id="t-email" name="email" type="email" maxlength="160"></div>
+      <div class="field-row">
+        <div class="field"><label for="t-passport">Passport number</label>
+          <input id="t-passport" name="passportNumber" maxlength="40"></div>
+        <div class="field"><label for="t-expiry">Expires</label>
+          <input id="t-expiry" name="passportExpiry" type="date">
+          <p class="field-hint">Flagged if it expires within six months of their return.</p></div>
+      </div>
+      <div class="field"><label for="t-country">Issuing country</label>
+        <input id="t-country" name="passportCountry" maxlength="60"></div>
+      <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;">
+        <input type="checkbox" id="t-lead" name="isLead" style="width:auto;"> Lead traveller</label>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="t-delete" hidden>Remove</button>
+      <button class="btn btn-primary" type="submit">Save traveller</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="amenity-dlg">
+  <form id="amenity-form" method="dialog">
+    <div class="card-head"><h2>Amenity</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-amenity>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="a-desc">What was granted</label>
+        <input id="a-desc" name="description" maxlength="200" required
+               placeholder="Onboard credit, drinks package, upgrade"></div>
+      <div class="field-row">
+        <div class="field"><label for="a-amount">Value (USD)</label>
+          <input id="a-amount" name="amount" inputmode="decimal" placeholder="100.00"></div>
+        <div class="field"><label for="a-source">Paid for by</label>
+          <select id="a-source" name="source">
+            <option value="vendor">The vendor</option>
+            <option value="agency">The agency</option>
+            <option value="client">The client</option>
+          </select></div>
+      </div>
+      <div class="field"><label for="a-status">Where it stands</label>
+        <select id="a-status" name="status">
+          <option value="requested">Requested</option>
+          <option value="confirmed">Confirmed by the vendor</option>
+          <option value="applied">Applied to the booking</option>
+          <option value="declined">Declined</option>
+        </select></div>
+      <div class="field"><label for="a-notes">Notes</label>
+        <textarea id="a-notes" name="notes" maxlength="1000"></textarea></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="a-delete" hidden>Remove</button>
+      <button class="btn btn-primary" type="submit">Save amenity</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="chase">
   <div class="card-head"><h2>Chase this payment</h2>
@@ -81,6 +163,74 @@ let d = null;
 
 const short = (iso) => (iso ? dateFmt(iso) : '-');
 const KIND = { deposit: 'Deposit', installment: 'Instalment', final: 'Final balance', refund: 'Refund' };
+const INSURANCE = {
+  unknown: '<span class="badge badge-amber">not discussed</span>',
+  purchased: '<span class="badge badge-green">purchased through us</span>',
+  declined: '<span class="badge badge-navy">client declined</span>',
+  covered_elsewhere: '<span class="badge badge-navy">covered elsewhere</span>',
+  purchased_outside: '<span class="badge badge-navy">bought elsewhere</span>',
+};
+const AMENITY_TONE = { requested: 'badge-amber', confirmed: 'badge-navy', applied: 'badge-green', declined: 'badge-red' };
+
+/**
+ * The people on the trip.
+ *
+ * Documents are issued per person and a passport is checked against the return
+ * date rather than today, because the six month rule is applied on arrival: a
+ * passport that is valid now can still be refused at a desk months from now.
+ */
+function drawTravellers() {
+  document.getElementById('traveller-actions').innerHTML = d.editable
+    ? '<button class="btn btn-ghost btn-sm" id="add-traveller">Add a traveller</button>' : '';
+  const add = document.getElementById('add-traveller');
+  if (add) add.addEventListener('click', () => openTraveller(null));
+
+  document.getElementById('travellers').innerHTML = d.travellers.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Born</th><th>Contact</th><th>Passport</th><th></th></tr></thead>
+        <tbody>${d.travellers.map((t) => `<tr>
+          <td><span class="name">${esc(t.name)}</span>
+            ${t.is_lead ? '<div><span class="badge badge-navy">lead</span></div>' : ''}</td>
+          <td>${t.dob ? esc(short(t.dob)) : '<span class="muted">-</span>'}</td>
+          <td>${[t.phone ? `<a href="tel:${esc(t.phone)}">${esc(t.phone)}</a>` : '',
+                 t.email ? `<a href="mailto:${esc(t.email)}">${esc(t.email)}</a>` : '']
+                .filter(Boolean).join('<br>') || '<span class="muted">-</span>'}</td>
+          <td>${t.passport_number
+            ? `${esc(t.passport_number)}${t.passport_expiry ? `<div class="muted">to ${esc(short(t.passport_expiry))}</div>` : ''}`
+            : '<span class="muted">not on file</span>'}
+            ${t.passportWarning ? `<div><span class="badge badge-red">${esc(t.passportWarning)}</span></div>` : ''}</td>
+          <td class="num">${d.editable
+            ? `<button class="btn btn-ghost btn-sm" data-traveller="${esc(t.id)}">Edit</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>No travellers named</h3>
+        <p>Documents are issued per person, and a passport is checked against the return date.</p></div>`;
+
+  document.querySelectorAll('[data-traveller]').forEach((btn) => {
+    btn.addEventListener('click', () => openTraveller(d.travellers.find((t) => t.id === btn.dataset.traveller)));
+  });
+}
+
+function drawAmenities() {
+  document.getElementById('amenity-actions').innerHTML = d.editable
+    ? '<button class="btn btn-ghost btn-sm" id="add-amenity">Add</button>' : '';
+  const add = document.getElementById('add-amenity');
+  if (add) add.addEventListener('click', () => openAmenity(null));
+
+  document.getElementById('amenities').innerHTML = d.amenities.length
+    ? `<ul class="rows">${d.amenities.map((a) => `<li><div class="row-between">
+        <span><span class="t">${esc(a.description)}</span>
+          <span class="m"><span class="badge ${AMENITY_TONE[a.status] || 'badge-navy'}">${esc(a.status)}</span>
+            ${a.source ? ' · ' + esc(a.source) : ''}</span></span>
+        <span style="text-align:right;">
+          <strong>${a.amount_cents ? money(a.amount_cents) : ''}</strong>
+          ${d.editable ? `<div><button class="btn btn-ghost btn-sm" data-amenity="${esc(a.id)}">Edit</button></div>` : ''}
+        </span></div></li>`).join('')}</ul>`
+    : '<p class="wempty" style="text-align:left;padding:.9rem 1rem;">Nothing granted on this booking.</p>';
+
+  document.querySelectorAll('[data-amenity]').forEach((btn) => {
+    btn.addEventListener('click', () => openAmenity(d.amenities.find((a) => a.id === btn.dataset.amenity)));
+  });
+}
 const STATUS_TONE = { quoted: 'badge-navy', booked: 'badge-green', travelled: 'badge-navy', cancelled: 'badge-red' };
 
 function render() {
@@ -176,12 +326,19 @@ function render() {
   document.getElementById('trip').innerHTML = `<dl class="pairs">
     <dt>Departing</dt><dd>${esc(short(b.depart_date))}</dd>
     <dt>Returning</dt><dd>${esc(short(b.return_date))}</dd>
+    <dt>Itinerary</dt><dd>${esc(b.itinerary || '-')}</dd>
     <dt>Destination</dt><dd>${esc(b.destination || '-')}</dd>
+    <dt>Cabin</dt><dd>${esc([b.cabin_category, b.cabin].filter(Boolean).join(' · ') || '-')}</dd>
     <dt>Travellers</dt><dd>${b.travellers || 1}</dd>
     <dt>Type</dt><dd>${esc(b.product_type || '-')}</dd>
+    <dt>Insurance</dt><dd>${INSURANCE[b.insurance_status] || esc(b.insurance_status || '-')}</dd>
+    <dt>Booked by</dt><dd>${esc(b.booking_method || '-')}</dd>
     <dt>Commission</dt><dd>${money(b.commission_cents)} <span class="muted">${esc(b.commission_status)}</span></dd>
     ${b.notes ? `<dt>Notes</dt><dd>${esc(b.notes)}</dd>` : ''}
   </dl>`;
+
+  drawTravellers();
+  drawAmenities();
 
   // ---- tasks ----
   document.getElementById('task-form').hidden = !d.editable;
@@ -302,6 +459,78 @@ onSubmit(document.getElementById('task-form'), async (values) => {
 
 document.getElementById('chase-close').addEventListener('click',
   () => document.getElementById('chase').close());
+
+const travellerDlg = document.getElementById('traveller-dlg');
+const travellerForm = document.getElementById('traveller-form');
+const amenityDlg = document.getElementById('amenity-dlg');
+const amenityForm = document.getElementById('amenity-form');
+let editingTraveller = null;
+let editingAmenity = null;
+
+function openTraveller(t) {
+  editingTraveller = t ? t.id : null;
+  travellerForm.reset();
+  travellerForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('traveller-title').textContent = t ? 'Edit traveller' : 'Add a traveller';
+  document.getElementById('t-delete').hidden = !t;
+  if (t) {
+    const set = (n, v) => { const el = travellerForm.elements[n]; if (el) el.value = v ?? ''; };
+    set('name', t.name); set('dob', t.dob); set('email', t.email); set('phone', t.phone);
+    set('passportNumber', t.passport_number); set('passportExpiry', t.passport_expiry);
+    set('passportCountry', t.passport_country);
+    document.getElementById('t-lead').checked = Boolean(t.is_lead);
+  }
+  travellerDlg.showModal();
+}
+
+function openAmenity(a) {
+  editingAmenity = a ? a.id : null;
+  amenityForm.reset();
+  amenityForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('a-delete').hidden = !a;
+  if (a) {
+    const set = (n, v) => { const el = amenityForm.elements[n]; if (el) el.value = v ?? ''; };
+    set('description', a.description); set('source', a.source); set('status', a.status);
+    set('notes', a.notes);
+    set('amount', a.amount_cents ? (a.amount_cents / 100).toFixed(2) : '');
+  }
+  amenityDlg.showModal();
+}
+
+document.querySelector('[data-close-traveller]').addEventListener('click', () => travellerDlg.close());
+document.querySelector('[data-close-amenity]').addEventListener('click', () => amenityDlg.close());
+
+document.getElementById('t-delete').addEventListener('click', async () => {
+  if (!editingTraveller || !confirm('Remove this traveller?')) return;
+  await api(`/api/travellers/${encodeURIComponent(editingTraveller)}`, { method: 'DELETE' });
+  travellerDlg.close();
+  await load();
+});
+document.getElementById('a-delete').addEventListener('click', async () => {
+  if (!editingAmenity || !confirm('Remove this amenity?')) return;
+  await api(`/api/amenities/${encodeURIComponent(editingAmenity)}`, { method: 'DELETE' });
+  amenityDlg.close();
+  await load();
+});
+
+onSubmit(travellerForm, async (values) => {
+  values.isLead = document.getElementById('t-lead').checked;
+  const path = editingTraveller
+    ? `/api/travellers/${encodeURIComponent(editingTraveller)}`
+    : `/api/bookings/${encodeURIComponent(id)}/travellers`;
+  await api(path, { method: editingTraveller ? 'PUT' : 'POST', body: values });
+  travellerDlg.close();
+  await load();
+});
+
+onSubmit(amenityForm, async (values) => {
+  const path = editingAmenity
+    ? `/api/amenities/${encodeURIComponent(editingAmenity)}`
+    : `/api/bookings/${encodeURIComponent(id)}/amenities`;
+  await api(path, { method: editingAmenity ? 'PUT' : 'POST', body: values });
+  amenityDlg.close();
+  await load();
+});
 
 if (!id) err.innerHTML = '<div class="notice notice-error">No reservation was named in the address.</div>';
 else await load();

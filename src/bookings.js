@@ -11,6 +11,7 @@ import * as db from './db.js';
 import * as ghl from './ghl.js';
 import { fireTrigger } from './automations.js';
 import { resolveVendor } from './vendors.js';
+import { listTravellers, listAmenities, passportProblem } from './travellers.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
 // tell a transfer from a tour from travel insurance, which meant "travel by
@@ -28,6 +29,10 @@ const PRODUCT_TYPES = [
 // production totals and commission owed.
 const STATUSES = ['quoted', 'booked', 'travelled', 'cancelled'];
 const COMMISSION_STATUSES = ['pending', 'invoiced', 'paid'];
+const BOOKING_METHODS = ['direct', 'portal', 'phone', 'group', 'other'];
+// 'unknown' leads because oneOf falls back to the first entry, and not having
+// asked is the honest default. Recording a decline is a deliberate act.
+const INSURANCE_STATUS = ['unknown', 'purchased', 'declined', 'covered_elsewhere', 'purchased_outside'];
 
 /** Shared parse and validate for create and update. */
 function parseBooking(body) {
@@ -64,6 +69,17 @@ function parseBooking(body) {
       productName: clean(body.productName, 160),
       destination: clean(body.destination, 160),
       confirmationNumber: clean(body.confirmationNumber, 80),
+      cabin: clean(body.cabin, 40),
+      cabinCategory: clean(body.cabinCategory, 120),
+      itinerary: clean(body.itinerary, 200),
+      bookingMethod: oneOf(body.bookingMethod, BOOKING_METHODS),
+      // Not a boolean. "Declined" is a different fact from "not asked", and an
+      // advisor who recorded the refusal is in a very different position
+      // afterwards from one who left it blank.
+      insuranceStatus: oneOf(body.insuranceStatus, INSURANCE_STATUS),
+      advisorSplitPct: body.advisorSplitPct === '' || body.advisorSplitPct == null
+        ? null
+        : Math.max(0, Math.min(Number(body.advisorSplitPct) || 0, 100)),
       departDate,
       returnDate,
       depositDue,
@@ -134,7 +150,7 @@ export async function handleBookingRecord(request, env, id) {
   const taskScope = db.scopeWhere(scope, 't.user_id');
   const creditScope = db.scopeWhere(scope, 'c.user_id');
 
-  const [payments, tasks, credits, group] = await Promise.all([
+  const [payments, tasks, credits, group, people, extras] = await Promise.all([
     env.DB.prepare(
       `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date, p.paid_date,
               p.method, p.reference, p.notes, p.reminded_at, p.reminder_count
@@ -159,6 +175,8 @@ export async function handleBookingRecord(request, env, id) {
           'SELECT id, name, group_code, vendor, option_date, cabins_held FROM travel_groups WHERE id = ?'
         ).bind(booking.group_id).first().catch(() => null)
       : Promise.resolve(null),
+    listTravellers(env, id, scope),
+    listAmenities(env, id, scope),
   ]);
 
   // Hard rows only. A soft row is a reminder to chase the same balance a week
@@ -168,8 +186,17 @@ export async function handleBookingRecord(request, env, id) {
   const paid = owed.filter((p) => p.paid_date).reduce((n, p) => n + (p.amount_cents || 0), 0);
   const scheduled = owed.filter((p) => !p.paid_date).reduce((n, p) => n + (p.amount_cents || 0), 0);
 
+  // A passport is checked against the trip's own return date, not today: the
+  // six month rule is applied on arrival, so a passport valid now can still be
+  // refused at a desk in four months' time.
+  const travellers = (people || []).map((t) => ({
+    ...t, passportWarning: passportProblem(t, booking.return_date || booking.depart_date),
+  }));
+
   return json({
     booking,
+    travellers,
+    amenities: extras || [],
     payments: payments.results || [],
     tasks: tasks.results || [],
     credits: credits.results || [],
@@ -236,6 +263,11 @@ const QUICK_FIELDS = {
   depositDue: ['deposit_due', (v) => cleanDate(v)],
   finalPaymentDue: ['final_payment_due', (v) => cleanDate(v)],
   confirmationNumber: ['confirmation_number', (v) => clean(v, 80)],
+  cabin: ['cabin', (v) => clean(v, 40)],
+  cabinCategory: ['cabin_category', (v) => clean(v, 120)],
+  itinerary: ['itinerary', (v) => clean(v, 200)],
+  bookingMethod: ['booking_method', (v) => oneOf(v, BOOKING_METHODS)],
+  insuranceStatus: ['insurance_status', (v) => oneOf(v, INSURANCE_STATUS)],
   supplier: ['supplier', (v) => clean(v, 120)],
   productName: ['product_name', (v) => clean(v, 160)],
   status: ['status', (v) => oneOf(v, STATUSES)],

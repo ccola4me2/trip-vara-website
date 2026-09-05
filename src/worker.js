@@ -69,6 +69,10 @@ import {
   handleListVendors, handleUpdateVendor, handleMergeVendors, handleSuggestDates,
 } from './vendors.js';
 import {
+  handleAddTraveller, handleUpdateTraveller, handleDeleteTraveller,
+  handleAddAmenity, handleUpdateAmenity, handleDeleteAmenity,
+} from './travellers.js';
+import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
 } from './automations.js';
@@ -199,6 +203,10 @@ async function routeApi(request, env, path, method) {
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const recordMatch = path.match(/^\/api\/bookings\/([^/]+)\/record$/);
   const quickMatch = path.match(/^\/api\/bookings\/([^/]+)\/quick$/);
+  const travellersMatch = path.match(/^\/api\/bookings\/([^/]+)\/travellers$/);
+  const amenitiesMatch = path.match(/^\/api\/bookings\/([^/]+)\/amenities$/);
+  const travellerMatch = path.match(/^\/api\/travellers\/([^/]+)$/);
+  const amenityMatch = path.match(/^\/api\/amenities\/([^/]+)$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
@@ -267,6 +275,14 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/bookings' && method === 'POST') return handleCreateBooking(request, env);
   if (recordMatch && method === 'GET') return handleBookingRecord(request, env, recordMatch[1]);
   if (quickMatch && method === 'POST') return handleQuickUpdate(request, env, quickMatch[1]);
+
+  // The people on a reservation, and what the vendor has granted them.
+  if (travellersMatch && method === 'POST') return handleAddTraveller(request, env, travellersMatch[1]);
+  if (travellerMatch && method === 'PUT') return handleUpdateTraveller(request, env, travellerMatch[1]);
+  if (travellerMatch && method === 'DELETE') return handleDeleteTraveller(request, env, travellerMatch[1]);
+  if (amenitiesMatch && method === 'POST') return handleAddAmenity(request, env, amenitiesMatch[1]);
+  if (amenityMatch && method === 'PUT') return handleUpdateAmenity(request, env, amenityMatch[1]);
+  if (amenityMatch && method === 'DELETE') return handleDeleteAmenity(request, env, amenityMatch[1]);
   if (bookingMatch && method === 'GET') return handleGetBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'PUT') return handleUpdateBooking(request, env, bookingMatch[1]);
   if (bookingMatch && method === 'DELETE') return handleDeleteBooking(request, env, bookingMatch[1]);

@@ -599,6 +599,93 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // ---------------------------------------------- the people on the trip ----
+  {
+  step('Travellers, passports and amenities');
+
+  const trip = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Party Lead ${stamp}`, supplier: 'Cunard', status: 'booked',
+    departDate: isoDay(300), returnDate: isoDay(314), gross: '9000', commission: '900',
+    cabin: '1223', cabinCategory: 'Picturesque Oceanview', itinerary: '14 Night Transatlantic',
+    insuranceStatus: 'declined', bookingMethod: 'portal',
+  });
+  const tripId = trip.data?.booking?.id;
+  if (tripId) cleanup('the party reservation', () => call(advisor, 'DELETE', `/api/bookings/${tripId}`));
+  check(trip.data?.booking?.cabin === '1223' && trip.data.booking.cabin_category === 'Picturesque Oceanview',
+    'a reservation carries a cabin and its category', trip.data?.booking?.cabin);
+
+  // Insurance is not a boolean. Declined is a different fact from not asked,
+  // and it is the difference that matters if something goes wrong later.
+  check(trip.data?.booking?.insurance_status === 'declined',
+    'and records that the client declined insurance, rather than nothing',
+    trip.data?.booking?.insurance_status);
+  const silent = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Silent ${stamp}`, departDate: isoDay(300), status: 'quoted',
+  });
+  if (silent.data?.booking?.id) cleanup('the quiet reservation', () =>
+    call(advisor, 'DELETE', `/api/bookings/${silent.data.booking.id}`));
+  check(silent.data?.booking?.insurance_status === 'unknown',
+    'while saying nothing leaves it unknown, not declined',
+    silent.data?.booking?.insurance_status);
+
+  const lead = await call(advisor, 'POST', `/api/bookings/${tripId}/travellers`, {
+    name: 'Ada Lovelace', dob: '1965-12-10', email: 'ada@example.com',
+    passportNumber: 'P1', passportExpiry: isoDay(3000), isLead: true,
+  });
+  check(lead.status === 201, 'a traveller can be named');
+
+  // Six months past the return date, not six months from today: the rule is
+  // applied on arrival, so a passport valid now can still be refused later.
+  await call(advisor, 'POST', `/api/bookings/${tripId}/travellers`, {
+    name: 'Soon Expiring', passportNumber: 'P2', passportExpiry: isoDay(400),
+  });
+  await call(advisor, 'POST', `/api/bookings/${tripId}/travellers`, {
+    name: 'Already Expired', passportNumber: 'P3', passportExpiry: isoDay(310),
+  });
+
+  const rec3 = await call(advisor, 'GET', `/api/bookings/${tripId}/record`);
+  const byName = Object.fromEntries((rec3.data?.travellers || []).map((t) => [t.name, t]));
+  check(byName['Already Expired']?.passportWarning === 'expires before they get home',
+    'a passport that runs out mid trip is flagged',
+    byName['Already Expired']?.passportWarning);
+  check(/six months/.test(byName['Soon Expiring']?.passportWarning || ''),
+    'and so is one inside the six month rule',
+    byName['Soon Expiring']?.passportWarning);
+  check(byName['Ada Lovelace']?.passportWarning === null,
+    'while a valid one says nothing at all');
+  check(byName['Ada Lovelace']?.is_lead === 1, 'the lead traveller is marked');
+
+  // The count follows the people, so the two can never disagree.
+  check(rec3.data?.booking?.travellers === 3,
+    'and the traveller count follows the names on the record',
+    rec3.data?.booking?.travellers);
+
+  // Only one lead: a vendor confirmation names one person.
+  await call(advisor, 'PUT', `/api/travellers/${byName['Soon Expiring'].id}`,
+    { name: 'Soon Expiring', isLead: true });
+  const rec4 = await call(advisor, 'GET', `/api/bookings/${tripId}/record`);
+  check((rec4.data?.travellers || []).filter((t) => t.is_lead).length === 1,
+    'and naming a second lead moves it rather than adding one');
+
+  const amenity = await call(advisor, 'POST', `/api/bookings/${tripId}/amenities`, {
+    description: 'Onboard credit', amount: '250', source: 'vendor', status: 'requested',
+  });
+  check(amenity.status === 201, 'an amenity can be recorded');
+  const rec5 = await call(advisor, 'GET', `/api/bookings/${tripId}/record`);
+  const am = (rec5.data?.amenities || [])[0];
+  check(am && am.amount_cents === 25000 && am.status === 'requested',
+    'with its value and where it stands', am && `${am.amount_cents} ${am.status}`);
+
+  await call(advisor, 'PUT', `/api/amenities/${am.id}`, { status: 'applied' });
+  const rec6 = await call(advisor, 'GET', `/api/bookings/${tripId}/record`);
+  check((rec6.data?.amenities || [])[0]?.status === 'applied',
+    'and it can be moved along without resending the whole thing');
+
+  const notYours2 = await call(admin, 'POST', `/api/bookings/${tripId}/travellers`, { name: 'Intruder' });
+  check(notYours2.status === 404, 'an owner cannot add a traveller to an associate\'s reservation',
+    `status ${notYours2.status}`);
+  }
+
   // ------------------------------------------------------------- vendors ----
   {
   step('Vendors, their spelling and their terms');
