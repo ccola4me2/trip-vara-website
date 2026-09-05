@@ -15,6 +15,7 @@ import { listTravellers, listAmenities, passportProblem } from './travellers.js'
 import { PAYMENT_TYPES, releaseCredit } from './payments.js';
 import { splitPct, shareOf } from './split.js';
 import { listOptions } from './options.js';
+import { listTiers, penaltyToday } from './penalties.js';
 import { listPricing, summarise, PRICE_KINDS } from './pricing.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
@@ -155,7 +156,7 @@ export async function handleBookingRecord(request, env, id) {
   const creditScope = db.scopeWhere(scope, 'c.user_id');
 
   const [payments, tasks, credits, spendable, group, people, extras, priceLines,
-         options] = await Promise.all([
+         options, tiers] = await Promise.all([
     // Joined rather than looked up in the page, so a payment made with a
     // credit can show the credit's own amount beside it. A $250 credit against
     // a $1,000 payment is a difference worth seeing, not one worth hiding.
@@ -206,6 +207,7 @@ export async function handleBookingRecord(request, env, id) {
     listAmenities(env, id, scope),
     listPricing(env, id, scope),
     listOptions(env, id, scope),
+    listTiers(env, scope, { bookingId: id }),
   ]);
 
   // The vendor's own rate, so an expected commission can be worked out and
@@ -234,6 +236,11 @@ export async function handleBookingRecord(request, env, id) {
     // The choices offered, and which one was taken. Empty for most
     // reservations, which is the normal case rather than a missing feature.
     options,
+    // What it costs the client to cancel today, and the schedule it came
+    // from. Null when nobody has recorded terms, which is a different answer
+    // from nothing to pay.
+    penaltyTiers: tiers,
+    penalty: penaltyToday(booking, tiers, new Date().toISOString().slice(0, 10)),
     pricing: priceLines,
     priceKinds: PRICE_KINDS,
     // Null when there is no breakdown: an empty summary reads as zero, and

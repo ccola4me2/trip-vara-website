@@ -72,6 +72,11 @@
               <span id="amenity-actions"></span></div>
             <div id="amenities"></div>
           </section>
+          <section class="card" style="margin-top:1.5rem;" id="penalty-card">
+            <div class="card-head"><h2>If they cancel</h2>
+              <span id="penalty-actions"></span></div>
+            <div id="penalty"></div>
+          </section>
           <section class="card" style="margin-top:1.5rem;" id="group-card" hidden>
             <div class="card-head"><h2>Sold from a group</h2></div>
             <div class="card-pad" id="group"></div>
@@ -106,6 +111,32 @@
     <div class="card-foot">
       <button class="btn btn-danger btn-sm" type="button" id="p-delete" hidden>Remove</button>
       <button class="btn btn-primary" type="submit">Save line</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="tier-dlg">
+  <form id="tier-form" method="dialog">
+    <div class="card-head"><h2>A cancellation tier</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-tier>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field"><label for="ti-days">Starts this many days before departure</label>
+        <input id="ti-days" name="fromDays" inputmode="numeric" required placeholder="89">
+        <p class="field-hint">It applies from there until a tier with a smaller number takes over.
+          The largest number is the earliest period.</p></div>
+      <div class="field-row">
+        <div class="field"><label for="ti-pct">Percentage of the trip</label>
+          <input id="ti-pct" name="pct" inputmode="decimal" placeholder="50"></div>
+        <div class="field"><label for="ti-amount">Or a fixed amount (USD)</label>
+          <input id="ti-amount" name="amount" inputmode="decimal" placeholder="600.00"></div>
+      </div>
+      <div class="field"><label for="ti-note">What the vendor calls it</label>
+        <input id="ti-note" name="note" maxlength="160" placeholder="Deposit forfeit"></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="ti-delete" hidden>Remove</button>
+      <button class="btn btn-primary" type="submit">Save tier</button>
     </div>
   </form>
 </dialog>
@@ -323,6 +354,71 @@ const KIND_LABEL = {
  * most useful thing to know the next time you quote them, and it is exactly
  * what disappears when the rejected rows are tidied away.
  */
+/**
+ * What it costs the client to cancel today.
+ *
+ * The number nobody could answer without reading a confirmation and counting
+ * days in their head. Where no tier covers today it says so: "nothing
+ * recorded" and "nothing to pay" are answers a client would react to very
+ * differently, and only one of them is safe to guess.
+ */
+function drawPenalty() {
+  const tiers = d.penaltyTiers || [];
+  const p = d.penalty;
+
+  document.getElementById('penalty-actions').innerHTML = d.editable
+    ? `${d.booking.vendor_id ? '<button class="btn btn-ghost btn-sm" id="apply-terms">Use vendor terms</button>' : ''}
+       <button class="btn btn-ghost btn-sm" id="add-tier">Add a tier</button>` : '';
+  const add = document.getElementById('add-tier');
+  if (add) add.addEventListener('click', () => openTier(null));
+  const apply = document.getElementById('apply-terms');
+  if (apply) apply.addEventListener('click', async () => {
+    apply.disabled = true;
+    try {
+      await api(`/api/bookings/${encodeURIComponent(id)}/penalties/apply`, { method: 'POST', body: {} });
+      await load();
+    } catch (e) { showError(err, e); apply.disabled = false; }
+  });
+
+  const headline = !tiers.length
+    ? `<div class="empty"><h3>No terms recorded</h3>
+        <p>Copy the vendor's schedule off the confirmation once, and this answers
+          "what if we cancel" for the rest of the trip.</p></div>`
+    : p && p.problem
+      ? `<div class="card-pad"><p class="muted">${esc(p.problem)}</p>
+          <p class="muted" style="font-size:.8rem;">Departing in ${p.daysUntil} days.</p></div>`
+      : p
+        ? `<div class="card-pad">
+            <p class="label" style="margin:0;">Cancelling today</p>
+            <p class="value" style="font-size:1.6rem;margin:.2rem 0;">${money(p.penaltyCents)}</p>
+            <p class="muted">${p.refundCents === null
+              ? 'No trip total recorded, so there is nothing to refund against.'
+              : `${money(p.refundCents)} back to the client`} &middot; departing in ${p.daysUntil} days${
+              p.tier.note ? ' &middot; ' + esc(p.tier.note) : ''}</p></div>`
+        : '<div class="card-pad"><p class="muted">No departure date, so no tier can apply.</p></div>';
+
+  const table = tiers.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>From</th><th>Penalty</th><th></th></tr></thead>
+        <tbody>${tiers.map((t) => {
+          const live = p && p.tier && p.tier.fromDays === t.from_days;
+          return `<tr${live ? ' style="background:var(--navy-50);"' : ''}>
+            <td>${t.from_days} days before${live ? ' <span class="badge badge-amber">now</span>' : ''}
+              ${t.note ? `<div class="muted">${esc(t.note)}</div>` : ''}</td>
+            <td>${t.pct !== null && t.pct !== undefined
+              ? esc(String(t.pct)) + '% of the trip' : money(t.amount_cents)}</td>
+            <td class="num">${d.editable
+              ? `<button class="btn btn-ghost btn-sm" data-tier="${esc(t.id)}">Edit</button>` : ''}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`
+    : '';
+
+  document.getElementById('penalty').innerHTML = headline + table;
+  document.querySelectorAll('[data-tier]').forEach((btn) => {
+    btn.addEventListener('click', () => openTier(tiers.find((t) => t.id === btn.dataset.tier)));
+  });
+}
+
 function drawOptions() {
   const rows = d.options || [];
   const quoting = d.booking.status === 'quoted';
@@ -610,6 +706,7 @@ function render() {
   </dl>`;
 
   drawOptions();
+  drawPenalty();
   drawPricing();
   drawTravellers();
   drawAmenities();
@@ -832,6 +929,39 @@ onSubmit(document.getElementById('task-form'), async (values) => {
 
 document.getElementById('chase-close').addEventListener('click',
   () => document.getElementById('chase').close());
+
+const tierDlg = document.getElementById('tier-dlg');
+const tierForm = document.getElementById('tier-form');
+let editingTier = null;
+
+function openTier(t) {
+  editingTier = t ? t.id : null;
+  tierForm.reset();
+  tierForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('ti-delete').hidden = !t;
+  if (t) {
+    tierForm.elements.fromDays.value = t.from_days;
+    tierForm.elements.pct.value = t.pct === null || t.pct === undefined ? '' : t.pct;
+    tierForm.elements.amount.value = t.amount_cents ? (t.amount_cents / 100).toFixed(2) : '';
+    tierForm.elements.note.value = t.note || '';
+  }
+  tierDlg.showModal();
+}
+
+document.querySelector('[data-close-tier]').addEventListener('click', () => tierDlg.close());
+document.getElementById('ti-delete').addEventListener('click', async () => {
+  if (!editingTier || !confirm('Remove this tier?')) return;
+  await api(`/api/penalties/${encodeURIComponent(editingTier)}`, { method: 'DELETE' });
+  tierDlg.close();
+  await load();
+});
+onSubmit(tierForm, async (values) => {
+  const body = { ...values, bookingId: id };
+  await api(editingTier ? `/api/penalties/${encodeURIComponent(editingTier)}` : '/api/penalties',
+    { method: editingTier ? 'PUT' : 'POST', body });
+  tierDlg.close();
+  await load();
+});
 
 const optionDlg = document.getElementById('option-dlg');
 const optionForm = document.getElementById('option-form');

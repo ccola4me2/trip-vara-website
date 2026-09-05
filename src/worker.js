@@ -31,6 +31,9 @@ import {
   handleAddOption, handleUpdateOption, handleDeleteOption, handleChooseOption,
 } from './options.js';
 import {
+  handleListTiers, handleAddTier, handleUpdateTier, handleDeleteTier, handleApplyVendorTerms,
+} from './penalties.js';
+import {
   handleListConversations, handleListMessages as handleConversationMessages, handleSendMessage,
 } from './conversations.js';
 import { handleListCalendar, handleCreateAppointment } from './calendar.js';
@@ -229,6 +232,8 @@ async function routeApi(request, env, path, method) {
   const optionsMatch = path.match(/^\/api\/bookings\/([^/]+)\/options$/);
   const optionMatch = path.match(/^\/api\/options\/([^/]+)$/);
   const chooseMatch = path.match(/^\/api\/options\/([^/]+)\/choose$/);
+  const tierMatch = path.match(/^\/api\/penalties\/([^/]+)$/);
+  const applyTermsMatch = path.match(/^\/api\/bookings\/([^/]+)\/penalties\/apply$/);
   const priceLineMatch = path.match(/^\/api\/pricing\/([^/]+)$/);
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
@@ -306,6 +311,14 @@ async function routeApi(request, env, path, method) {
   if (chooseMatch && method === 'POST') return handleChooseOption(request, env, chooseMatch[1]);
   if (optionMatch && method === 'PUT') return handleUpdateOption(request, env, optionMatch[1]);
   if (optionMatch && method === 'DELETE') return handleDeleteOption(request, env, optionMatch[1]);
+
+  // What the client loses if they cancel, as the vendor's standard terms or as
+  // the terms one trip was actually sold on.
+  if (path === '/api/penalties' && method === 'GET') return handleListTiers(request, env);
+  if (path === '/api/penalties' && method === 'POST') return handleAddTier(request, env);
+  if (applyTermsMatch && method === 'POST') return handleApplyVendorTerms(request, env, applyTermsMatch[1]);
+  if (tierMatch && method === 'PUT') return handleUpdateTier(request, env, tierMatch[1]);
+  if (tierMatch && method === 'DELETE') return handleDeleteTier(request, env, tierMatch[1]);
 
   // The people on a reservation, and what the vendor has granted them.
   if (travellersMatch && method === 'POST') return handleAddTraveller(request, env, travellersMatch[1]);

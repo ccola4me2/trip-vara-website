@@ -1821,6 +1821,99 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // ------------------------------------------------ cancellation terms -----
+  {
+  step('What the client loses if they cancel');
+
+  const pen = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Penalty ${stamp}`, supplier: `Cancel Line ${stamp}`, status: 'booked',
+    departDate: isoDay(73), returnDate: isoDay(80), gross: '4000', commission: '400',
+  });
+  const penId = pen.data?.booking?.id;
+  if (penId) cleanup('the penalty reservation', () => call(advisor, 'DELETE', `/api/bookings/${penId}`));
+
+  // Nothing recorded is not nothing to pay, and the difference is one a client
+  // would react to very differently.
+  const bare = await call(advisor, 'GET', `/api/bookings/${penId}/record`);
+  check(bare.data?.penalty === null && (bare.data?.penaltyTiers || []).length === 0,
+    'with no terms recorded there is no answer, rather than a comfortable zero',
+    JSON.stringify(bare.data?.penalty));
+
+  const both = await call(advisor, 'POST', '/api/penalties',
+    { bookingId: penId, fromDays: 89, pct: 50, amount: '500' });
+  check(both.status === 400, 'a tier is a percentage or an amount, never both',
+    `status ${both.status}`);
+  const neither = await call(advisor, 'POST', '/api/penalties', { bookingId: penId, fromDays: 89 });
+  check(neither.status === 400, 'and never neither', `status ${neither.status}`);
+  const twoOwners = await call(advisor, 'POST', '/api/penalties',
+    { bookingId: penId, vendorId: 'x', fromDays: 89, pct: 50 });
+  check(twoOwners.status === 400, 'a tier belongs to a vendor or a trip, not both',
+    `status ${twoOwners.status}`);
+
+  await call(advisor, 'POST', '/api/penalties',
+    { bookingId: penId, fromDays: 120, amount: '600', note: 'Deposit forfeit' });
+  await call(advisor, 'POST', '/api/penalties', { bookingId: penId, fromDays: 89, pct: 50 });
+  await call(advisor, 'POST', '/api/penalties', { bookingId: penId, fromDays: 29, pct: 100 });
+
+  // Departing in 73 days: inside the 89 day tier, not yet inside the 29.
+  const priced = await call(advisor, 'GET', `/api/bookings/${penId}/record`);
+  const p = priced.data?.penalty || {};
+  check((priced.data?.penaltyTiers || []).length === 3, 'the schedule comes back on the record');
+  check(p.tier?.fromDays === 89,
+    'the tier that applies is the closest one whose window has opened', p.tier?.fromDays);
+  check(p.penaltyCents === 200000 && p.refundCents === 200000,
+    'half of a four thousand dollar trip, and half back',
+    `${p.penaltyCents} lost, ${p.refundCents} back`);
+  check(p.penaltyCents + p.refundCents === 400000,
+    'and the two always account for the whole trip');
+
+  // The earliest tier starts 120 days out; this trip is further away than any
+  // tier covers only if you move it, so check the boundary the other way.
+  const far = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Far Off ${stamp}`, supplier: 'Cunard', status: 'booked',
+    departDate: isoDay(400), gross: '4000',
+  });
+  const farId = far.data?.booking?.id;
+  if (farId) cleanup('the distant reservation', () => call(advisor, 'DELETE', `/api/bookings/${farId}`));
+  await call(advisor, 'POST', '/api/penalties', { bookingId: farId, fromDays: 120, pct: 25 });
+  const farRec = await call(advisor, 'GET', `/api/bookings/${farId}/record`);
+  check(farRec.data?.penalty?.tier === null && /No tier covers/.test(farRec.data?.penalty?.problem || ''),
+    'a cancellation earlier than any tier says so rather than reporting nothing to pay',
+    JSON.stringify(farRec.data?.penalty));
+
+  // A vendor's standard terms, copied onto a trip rather than followed live.
+  const vl = await call(advisor, 'GET', `/api/vendors?q=${encodeURIComponent(`Cancel Line ${stamp}`)}`);
+  const vendor = (vl.data?.vendors || []).find((v) => v.name === `Cancel Line ${stamp}`);
+  check(vendor, 'the vendor exists to hang standard terms on');
+
+  await call(advisor, 'POST', '/api/penalties', { vendorId: vendor.id, fromDays: 60, pct: 35 });
+  const vendorTiers = await call(advisor, 'GET', `/api/penalties?vendor=${vendor.id}`);
+  check((vendorTiers.data?.tiers || []).length === 1, 'a vendor can carry its own schedule');
+
+  const copied = await call(advisor, 'POST', `/api/bookings/${penId}/penalties/apply`, {});
+  check(copied.status === 201 && copied.data?.copied === 1,
+    'and it can be copied onto a reservation', JSON.stringify(copied.data));
+
+  const afterCopy = await call(advisor, 'GET', `/api/bookings/${penId}/record`);
+  check((afterCopy.data?.penaltyTiers || []).length === 1,
+    'replacing what was there, because half a schedule read as a whole one is worse than either',
+    afterCopy.data?.penaltyTiers?.length);
+
+  // Copied, not followed. A vendor changing their standard terms next year
+  // must not rewrite what this client already agreed to.
+  const vendorTier = (vendorTiers.data.tiers || [])[0];
+  await call(advisor, 'PUT', `/api/penalties/${vendorTier.id}`, { fromDays: 60, pct: 99 });
+  const afterVendorChange = await call(advisor, 'GET', `/api/bookings/${penId}/record`);
+  check(afterVendorChange.data?.penaltyTiers[0]?.pct === 35,
+    'and the trip keeps the terms it was sold on when the vendor later changes theirs',
+    afterVendorChange.data?.penaltyTiers[0]?.pct);
+
+  const notYours = await call(admin, 'POST', '/api/penalties',
+    { bookingId: penId, fromDays: 10, pct: 100 });
+  check(notYours.status === 404, 'an owner cannot write terms onto an associate\'s trip',
+    `status ${notYours.status}`);
+  }
+
   // ------------------------------------------------ trips that are over ----
   {
   step('A trip whose return date has passed has been travelled');

@@ -67,6 +67,24 @@
         <input id="portalUrl" name="portalUrl" type="url" placeholder="https://..."></div>
       <div class="field"><label for="notes">Notes</label>
         <textarea id="notes" name="notes" maxlength="2000"></textarea></div>
+
+      <p class="label" style="margin:1.4rem 0 .2rem;">Cancellation terms</p>
+      <p class="field-hint" style="margin:0 0 .6rem;">Their standard schedule, copied onto a
+        reservation when you book it. A trip keeps the terms it was sold on, so changing these
+        never rewrites what a client already agreed to.</p>
+      <div id="tiers"></div>
+      <div class="field-row" style="align-items:flex-end;">
+        <div class="field" style="margin:0;"><label for="t-days">Days before</label>
+          <input id="t-days" inputmode="numeric" placeholder="89"></div>
+        <div class="field" style="margin:0;"><label for="t-pct">Percent</label>
+          <input id="t-pct" inputmode="decimal" placeholder="50"></div>
+        <div class="field" style="margin:0;"><label for="t-amount">or Amount</label>
+          <input id="t-amount" inputmode="decimal" placeholder="600.00"></div>
+        <div class="field" style="margin:0;flex:2;"><label for="t-note">What they call it</label>
+          <input id="t-note" maxlength="160" placeholder="Deposit forfeit"></div>
+        <button class="btn btn-secondary btn-sm" type="button" id="t-add">Add</button>
+      </div>
+      <div class="notice notice-error" id="tier-error" hidden></div>
     </div>
     <div class="card-foot"><button class="btn btn-primary" type="submit">Save vendor</button></div>
   </form>
@@ -164,7 +182,64 @@ function openEdit(v) {
   set('name', v.name); set('finalDays', v.final_days); set('depositDays', v.deposit_days);
   set('commissionPct', v.commission_pct); set('phone', v.phone); set('email', v.email);
   set('portalUrl', v.portal_url); set('notes', v.notes);
+  drawTiers(v.id);
   dlg.showModal();
+}
+
+/**
+ * A vendor's standard cancellation schedule.
+ *
+ * Listed newest window last, earliest period first, because that is the order
+ * a confirmation prints them and copying between two differently ordered lists
+ * is how a tier ends up in the wrong place.
+ */
+async function drawTiers(vendorId) {
+  const box = document.getElementById('tiers');
+  const err = document.getElementById('tier-error');
+  err.hidden = true;
+  box.innerHTML = '<p class="spinner">Loading...</p>';
+
+  let rows = [];
+  try {
+    const r = await api(`/api/penalties?vendor=${encodeURIComponent(vendorId)}`);
+    rows = r.tiers || [];
+  } catch (e) { box.innerHTML = `<p class="wempty">${esc(e.message)}</p>`; return; }
+
+  box.innerHTML = rows.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>From</th><th>Penalty</th><th></th></tr></thead>
+        <tbody>${rows.map((t) => `<tr>
+          <td>${t.from_days} days before${t.note ? `<div class="muted">${esc(t.note)}</div>` : ''}</td>
+          <td>${t.pct !== null && t.pct !== undefined ? esc(String(t.pct)) + '%' : money(t.amount_cents)}</td>
+          <td class="num"><button class="btn btn-ghost btn-sm" data-drop="${esc(t.id)}">Remove</button></td>
+        </tr>`).join('')}</tbody></table></div>`
+    : '<p class="wempty" style="text-align:left;padding:.4rem 0;">No schedule recorded.</p>';
+
+  box.querySelectorAll('[data-drop]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await api(`/api/penalties/${encodeURIComponent(b.dataset.drop)}`, { method: 'DELETE' }); }
+    catch (e) { err.textContent = e.message; err.hidden = false; b.disabled = false; return; }
+    drawTiers(vendorId);
+  }));
+
+  const add = document.getElementById('t-add');
+  add.onclick = async () => {
+    const err2 = document.getElementById('tier-error');
+    err2.hidden = true;
+    add.disabled = true;
+    try {
+      await api('/api/penalties', { method: 'POST', body: {
+        vendorId,
+        fromDays: document.getElementById('t-days').value,
+        pct: document.getElementById('t-pct').value,
+        amount: document.getElementById('t-amount').value,
+        note: document.getElementById('t-note').value,
+      } });
+      for (const f of ['t-days', 't-pct', 't-amount', 't-note']) document.getElementById(f).value = '';
+      drawTiers(vendorId);
+    } catch (e) { err2.textContent = e.message; err2.hidden = false; }
+    finally { add.disabled = false; }
+  };
 }
 
 async function offerDates() {
