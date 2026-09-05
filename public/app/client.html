@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Client | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <a class="back-link" href="/app/reservations">&larr; All reservations</a>
+        <h1 id="name">Loading...</h1>
+        <p class="sub" id="sub"></p>
+      </div>
+      <div class="toolbar" style="margin:0;" id="actions"></div>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="stats" class="stat-grid"></section>
+      <div class="split" style="margin-top:1.5rem;">
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>Trips</h2></div>
+            <div id="trips"></div>
+          </section>
+        </div>
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>Credits held</h2>
+              <a class="btn btn-ghost btn-sm" href="/app/credits">All credits</a></div>
+            <div id="credits"></div>
+          </section>
+          <section class="card" style="margin-top:1.5rem;">
+            <div class="card-head"><h2>To do</h2></div>
+            <div id="tasks"></div>
+          </section>
+          <section class="card" style="margin-top:1.5rem;">
+            <div class="card-head"><h2>Vendors used</h2></div>
+            <div class="card-pad" id="vendors"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError } from '/js/app.js';
+await mountShell();
+
+const name = new URLSearchParams(location.search).get('name') || '';
+const err = document.getElementById('err');
+
+const short = (iso) => (iso ? dateFmt(iso) : '-');
+const STATUS_TONE = { quoted: 'badge-navy', booked: 'badge-green', travelled: 'badge-navy', cancelled: 'badge-red' };
+
+function render(d) {
+  const c = d.client;
+  document.getElementById('name').textContent = c.name;
+  document.getElementById('sub').textContent = c.nextDeparture
+    ? `Next trip ${short(c.nextDeparture)}`
+    : (c.lastTravelled ? `Last travelled ${short(c.lastTravelled)}, nothing booked` : 'Nothing travelled yet');
+
+  document.getElementById('actions').innerHTML = c.contactId
+    ? `<a class="btn btn-ghost btn-sm" href="/app/contact?id=${esc(c.contactId)}">CRM record</a>`
+    : '';
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Lifetime value</p><p class="value">${money(c.lifetimeCents)}</p>
+      <p class="meta">${c.trips} trip${c.trips === 1 ? '' : 's'} booked or travelled</p></div>
+    <div class="stat"><p class="label">Commission earned</p><p class="value">${money(c.commissionCents)}</p>
+      <p class="meta">Across every trip of theirs</p></div>
+    <div class="stat"><p class="label">Credit on file</p>
+      <p class="value" style="${c.creditCents ? 'color:var(--green-600);' : ''}">${money(c.creditCents)}</p>
+      <p class="meta">Unused, held with a vendor</p></div>
+    <div class="stat"><p class="label">${c.nextDeparture ? 'Next departure' : 'Last travelled'}</p>
+      <p class="value" style="font-size:1.1rem;">${esc(short(c.nextDeparture || c.lastTravelled))}</p>
+      <p class="meta">${c.nextDeparture ? 'Already on the books' : 'Nothing booked since'}</p></div>`;
+
+  document.getElementById('trips').innerHTML = d.bookings.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Departing</th><th>Vendor</th><th>Trip</th><th>Status</th>
+          <th class="num">Value</th></tr></thead>
+        <tbody>${d.bookings.map((b) => `<tr>
+          <td><a class="name" href="/app/reservation?id=${esc(b.id)}">${esc(short(b.depart_date))}</a>
+            <div class="muted">${b.return_date ? 'back ' + esc(short(b.return_date)) : ''}</div></td>
+          <td>${esc(b.supplier || '-')}
+            <div class="muted">${esc(b.confirmation_number || '')}</div></td>
+          <td>${esc(b.product_name || b.destination || '-')}</td>
+          <td><span class="badge ${STATUS_TONE[b.status] || 'badge-navy'}">${esc(b.status)}</span></td>
+          <td class="num">${money(b.gross_cents)}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty"><p>No trips on file.</p></div>';
+
+  document.getElementById('credits').innerHTML = d.credits.length
+    ? `<ul class="rows">${d.credits.map((cr) => {
+        const left = daysUntil(cr.expires_on);
+        const tone = cr.used_on ? 'badge-green' : left === null ? 'badge-navy'
+          : left < 0 ? 'badge-red' : left <= 90 ? 'badge-amber' : 'badge-navy';
+        const label = cr.used_on ? `used ${short(cr.used_on)}`
+          : left === null ? 'no expiry' : left < 0 ? 'lapsed' : `${left}d left`;
+        return `<li><div class="row-between">
+          <span><span class="t">${esc(cr.vendor || cr.kind)}</span>
+            <span class="m"><span class="badge ${tone}">${esc(label)}</span></span></span>
+          <strong>${money(cr.amount_cents)}</strong></div></li>`;
+      }).join('')}</ul>`
+    : '<p class="wempty" style="text-align:left;padding:.9rem 1rem;">No credits on file.</p>';
+
+  document.getElementById('tasks').innerHTML = d.tasks.length
+    ? `<ul class="rows task-rows">${d.tasks.map((t) => `<li class="${t.done_at ? 'done' : ''}">
+        <span class="t">${esc(t.title)}</span>
+        <span class="m">${t.due_date ? esc(short(t.due_date)) : 'no date'}</span></li>`).join('')}</ul>`
+    : '<p class="wempty" style="text-align:left;padding:.9rem 1rem;">Nothing outstanding.</p>';
+
+  document.getElementById('vendors').innerHTML = c.vendors.length
+    ? c.vendors.map((v) => `<span class="badge badge-navy" style="margin:0 .3rem .3rem 0;">${esc(v)}</span>`).join('')
+    : '<span class="muted">None recorded.</span>';
+}
+
+if (!name) {
+  err.innerHTML = '<div class="notice notice-error">No client was named in the address.</div>';
+} else {
+  try { render(await api(`/api/client?name=${encodeURIComponent(name)}`)); }
+  catch (e) { showError(err, e); }
+}
+</script>
+</body></html>

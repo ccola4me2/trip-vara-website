@@ -50,6 +50,7 @@ tracking has value on its own.
 | `/app/commissions` | Advisor | Commission owed, aged from the return date |
 | `/app/reservations` | Advisor | Reservation CRUD, vendor deadlines, commission |
 | `/app/reservation` | Advisor | One trip: schedule, tasks, credits, group |
+| `/app/client` | Advisor | One client: trips, lifetime value, credits |
 | `/app/billing` | Advisor | Invoices, transactions, reconciliation against reservations |
 | `/app/reports` | Advisor | Production by departure month |
 | `/app/settings` | Advisor | Profile, password, CRM binding |

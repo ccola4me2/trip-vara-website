@@ -247,7 +247,7 @@ const PANELS = {
       return `<div class="table-wrap"><table>
         <thead><tr><th>Client</th><th>Last trip</th><th class="num">Trips</th><th class="num">Lifetime</th></tr></thead>
         <tbody>${rows.map((r) => `<tr>
-          <td><span class="name">${esc(r.client_name)}</span>
+          <td><a class="name" href="/app/client?name=${encodeURIComponent(r.client_name)}">${esc(r.client_name)}</a>
             <div class="muted">${esc(r.last_vendor || '')}</div></td>
           <td>${esc(fmtShort(r.last_travelled))}</td>
           <td class="num">${r.trips}</td>

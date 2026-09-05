@@ -76,7 +76,9 @@ const STATUS_TONE = { quoted: 'badge-navy', booked: 'badge-green', travelled: 'b
 
 function render() {
   const b = d.booking;
-  document.getElementById('client').textContent = b.client_name;
+  document.getElementById('client').innerHTML =
+    `<a href="/app/client?name=${encodeURIComponent(b.client_name)}"
+        style="color:inherit;text-decoration:none;border-bottom:2px solid var(--navy-100);">${esc(b.client_name)}</a>`;
   document.getElementById('sub').innerHTML = [
     b.supplier ? esc(b.supplier) : '',
     b.product_name ? esc(b.product_name) : '',

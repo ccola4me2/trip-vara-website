@@ -70,12 +70,35 @@ export async function handleSearch(request, env) {
      .all().catch(() => ({ results: [] })),
   ]);
 
+  // Clients as this portal knows them, from reservations. The CRM group above
+  // needs a synced mirror; this one works on the day a trip is entered.
+  const localClients = await env.DB.prepare(
+    `SELECT b.client_name, COUNT(*) AS trips, MAX(b.supplier) AS vendor,
+            MAX(COALESCE(b.return_date, b.depart_date)) AS last_date
+       FROM bookings b
+      WHERE ${bookingScope.sql} AND b.client_name LIKE ? ESCAPE '\\'
+      GROUP BY b.client_name ORDER BY last_date DESC LIMIT ?`
+  ).bind(...bookingScope.binds, term, PER_GROUP).all().catch(() => ({ results: [] }));
+
   const groups = [];
+
+  const clientRows2 = localClients.results || [];
+  if (clientRows2.length) {
+    groups.push({
+      type: 'people', label: 'Clients',
+      items: clientRows2.map((c) => ({
+        id: c.client_name,
+        title: c.client_name,
+        subtitle: [c.vendor, `${c.trips} trip${c.trips === 1 ? '' : 's'}`].filter(Boolean).join('  ·  '),
+        href: `/app/client?name=${encodeURIComponent(c.client_name)}`,
+      })),
+    });
+  }
 
   const clientRows = clients.results || [];
   if (clientRows.length) {
     groups.push({
-      type: 'clients', label: 'Clients',
+      type: 'contacts', label: 'CRM contacts',
       items: clientRows.map((c) => ({
         id: c.id,
         title: c.name || c.email || c.phone || 'Unnamed contact',

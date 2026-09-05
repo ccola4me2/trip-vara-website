@@ -599,6 +599,68 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // ---------------------------------------------------- the client record ---
+  step('One client on one screen');
+
+  const who = `Repeat Client ${stamp}`;
+  const past1 = await call(advisor, 'POST', '/api/bookings', {
+    clientName: who, supplier: 'Carnival', status: 'travelled',
+    departDate: isoDay(-400), returnDate: isoDay(-393), gross: '3000', commission: '300',
+  });
+  const past2 = await call(advisor, 'POST', '/api/bookings', {
+    clientName: who, supplier: 'Oceania', status: 'travelled',
+    departDate: isoDay(-200), returnDate: isoDay(-190), gross: '5000', commission: '500',
+  });
+  const dead = await call(advisor, 'POST', '/api/bookings', {
+    clientName: who, supplier: 'Oceania', status: 'cancelled',
+    departDate: isoDay(-100), gross: '9000', commission: '900',
+  });
+  const ahead = await call(advisor, 'POST', '/api/bookings', {
+    clientName: who, supplier: 'Virgin Voyages', status: 'booked',
+    departDate: isoDay(120), returnDate: isoDay(127), gross: '4000', commission: '400',
+  });
+  for (const r of [past1, past2, dead, ahead]) {
+    if (r.data?.booking?.id) cleanup('a client reservation', () =>
+      call(advisor, 'DELETE', `/api/bookings/${r.data.booking.id}`));
+  }
+
+  const clientCredit = await call(advisor, 'POST', '/api/credits',
+    { clientName: who, vendor: 'Carnival', amount: '150', expiresOn: isoDay(200) });
+  if (clientCredit.data?.credit?.id) cleanup('the client credit', () =>
+    call(advisor, 'DELETE', `/api/credits/${clientCredit.data.credit.id}`));
+
+  const rec2 = await call(advisor, 'GET', `/api/client?name=${encodeURIComponent(who)}`);
+  const cl = rec2.data?.client;
+  check(rec2.status === 200 && cl?.name === who, 'the client record loads', `status ${rec2.status}`);
+
+  // A cancelled trip is not lifetime value. Counting it would flatter every
+  // client who ever changed their mind.
+  check(cl.lifetimeCents === 1200000 && cl.trips === 3,
+    'lifetime value counts booked and travelled, not cancelled',
+    `${cl.lifetimeCents} over ${cl.trips} trips`);
+  check(cl.commissionCents === 120000, 'and commission with it', cl.commissionCents);
+  check(cl.nextDeparture === isoDay(120),
+    'the next departure is the soonest one still ahead', cl.nextDeparture);
+  check(cl.lastTravelled === isoDay(-190),
+    'and last travelled is the most recent one behind', cl.lastTravelled);
+  check(cl.creditCents === 15000, 'unused credit is carried on the record', cl.creditCents);
+  check(cl.vendors.length === 3, 'along with every vendor they have used', cl.vendors.join(', '));
+
+  const noSuch = await call(advisor, 'GET', '/api/client?name=Nobody%20At%20All');
+  check(noSuch.status === 404, 'a client with no trips is a 404', `status ${noSuch.status}`);
+
+  // Same boundary as everywhere else: an associate must not read the owner's
+  // client through a name they can guess.
+  const ownerClient = await call(admin, 'POST', '/api/bookings', {
+    clientName: `Owner Only ${stamp}`, supplier: 'Cunard', status: 'travelled',
+    departDate: isoDay(-30), returnDate: isoDay(-20), gross: '7000', commission: '700',
+  });
+  if (ownerClient.data?.booking?.id) cleanup('the owner client reservation', () =>
+    call(admin, 'DELETE', `/api/bookings/${ownerClient.data.booking.id}`));
+  const peek = await call(advisor, 'GET', `/api/client?name=${encodeURIComponent(`Owner Only ${stamp}`)}`);
+  check(peek.status === 404, 'and an associate cannot read the owner\'s client by name',
+    `status ${peek.status}`);
+
   // -------------------------------------------------------- commission ------
   step('Commission the agency is owed');
 
