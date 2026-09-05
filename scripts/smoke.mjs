@@ -1304,6 +1304,113 @@ async function main() {
   check(strangerRec.status === 404, 'and a reservation that is not there is a 404',
     `status ${strangerRec.status}`);
 
+  // ------------------------------------------------ posting a payment ------
+  {
+  step('Posting a payment: who paid it, and with what');
+
+  const settle = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Settle ${stamp}`, supplier: 'Holland America', status: 'booked',
+    departDate: isoDay(240), returnDate: isoDay(252), gross: '1250', commission: '150',
+  });
+  const settleId = settle.data?.booking?.id;
+  if (settleId) cleanup('the settled reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${settleId}`));
+
+  const payer = await call(advisor, 'POST', `/api/bookings/${settleId}/travellers`,
+    { name: `Ada Settle ${stamp}`, isLead: true });
+  const payerId = payer.data?.id;
+
+  const held = await call(advisor, 'POST', '/api/credits', {
+    clientName: `Settle ${stamp}`, vendor: 'Holland America', kind: 'certificate',
+    amount: '250', issuedOn: isoDay(-30), expiresOn: isoDay(300),
+  });
+  const heldId = held.data?.credit?.id;
+  if (heldId) cleanup('the held credit', () => call(advisor, 'DELETE', `/api/credits/${heldId}`));
+
+  // Silence is not a claim. Nobody said how this was paid, so nothing is
+  // recorded about how it was paid.
+  const quiet = await call(advisor, 'POST', '/api/payments', {
+    bookingId: settleId, kind: 'deposit', amount: '1000', dueDate: isoDay(10),
+  });
+  check(quiet.status === 201 && quiet.data?.payment?.payment_type === null,
+    'a payment nobody described has no payment type', quiet.data?.payment?.payment_type);
+
+  const posted = await call(advisor, 'POST', `/api/payments/${quiet.data.payment.id}/paid`, {
+    paidDate: isoDay(0), paymentType: 'card', paidBy: payerId, cardLast4: '4111 1111 4242',
+  });
+  check(posted.data?.payment?.payment_type === 'card' && posted.data?.payment?.paid_by === payerId,
+    'posting one records how it was paid and by whom',
+    `${posted.data?.payment?.payment_type} / ${posted.data?.payment?.paid_by}`);
+
+  // Four digits, never the card. The rest is stripped rather than refused,
+  // because an advisor pasting a whole number should not lose the payment.
+  check(posted.data?.payment?.card_last4 === '4242',
+    'and keeps the last four digits of a card and nothing more',
+    posted.data?.payment?.card_last4);
+
+  // A payer has to be on the trip they paid for.
+  const stranger = await call(advisor, 'POST', '/api/payments', {
+    bookingId: settleId, kind: 'installment', amount: '10', dueDate: isoDay(20),
+    paidBy: 'not-a-traveller',
+  });
+  check(stranger.status === 400, 'a payer who is not on the reservation is refused',
+    `status ${stranger.status}`);
+
+  // Spending a credit is a ledger move: it stops being the client's money.
+  const spend = await call(advisor, 'POST', '/api/payments', {
+    bookingId: settleId, kind: 'installment', amount: '250', dueDate: isoDay(20),
+    creditId: heldId,
+  });
+  const spendId = spend.data?.payment?.id;
+  const stillOpen = await call(advisor, 'GET', '/api/credits?state=open');
+  check((stillOpen.data?.credits || []).some((c) => c.id === heldId),
+    'a credit a future payment intends to use is not spent yet');
+
+  await call(advisor, 'POST', `/api/payments/${spendId}/paid`,
+    { paidDate: isoDay(0), paymentType: 'future_cruise_credit' });
+  const nowUsed = await call(advisor, 'GET', '/api/credits?state=used');
+  const usedRow = (nowUsed.data?.credits || []).find((c) => c.id === heldId);
+  check(Boolean(usedRow), 'posting the payment marks the credit used');
+  check(usedRow?.booking_id === settleId, 'against the trip it was spent on', usedRow?.booking_id);
+
+  // The same money cannot be spent twice.
+  const twice = await call(advisor, 'POST', '/api/payments', {
+    bookingId: settleId, kind: 'installment', amount: '250', paidDate: isoDay(0),
+    creditId: heldId,
+  });
+  check(twice.status === 400, 'and the same credit cannot be applied to a second payment',
+    `status ${twice.status}`);
+
+  // The Payments page edits dates and amounts and knows nothing about payers.
+  // An update from there must not quietly strip what it never carried.
+  await call(advisor, 'PUT', `/api/payments/${quiet.data.payment.id}`, {
+    bookingId: settleId, kind: 'deposit', amount: '1000',
+    dueDate: isoDay(10), paidDate: isoDay(0),
+  });
+  const kept = await call(advisor, 'GET', `/api/bookings/${settleId}/record`);
+  const keptRow = (kept.data?.payments || []).find((x) => x.id === quiet.data.payment.id);
+  check(keptRow?.paid_by === payerId && keptRow?.card_last4 === '4242'
+    && keptRow?.payment_type === 'card',
+    'a partial edit leaves who paid, how, and the card alone',
+    `${keptRow?.paid_by} / ${keptRow?.payment_type} / ${keptRow?.card_last4}`);
+
+  check(keptRow?.paid_by_name === `Ada Settle ${stamp}`,
+    'the record names the payer rather than showing an id', keptRow?.paid_by_name);
+  const creditRow = (kept.data?.payments || []).find((x) => x.id === spendId);
+  check(creditRow?.credit_amount_cents === 25000,
+    'and shows the credit amount beside the payment it settled',
+    creditRow?.credit_amount_cents);
+  check((kept.data?.spendableCredits || []).some((c) => c.id === heldId),
+    'the reservation offers this client\'s credits');
+
+  // Deleting the payment hands the credit back. A credit left marked used
+  // after its payment has gone is money the client owns and cannot see.
+  await call(advisor, 'DELETE', `/api/payments/${spendId}`);
+  const returned = await call(advisor, 'GET', '/api/credits?state=open');
+  check((returned.data?.credits || []).some((c) => c.id === heldId),
+    'deleting the payment gives the credit back to the client');
+  }
+
   // ------------------------------------------------------------ targets -----
   step('Targets, and whether you are on course');
 

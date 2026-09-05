@@ -23,13 +23,113 @@ const METHODS = ['other', 'card', 'ach', 'check', 'cash', 'transfer'];
 // How the client settled it. Future cruise credits and deposits are here
 // because a client paying with one is the commonest reason a balance drops
 // without money moving, and it links the payment to the credit being spent.
-const PAYMENT_TYPES = [
-  'to_vendor', 'to_agency', 'card', 'check', 'cash', 'ach',
-  'future_cruise_credit', 'future_cruise_deposit', 'other',
+export const PAYMENT_TYPES = [
+  'other', 'to_vendor', 'to_agency', 'card', 'check', 'cash', 'ach',
+  'future_cruise_credit', 'future_cruise_deposit',
 ];
 
 const isoDay = (offsetDays = 0) =>
   new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
+
+// ---------------------------------------------------------------------------
+// Spending a credit is a ledger move, not a label.
+//
+// A future cruise credit is money the client has already handed a vendor.
+// Spending it on one trip means it cannot be spent on another. Recording only
+// the words "paid with a credit" would leave that credit sitting on the
+// Credits page as open money, and it would be offered again on the next
+// reservation, so the client is told twice that they have money they spent
+// once.
+//
+// A credit is marked used only when the payment is actually posted. A future
+// payment that intends to use one is an intention, and marking it spent before
+// the money moves is a claim about something that has not happened.
+// ---------------------------------------------------------------------------
+
+async function creditForUser(env, userId, creditId) {
+  return env.DB.prepare(
+    `SELECT id, client_name, vendor, amount_cents, expires_on, used_on, booking_id
+       FROM client_credits WHERE id = ? AND user_id = ?`
+  ).bind(creditId, userId).first();
+}
+
+/** Is some other posted payment already spending this credit? */
+async function spentElsewhere(env, userId, creditId, exceptPaymentId) {
+  const row = await env.DB.prepare(
+    `SELECT id FROM booking_payments
+      WHERE credit_id = ? AND user_id = ? AND paid_date IS NOT NULL AND id != ?`
+  ).bind(creditId, userId, exceptPaymentId || '').first();
+  return Boolean(row);
+}
+
+async function spendCredit(env, userId, creditId, bookingId, paidDate) {
+  await env.DB.prepare(
+    `UPDATE client_credits SET used_on = ?, booking_id = ?, updated_at = ?
+      WHERE id = ? AND user_id = ?`
+  ).bind(paidDate, bookingId, now(), creditId, userId).run();
+}
+
+/**
+ * Puts a credit back when the payment that spent it is deleted, unposted, or
+ * repointed at a different credit. A credit left marked used after its payment
+ * has gone is money the client owns and nobody can see. The booking link is
+ * left alone: the credit is still earmarked for that trip, it just has not
+ * been spent yet.
+ */
+export async function releaseCredit(env, userId, creditId, exceptPaymentId) {
+  if (!creditId) return;
+  if (await spentElsewhere(env, userId, creditId, exceptPaymentId)) return;
+  await env.DB.prepare(
+    'UPDATE client_credits SET used_on = NULL, updated_at = ? WHERE id = ? AND user_id = ?'
+  ).bind(now(), creditId, userId).run();
+}
+
+/**
+ * Checked before the payment is written, so a refused credit does not leave a
+ * payment behind claiming to have spent it.
+ */
+async function creditProblem(env, userId, creditId, exceptPaymentId) {
+  if (!creditId) return null;
+  const credit = await creditForUser(env, userId, creditId);
+  if (!credit) return 'That credit is not yours.';
+  if (await spentElsewhere(env, userId, creditId, exceptPaymentId)) {
+    return 'That credit has already been applied to another payment.';
+  }
+  return null;
+}
+
+/**
+ * Who handed the money over has to be someone actually on the trip.
+ *
+ * A traveller id from another reservation would show that reservation's
+ * passenger as having paid for a trip they are not on.
+ */
+async function payerProblem(env, userId, bookingId, paidBy) {
+  if (!paidBy) return null;
+  const row = await env.DB.prepare(
+    'SELECT id FROM travellers WHERE id = ? AND booking_id = ? AND user_id = ?'
+  ).bind(paidBy, bookingId, userId).first().catch(() => null);
+  return row ? null : 'That payer is not a traveller on this reservation.';
+}
+
+/**
+ * Brings the credit ledger into line with a payment that has just been written.
+ *
+ * One place rather than three, because create, update and mark-posted can all
+ * change which credit a payment spends and whether it has been posted yet.
+ */
+async function settleCredit(env, userId, payment, previousCreditId) {
+  const creditId = payment.credit_id || null;
+  if (previousCreditId && previousCreditId !== creditId) {
+    await releaseCredit(env, userId, previousCreditId, payment.id);
+  }
+  if (!creditId) return;
+  if (payment.paid_date) {
+    await spendCredit(env, userId, creditId, payment.booking_id, payment.paid_date);
+  } else {
+    await releaseCredit(env, userId, creditId, payment.id);
+  }
+}
 
 export async function handlePayments(request, env) {
   const { user, response } = await requireUser(request, env);
@@ -60,6 +160,7 @@ export async function handlePayments(request, env) {
       unscheduled_cents: Math.max(0, (b.gross_cents || 0) - (b.paid_cents || 0) - (b.scheduled_cents || 0)),
     })),
     today: isoDay(0),
+    paymentTypes: PAYMENT_TYPES,
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),
   });
@@ -90,13 +191,18 @@ function parsePayment(body) {
       dueDate,
       paidDate,
       method: paidDate ? oneOf(body.method, METHODS) : null,
-      paymentType: oneOf(body.paymentType, PAYMENT_TYPES),
+      // Left null when nobody said. oneOf would otherwise turn silence into
+      // the first item in the list, which is a claim about how a client paid.
+      paymentType: body.paymentType ? oneOf(body.paymentType, PAYMENT_TYPES) : null,
       paidBy: clean(body.paidBy, 64) || null,
       creditId: clean(body.creditId, 64) || null,
       // The last four digits and nothing more. Storing a card number would
       // put this Worker and its database inside PCI scope, which is a serious
       // undertaking for a small tool and answers no question an advisor asks.
-      cardLast4: (clean(body.cardLast4, 4) || '').replace(/\D/g, '').slice(-4) || null,
+      // Digits first, then the last four. Truncating to four characters before
+      // stripping would turn a pasted "4111 1111 1111 4242" into "4111": the
+      // first four digits of a card, which is exactly the wrong end of it.
+      cardLast4: (clean(body.cardLast4, 40) || '').replace(/\D/g, '').slice(-4) || null,
       reference: clean(body.reference, 80),
       notes: clean(body.notes, 500),
     },
@@ -189,7 +295,12 @@ export async function handleCreatePayment(request, env) {
   const booking = await db.getBooking(env, fields.bookingId, user.id);
   if (!booking) return notFound('Booking not found.');
 
+  const problem = (await creditProblem(env, user.id, fields.creditId, null))
+    || (await payerProblem(env, user.id, fields.bookingId, fields.paidBy));
+  if (problem) return badRequest(problem);
+
   const payment = await db.createPayment(env, user.id, fields);
+  await settleCredit(env, user.id, payment, null);
   await db.logActivity(env, user.id, 'payment.create',
     `${fields.paidDate ? 'Recorded' : 'Scheduled'} ${fields.kind} for ${booking.client_name}`,
     { bookingId: fields.bookingId });
@@ -200,7 +311,8 @@ export async function handleUpdatePayment(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
-  const { fields, error } = parsePayment(await readJson(request));
+  const body = await readJson(request);
+  const { fields, error } = parsePayment(body);
   if (error) return badRequest(error);
 
   // The payment itself is scoped by user, but the booking it points at comes
@@ -210,8 +322,31 @@ export async function handleUpdatePayment(request, env, id) {
   const booking = await db.getBooking(env, fields.bookingId, user.id);
   if (!booking) return notFound('Booking not found.');
 
+  // Read before writing, because the credit this payment used to spend has to
+  // be put back if it is no longer the one being spent.
+  const existing = await db.getPayment(env, id, user.id);
+  if (!existing) return notFound('Payment not found.');
+
+  // An update writes every column, so a form that does not carry these fields
+  // would silently erase them. The Payments page edits dates and amounts and
+  // knows nothing about who paid or which credit was spent; without this,
+  // correcting a typo there would strip a payment of its payer, its card and
+  // its credit, and hand the credit back to the client as unspent.
+  for (const [key, column] of [['paymentType', 'payment_type'], ['paidBy', 'paid_by'],
+                               ['creditId', 'credit_id'], ['cardLast4', 'card_last4']]) {
+    if (body[key] === undefined) fields[key] = existing[column] || null;
+  }
+  // The method follows the same rule, except that unposting a payment clears
+  // it: a payment nobody has received was not received by any means.
+  if (body.method === undefined && fields.paidDate) fields.method = existing.method || null;
+
+  const problem = (await creditProblem(env, user.id, fields.creditId, id))
+    || (await payerProblem(env, user.id, fields.bookingId, fields.paidBy));
+  if (problem) return badRequest(problem);
+
   const payment = await db.updatePayment(env, id, user.id, fields);
   if (!payment) return notFound('Payment not found.');
+  await settleCredit(env, user.id, payment, existing.credit_id || null);
   await db.logActivity(env, user.id, 'payment.update', 'Updated a payment', { id });
   return json({ ok: true, payment });
 }
@@ -225,16 +360,37 @@ export async function handleMarkPaid(request, env, id) {
   const existing = await db.getPayment(env, id, user.id);
   if (!existing) return notFound('Payment not found.');
 
+  // Everything not being posted right now is carried across. An update writes
+  // every column, so leaving these out silently erased who paid and how from a
+  // payment that already recorded it.
+  const creditId = body.creditId === undefined
+    ? (existing.credit_id || null) : (clean(body.creditId, 64) || null);
+  const paidBy = body.paidBy === undefined
+    ? (existing.paid_by || null) : (clean(body.paidBy, 64) || null);
+
+  const problem = (await creditProblem(env, user.id, creditId, id))
+    || (await payerProblem(env, user.id, existing.booking_id, paidBy));
+  if (problem) return badRequest(problem);
+
   const payment = await db.updatePayment(env, id, user.id, {
     kind: existing.kind,
     paymentClass: existing.payment_class,
     amountCents: existing.amount_cents,
     dueDate: existing.due_date,
     paidDate: cleanDate(body.paidDate) || isoDay(0),
-    method: oneOf(body.method, METHODS),
+    method: body.method === undefined ? (existing.method || null) : oneOf(body.method, METHODS),
+    paymentType: body.paymentType === undefined
+      ? (existing.payment_type || null)
+      : (body.paymentType ? oneOf(body.paymentType, PAYMENT_TYPES) : null),
+    paidBy,
+    creditId,
+    cardLast4: body.cardLast4 === undefined
+      ? (existing.card_last4 || null)
+      : ((clean(body.cardLast4, 40) || '').replace(/\D/g, '').slice(-4) || null),
     reference: clean(body.reference, 80) || existing.reference,
     notes: existing.notes,
   });
+  await settleCredit(env, user.id, payment, existing.credit_id || null);
   await db.logActivity(env, user.id, 'payment.paid', 'Marked a payment received', { id });
   return json({ ok: true, payment });
 }
@@ -242,8 +398,13 @@ export async function handleMarkPaid(request, env, id) {
 export async function handleDeletePayment(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
+  const existing = await db.getPayment(env, id, user.id);
   const removed = await db.deletePayment(env, id, user.id);
   if (!removed) return notFound('Payment not found.');
+  // The credit that payment spent goes back to the client.
+  if (existing && existing.credit_id) {
+    await releaseCredit(env, user.id, existing.credit_id, id);
+  }
   await db.logActivity(env, user.id, 'payment.delete', 'Removed a payment', { id });
   return json({ ok: true });
 }

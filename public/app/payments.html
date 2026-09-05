@@ -79,12 +79,10 @@
           <p class="field-hint">Leave blank until the vendor confirms it.</p></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="method">Paid by</label>
-          <select id="method" name="method">
-            <option value="card">Card</option><option value="ach">ACH</option>
-            <option value="check">Check</option><option value="cash">Cash</option>
-            <option value="transfer">Transfer</option><option value="other">Other</option>
-          </select></div>
+        <div class="field"><label for="paymentType">How it was paid</label>
+          <select id="paymentType" name="paymentType"></select>
+          <p class="field-hint">Who paid it and any credit spent are set on the reservation,
+            where the travellers are known.</p></div>
         <div class="field"><label for="reference">Reference</label>
           <input id="reference" name="reference" placeholder="Vendor conf #"></div>
       </div>
@@ -117,6 +115,17 @@ let data = null;
 let bookings = [];
 
 const KIND_LABEL = { deposit: 'Deposit', installment: 'Part payment', final: 'Final balance', refund: 'Refund' };
+const PAY_TYPE = {
+  to_vendor: 'Paid the vendor direct', to_agency: 'Paid the agency',
+  card: 'Credit card', check: 'Check', cash: 'Cash', ach: 'Bank transfer or e-check',
+  future_cruise_credit: 'Future cruise credit', future_cruise_deposit: 'Future cruise deposit',
+  other: 'Something else',
+};
+// payment_type replaced method. Older rows only have the method, so it is
+// still read: dropping it would blank how those payments were made.
+const orderedTypes = (list) => (list || []).filter((t) => t !== 'other').concat(
+  (list || []).includes('other') ? ['other'] : []);
+const howPaid = (p) => (p.payment_type ? (PAY_TYPE[p.payment_type] || p.payment_type) : (p.method || ''));
 
 // A hard payment is a deadline, not an invoice: miss it and the vendor
 // cancels the reservation. Everything else is a normal due date.
@@ -182,8 +191,9 @@ function render(d) {
               esc(p.payment_class === 'hard' ? 'Hard' : 'Soft')}</span>
             <div class="muted">${esc(KIND_LABEL[p.kind] || p.kind)}</div></td>
           <td><span class="badge ${st.tone}">${esc(st.label)}</span>
-            <div class="muted">${esc(p.paid_date ? 'Posted ' + dateFmt(p.paid_date) + (p.method ? ' · ' + p.method : '')
-                                   : p.due_date ? dateFmt(p.due_date) : '')}</div></td>
+            <div class="muted">${esc(p.paid_date
+                ? 'Posted ' + dateFmt(p.paid_date) + (howPaid(p) ? ' · ' + howPaid(p) : '')
+                : p.due_date ? dateFmt(p.due_date) : '')}</div></td>
           <td class="num">${money(p.amount_cents)}</td>
           <td class="num" style="white-space:nowrap;">
             ${!p.paid_date ? `<button class="btn btn-primary btn-sm" data-paid="${esc(p.id)}">Mark posted</button>` : ''}
@@ -245,6 +255,9 @@ function openDialog(p) {
   form.querySelector('.notice-error').hidden = true;
   document.getElementById('pay-title').textContent = p ? 'Edit payment' : 'Post a payment';
   delBtn.hidden = !p;
+  document.getElementById('paymentType').innerHTML =
+    '<option value="">Not recorded</option>' + orderedTypes(data && data.paymentTypes)
+      .map((t) => `<option value="${esc(t)}">${esc(PAY_TYPE[t] || t)}</option>`).join('');
   document.getElementById('bookingId').innerHTML = bookings.length
     ? bookings.map((b) => `<option value="${esc(b.id)}">${esc(b.client_name)} — ${esc(b.product_name || b.supplier || 'reservation')}</option>`).join('')
     : '<option value="">No reservations yet</option>';
@@ -255,7 +268,7 @@ function openDialog(p) {
     form.elements.amount.value = (p.amount_cents / 100).toFixed(2);
     form.elements.dueDate.value = p.due_date || '';
     form.elements.paidDate.value = p.paid_date || '';
-    form.elements.method.value = p.method || 'card';
+    form.elements.paymentType.value = p.payment_type || '';
     form.elements.reference.value = p.reference || '';
     form.elements.notes.value = p.notes || '';
   }

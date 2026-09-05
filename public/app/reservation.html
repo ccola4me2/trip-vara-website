@@ -177,6 +177,41 @@
   </form>
 </dialog>
 
+<dialog id="post-dlg">
+  <form id="post-form" method="dialog">
+    <div class="card-head"><h2>Post this payment</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-post>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <p class="muted" id="post-what" style="margin:0 0 .9rem;"></p>
+      <div class="field-row">
+        <div class="field"><label for="pp-date">Received on</label>
+          <input id="pp-date" name="paidDate" type="date" required></div>
+        <div class="field"><label for="pp-type">How it was paid</label>
+          <select id="pp-type" name="paymentType"></select></div>
+      </div>
+      <div class="field"><label for="pp-by">Who paid</label>
+        <select id="pp-by" name="paidBy"></select>
+        <p class="field-hint">Travellers on this reservation. Leave it unset if you do not know.</p></div>
+      <div class="field" id="pp-card-field" hidden>
+        <label for="pp-card">Last four digits</label>
+        <input id="pp-card" name="cardLast4" inputmode="numeric" maxlength="19" placeholder="4242">
+        <p class="field-hint">Only the last four are kept, and only the last four are sent.
+          A full card number is cut down here, in the browser, before anything leaves it.</p></div>
+      <div class="field" id="pp-credit-field" hidden>
+        <label for="pp-credit">Credit being spent</label>
+        <select id="pp-credit" name="creditId"></select>
+        <p class="field-hint" id="pp-credit-hint">Spending a credit here marks it used, so it stops
+          being offered on the next trip.</p></div>
+      <div class="field"><label for="pp-ref">Reference</label>
+        <input id="pp-ref" name="reference" maxlength="80" placeholder="Confirmation or receipt number"></div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-primary" type="submit">Post it</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="chase">
   <div class="card-head"><h2>Chase this payment</h2>
     <button class="btn btn-ghost btn-sm" type="button" id="chase-close">Close</button></div>
@@ -204,6 +239,15 @@ const INSURANCE = {
   purchased_outside: '<span class="badge badge-navy">bought elsewhere</span>',
 };
 const AMENITY_TONE = { requested: 'badge-amber', confirmed: 'badge-navy', applied: 'badge-green', declined: 'badge-red' };
+// How the client settled it. Deliberately plainer than a vendor's own words:
+// "Client Payment to Travel Supplier" is what CP Maxx calls a client paying
+// the cruise line direct, and nobody says that out loud.
+const PAY_TYPE = {
+  to_vendor: 'Paid the vendor direct', to_agency: 'Paid the agency',
+  card: 'Credit card', check: 'Check', cash: 'Cash', ach: 'Bank transfer or e-check',
+  future_cruise_credit: 'Future cruise credit', future_cruise_deposit: 'Future cruise deposit',
+  other: 'Something else',
+};
 const KIND_LABEL = {
   fare: 'Fare', air: 'Air', insurance: 'Travel insurance', gratuities: 'Gratuities',
   transfers: 'Transfers', extra: 'Package or extra', ncf: 'Non-commissionable fare',
@@ -396,7 +440,17 @@ function render() {
             <td>${esc(short(p.due_date))}<div><span class="badge ${tone}">${esc(label)}</span></div></td>
             <td><span class="name">${esc(KIND[p.kind] || p.kind)}</span>
               <div class="muted">${hard ? 'vendor deadline' : 'your reminder'}${
-                p.reference ? ' · ' + esc(p.reference) : ''}</div></td>
+                p.reference ? ' · ' + esc(p.reference) : ''}</div>
+              ${p.paid_date ? `<div class="muted">${[
+                p.payment_type ? esc(PAY_TYPE[p.payment_type] || p.payment_type) : '',
+                p.card_last4 ? '····' + esc(p.card_last4) : '',
+                p.paid_by_name ? 'by ' + esc(p.paid_by_name) : '',
+              ].filter(Boolean).join(' · ')}</div>` : ''}
+              ${p.credit_id ? `<div class="muted">credit ${money(p.credit_amount_cents)}${
+                p.credit_vendor ? ' with ' + esc(p.credit_vendor) : ''}${
+                p.credit_amount_cents < p.amount_cents
+                  ? ' · ' + money(p.amount_cents - p.credit_amount_cents) + ' of this paid another way' : ''
+              }</div>` : ''}</td>
             <td class="num">${money(p.amount_cents)}</td>
             <td class="num">${!p.paid_date && d.editable ? `
               <button class="btn btn-ghost btn-sm" data-remind="${esc(p.id)}">Chase</button>
@@ -413,12 +467,7 @@ function render() {
   });
 
   document.querySelectorAll('[data-paid]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      try { await api(`/api/payments/${encodeURIComponent(btn.dataset.paid)}/paid`,
-        { method: 'POST', body: {} }); await load(); }
-      catch (e) { showError(err, e); btn.disabled = false; }
-    });
+    btn.addEventListener('click', () => openPost(btn.dataset.paid));
   });
 
   // ---- trip ----
@@ -604,6 +653,81 @@ onSubmit(priceForm, async (values) => {
     : `/api/bookings/${encodeURIComponent(id)}/pricing`;
   await api(path, { method: editingPrice ? 'PUT' : 'POST', body: values });
   priceDlg.close();
+  await load();
+});
+
+/**
+ * Posting a payment asks the three questions a bare "mark posted" button
+ * skipped: when, how, and by whom.
+ *
+ * The credit picker is the one that matters. A future cruise credit is money
+ * the client already handed a vendor, so spending it here marks it used and
+ * stops it being offered against the next trip. Nothing on this form takes a
+ * card number: the last four digits identify a card on a statement, and
+ * storing the rest would put this database inside PCI scope for no gain.
+ */
+const orderedTypes = (list) => (list || []).filter((t) => t !== 'other').concat(
+  (list || []).includes('other') ? ['other'] : []);
+const postDlg = document.getElementById('post-dlg');
+const postForm = document.getElementById('post-form');
+const CREDIT_TYPES = ['future_cruise_credit', 'future_cruise_deposit'];
+let posting = null;
+
+function postFields() {
+  const type = postForm.elements.paymentType.value;
+  document.getElementById('pp-card-field').hidden = type !== 'card';
+  const wantsCredit = CREDIT_TYPES.includes(type) || Boolean(postForm.elements.creditId.value);
+  document.getElementById('pp-credit-field').hidden = !wantsCredit;
+}
+
+function openPost(paymentId) {
+  const p = (d.payments || []).find((x) => x.id === paymentId);
+  if (!p) return;
+  posting = paymentId;
+  postForm.reset();
+  postForm.querySelector('.notice-error').hidden = true;
+
+  document.getElementById('post-what').textContent =
+    `${KIND[p.kind] || p.kind} of ${money(p.amount_cents)}${
+      p.due_date ? `, due ${dateFmt(p.due_date)}` : ''}.`;
+
+  postForm.elements.paidDate.value = p.paid_date || d.today;
+  document.getElementById('pp-type').innerHTML =
+    '<option value="">Not recorded</option>' + orderedTypes(d.paymentTypes)
+      .map((t) => `<option value="${esc(t)}">${esc(PAY_TYPE[t] || t)}</option>`).join('');
+  postForm.elements.paymentType.value = p.payment_type || '';
+
+  document.getElementById('pp-by').innerHTML =
+    '<option value="">Not recorded</option>' + (d.travellers || [])
+      .map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+  postForm.elements.paidBy.value = p.paid_by || '';
+
+  const credits = d.spendableCredits || [];
+  document.getElementById('pp-credit').innerHTML =
+    '<option value="">None</option>' + credits.map((c) => `<option value="${esc(c.id)}">${
+      esc([money(c.amount_cents), c.vendor, c.reference].filter(Boolean).join(' · '))}${
+      c.expires_on ? ' · expires ' + esc(dateFmt(c.expires_on)) : ''}</option>`).join('');
+  postForm.elements.creditId.value = p.credit_id || '';
+  document.getElementById('pp-credit-hint').textContent = credits.length
+    ? 'Spending a credit marks it used, so it stops being offered on the next trip.'
+    : 'This client has no open credits on file.';
+
+  postForm.elements.cardLast4.value = p.card_last4 || '';
+  postForm.elements.reference.value = p.reference || '';
+  postFields();
+  postDlg.showModal();
+}
+
+// Cut a pasted card down to its last four before the form is read, so a full
+// number never reaches the network, the Worker, or a log line on the way.
+const last4 = (v) => (v || '').replace(/\D/g, '').slice(-4);
+postForm.elements.cardLast4.addEventListener('blur', (e) => { e.target.value = last4(e.target.value); });
+postForm.elements.paymentType.addEventListener('change', postFields);
+document.querySelector('[data-close-post]').addEventListener('click', () => postDlg.close());
+onSubmit(postForm, async (values) => {
+  values.cardLast4 = last4(values.cardLast4);
+  await api(`/api/payments/${encodeURIComponent(posting)}/paid`, { method: 'POST', body: values });
+  postDlg.close();
   await load();
 });
 

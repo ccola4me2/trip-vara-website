@@ -12,6 +12,7 @@ import * as ghl from './ghl.js';
 import { fireTrigger } from './automations.js';
 import { resolveVendor } from './vendors.js';
 import { listTravellers, listAmenities, passportProblem } from './travellers.js';
+import { PAYMENT_TYPES, releaseCredit } from './payments.js';
 import { listPricing, summarise, PRICE_KINDS } from './pricing.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
@@ -151,12 +152,19 @@ export async function handleBookingRecord(request, env, id) {
   const taskScope = db.scopeWhere(scope, 't.user_id');
   const creditScope = db.scopeWhere(scope, 'c.user_id');
 
-  const [payments, tasks, credits, group, people, extras, priceLines] = await Promise.all([
+  const [payments, tasks, credits, spendable, group, people, extras, priceLines] = await Promise.all([
+    // Joined rather than looked up in the page, so a payment made with a
+    // credit can show the credit's own amount beside it. A $250 credit against
+    // a $1,000 payment is a difference worth seeing, not one worth hiding.
     env.DB.prepare(
       `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date, p.paid_date,
               p.method, p.reference, p.notes, p.reminded_at, p.reminder_count,
-              p.payment_type, p.paid_by, p.credit_id, p.card_last4
+              p.payment_type, p.paid_by, p.credit_id, p.card_last4,
+              t.name AS paid_by_name,
+              cr.amount_cents AS credit_amount_cents, cr.vendor AS credit_vendor
          FROM booking_payments p
+         LEFT JOIN travellers t ON t.id = p.paid_by
+         LEFT JOIN client_credits cr ON cr.id = p.credit_id
         WHERE p.booking_id = ? AND ${payScope.sql}
         ORDER BY COALESCE(p.due_date, '9999-12-31') ASC`
     ).bind(id, ...payScope.binds).all().catch(() => ({ results: [] })),
@@ -171,6 +179,22 @@ export async function handleBookingRecord(request, env, id) {
       `SELECT c.id, c.client_name, c.vendor, c.kind, c.amount_cents, c.expires_on, c.used_on
          FROM client_credits c WHERE c.booking_id = ? AND ${creditScope.sql}`
     ).bind(id, ...creditScope.binds).all().catch(() => ({ results: [] })),
+
+    // What this client could pay with: their open credits, plus whatever is
+    // already spent on this trip so an existing choice still has a name.
+    // Offering a credit that has been spent is how the same money gets counted
+    // against two reservations.
+    env.DB.prepare(
+      `SELECT c.id, c.client_name, c.vendor, c.kind, c.reference, c.amount_cents,
+              c.expires_on, c.used_on
+         FROM client_credits c
+        WHERE ${creditScope.sql}
+          AND ((c.used_on IS NULL AND ((c.client_id IS NOT NULL AND c.client_id = ?)
+                                       OR c.client_name = ?))
+               OR c.id IN (SELECT credit_id FROM booking_payments WHERE booking_id = ?))
+        ORDER BY COALESCE(c.expires_on, '9999-12-31') ASC`
+    ).bind(...creditScope.binds, booking.client_id || null, booking.client_name, id)
+      .all().catch(() => ({ results: [] })),
 
     booking.group_id
       ? env.DB.prepare(
@@ -217,6 +241,8 @@ export async function handleBookingRecord(request, env, id) {
     payments: payments.results || [],
     tasks: tasks.results || [],
     credits: credits.results || [],
+    spendableCredits: spendable.results || [],
+    paymentTypes: PAYMENT_TYPES,
     group,
     // What is neither posted nor even on the schedule. The quiet number: a
     // trip worth $8,000 with a $500 deposit and nothing else planned.
@@ -357,8 +383,27 @@ export async function handleDeleteBooking(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
+  // Read before deleting: the payments go with the reservation, and with them
+  // any record of which credits they spent.
+  const spent = await env.DB.prepare(
+    `SELECT DISTINCT credit_id FROM booking_payments
+      WHERE booking_id = ? AND user_id = ? AND credit_id IS NOT NULL`
+  ).bind(id, user.id).all().catch(() => ({ results: [] }));
+
   const removed = await db.deleteBooking(env, id, user.id);
   if (!removed) return notFound('Booking not found.');
+
+  // A credit spent on a trip that no longer exists was spent on nothing, so it
+  // goes back to the client. Released after the delete, so the check for
+  // another payment still spending it sees only the payments that survived.
+  for (const row of spent.results || []) {
+    await releaseCredit(env, user.id, row.credit_id, null);
+  }
+  // And nothing keeps pointing at a reservation that has gone.
+  await env.DB.prepare(
+    'UPDATE client_credits SET booking_id = NULL, updated_at = ? WHERE booking_id = ? AND user_id = ?'
+  ).bind(Date.now(), id, user.id).run().catch(() => null);
+
   await db.logActivity(env, user.id, 'booking.delete', 'Deleted a booking', { id });
   return json({ ok: true });
 }
