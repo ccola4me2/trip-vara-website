@@ -618,6 +618,29 @@ tbody tr[data-href] { cursor: pointer; }
 .pin:hover { color: var(--navy-700); }
 .pin.on { color: var(--coral-500); }
 
+/* Targets */
+.goal-aim { font-size: 1.05rem; color: var(--navy-800); font-weight: 600; margin: 0; line-height: 1.5; }
+.goal-edge { font-size: .88rem; color: var(--ink-500); margin: .5rem 0 0; }
+.goal-row + .goal-row { margin-top: 1.2rem; }
+.goal-row.compact + .goal-row.compact { margin-top: .8rem; }
+.goal-label {
+  display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
+  font-size: .84rem; font-weight: 650; color: var(--navy-800); margin: 0 0 .35rem;
+}
+.goal-label span { font-weight: 400; color: var(--ink-500); font-size: .8rem; }
+.goal-bar { position: relative; height: 10px; border-radius: 5px; background: var(--navy-100); }
+.goal-bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
+.goal-bar .fill.ahead { background: var(--green-600); }
+.goal-bar .fill.behind { background: var(--coral-400); }
+.goal-bar .pace {
+  position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--navy-800);
+  border-radius: 1px;
+}
+.goal-meta { font-size: .76rem; margin: .35rem 0 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+.goal-meta .up { color: var(--green-600); }
+.goal-meta .down { color: var(--coral-600); }
+.goal-none { font-size: .8rem; color: var(--ink-400); margin: 0; }
+
 /* Year on year comparison */
 .cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
 @media (max-width: 900px) { .cmp-grid { grid-template-columns: 1fr; } }

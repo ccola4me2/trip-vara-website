@@ -590,6 +590,70 @@ async function main() {
     'and a period with nothing to compare against says so rather than showing 0%',
     zero && JSON.stringify(zero.change));
 
+  // ------------------------------------------------------------ targets -----
+  step('Targets, and whether you are on course');
+
+  const year = Number(isoDay(0).slice(0, 4));
+  const blank = await call(advisor, 'GET', `/api/goals?year=${year}`);
+  check(blank.status === 200 && blank.data?.goals?.set === false,
+    'a new advisor has no target set', JSON.stringify(blank.data?.goals?.set));
+
+  const set = await call(advisor, 'PUT', '/api/goals', {
+    year, basis: 'purchase', salesGoal: '100000', commissionGoal: '10000', bookingsGoal: 50,
+    aim: 'Fewer, better clients.', edge: 'I have sailed the ships I sell.',
+  });
+  const g = set.data?.goals;
+  check(set.status === 200 && g?.sales?.goal === 10000000,
+    'a target is stored in cents', g?.sales?.goal);
+  cleanup('the target', () => call(advisor, 'PUT', '/api/goals', {
+    year, basis: 'purchase', salesGoal: '0', commissionGoal: '0', bookingsGoal: 0, aim: '', edge: '',
+  }));
+
+  // Pace is the reason the target is worth showing at all: how much should be
+  // done by today. Checked against the elapsed fraction rather than a fixed
+  // number, since the answer changes every day this test runs.
+  // elapsed is rounded to a tenth of a percent for display, so recomputing
+  // from it cannot land on the exact figure. The tolerance is that rounding,
+  // not a fudge: half of 0.1% of the goal.
+  const expectedPace = Math.round(g.sales.goal * (g.elapsed / 100));
+  const tolerance = g.sales.goal * 0.0005 + 1;
+  check(Math.abs(g.sales.pace - expectedPace) <= tolerance,
+    'pace follows from how much of the year has gone',
+    `${g.sales.pace} vs ${expectedPace} at ${g.elapsed}%`);
+  check(g.sales.ahead === g.sales.actual - g.sales.pace,
+    'and ahead or behind is measured against the pace, not the target',
+    `${g.sales.ahead}`);
+
+  const goalReread = await call(advisor, 'GET', `/api/goals?year=${year}`);
+  check(goalReread.data?.goals?.aim === 'Fewer, better clients.', 'the wording is kept too',
+    goalReread.data?.goals?.aim);
+
+  // The basis is part of the target, not a display option: the same number
+  // means different things counted each way.
+  const byDeparture = await call(advisor, 'PUT', '/api/goals', {
+    year, basis: 'departure', salesGoal: '100000', commissionGoal: '10000', bookingsGoal: 50,
+  });
+  check(byDeparture.data?.goals?.basis === 'departure', 'the basis is stored with it',
+    byDeparture.data?.goals?.basis);
+  check(byDeparture.data?.goals?.sales?.actual !== g.sales.actual
+        || byDeparture.data.goals.sales.actual === 0,
+    'and changing it changes what counts towards the target',
+    `${g.sales.actual} by purchase vs ${byDeparture.data?.goals?.sales?.actual} by departure`);
+
+  // A target is personal even for an owner, so the agency scope must not leak
+  // into it and ?advisor= must not redirect it at somebody else.
+  // Asserted as "not the associate's" rather than "unset": the owner may well
+  // have targets of their own, and a test that only passes on a fresh account
+  // is a test that gets deleted the first time it is inconvenient.
+  const ownerGoals = await call(admin, 'GET', `/api/goals?year=${year}&advisor=${created.id}`);
+  check(ownerGoals.data?.goals?.aim !== 'Fewer, better clients.',
+    'an owner asking for their targets gets their own, not an advisor\'s',
+    ownerGoals.data?.goals?.aim);
+
+  const junkYear = await call(advisor, 'GET', '/api/goals?year=1066');
+  check(junkYear.data?.goals?.year === year, 'and an impossible year falls back to this one',
+    junkYear.data?.goals?.year);
+
   // ----------------------------------------------------------- calendar -----
   step('A month of everything with a date on it');
 

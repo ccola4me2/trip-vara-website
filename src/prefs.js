@@ -30,6 +30,7 @@ export const PANELS = [
   { id: 'groups', title: 'Group space', hint: 'Blocks of cabins and when they release' },
   { id: 'deals', title: 'Deals in play', hint: 'Open opportunities by stage' },
   { id: 'rebook', title: 'Worth a call', hint: 'Past clients with nothing booked, and credits about to lapse' },
+  { id: 'goal', title: 'Target', hint: 'This year against what you set out to do' },
   { id: 'trend', title: 'Production trend', hint: 'Booked value by month' },
   { id: 'links', title: 'Quick links', hint: 'Your own shortcuts' },
   { id: 'activity', title: 'Activity', hint: 'What has happened recently' },

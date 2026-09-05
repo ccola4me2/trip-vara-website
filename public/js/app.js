@@ -132,6 +132,7 @@ const NAV = [
   {
     hub: 'Report', icon: I.chart, items: [
       { href: '/app/reports', label: 'Production' },
+      { href: '/app/goals', label: 'Targets' },
     ],
   },
   {

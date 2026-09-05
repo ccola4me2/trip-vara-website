@@ -645,7 +645,7 @@ const BASIS_COLUMN = {
   purchase: "date(created_at, 'unixepoch')",
 };
 
-async function periodTotals(env, scope, basis, from, to) {
+export async function periodTotals(env, scope, basis, from, to) {
   const scoped = scopeWhere(scope);
   const col = BASIS_COLUMN[basis] || BASIS_COLUMN.departure;
   const row = await env.DB.prepare(

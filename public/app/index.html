@@ -271,6 +271,37 @@ const PANELS = {
     } },
   ], 'lapsed'),
 
+  goal: () => widget('Target', { href: '/app/goals', label: 'Set targets' }, [
+    { key: 'now', label: 'This year', render: () => {
+      const g = d.goal;
+      if (!g) return '<p class="wempty">Targets unavailable.</p>';
+      if (!g.set || (!g.sales.goal && !g.commission.goal && !g.bookings.goal)) {
+        return '<p class="wempty">No target set for this year.</p>';
+      }
+      const row = (label, line, fmt) => {
+        if (!line.goal) return '';
+        const pct = Math.min(100, Math.max(0, (line.actual / line.goal) * 100));
+        const pace = Math.min(100, Math.max(0, (line.pace / line.goal) * 100));
+        const ahead = line.ahead >= 0;
+        return `<div class="goal-row compact">
+          <p class="goal-label">${esc(label)}<span>${fmt(line.actual)} of ${fmt(line.goal)}</span></p>
+          <div class="goal-bar">
+            <span class="fill ${ahead ? 'ahead' : 'behind'}" style="width:${pct}%"></span>
+            <span class="pace" style="left:${pace}%"></span>
+          </div>
+          <p class="goal-meta"><strong class="${ahead ? 'up' : 'down'}">${
+            ahead ? 'ahead by' : 'behind by'} ${fmt(Math.abs(line.ahead))}</strong></p>
+        </div>`;
+      };
+      return `<div style="padding:.8rem 1rem;">
+        ${row('Trips booked', g.sales, money)}
+        ${row('Commission', g.commission, money)}
+        ${row('Reservations', g.bookings, (n) => String(n))}
+        <p class="muted" style="font-size:.74rem;margin:.4rem 0 0;">${g.elapsed}% of the year gone</p>
+      </div>`;
+    } },
+  ], 'now'),
+
   trend: () => widget('Production trend', { href: '/app/reports', label: 'Full report' }, [
     { key: 'gross', label: 'By month', render: () => trendBars('gross_cents') },
     { key: 'type', label: 'By type', render: () => breakdown(d.byType, TYPE_LABEL) },

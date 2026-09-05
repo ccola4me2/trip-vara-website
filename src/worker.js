@@ -56,6 +56,7 @@ import {
 import {
   handleListCredits, handleCreateCredit, handleUpdateCredit, handleDeleteCredit,
 } from './credits.js';
+import { handleGetGoals, handleSaveGoals } from './goals.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
@@ -111,6 +112,7 @@ const PAGE_FILES = {
   '/app/tasks': '/app/tasks.html',
   '/app/groups': '/app/groups.html',
   '/app/credits': '/app/credits.html',
+  '/app/goals': '/app/goals.html',
   '/app/reservations': '/app/reservations.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
@@ -332,6 +334,8 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/prefs/dashboard' && method === 'DELETE') return handleResetLayout(request, env);
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);
   if (path === '/api/month' && method === 'GET') return handleMonth(request, env);
+  if (path === '/api/goals' && method === 'GET') return handleGetGoals(request, env);
+  if (path === '/api/goals' && method === 'PUT') return handleSaveGoals(request, env);
   if (path === '/api/reports/production' && method === 'GET') return handleProduction(request, env);
 
   // ---- admin ------------------------------------------------------------

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Targets | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Targets</h1><p class="sub">What you set out to do this year, and whether you are on course for it.</p></div>
+      <select id="year" aria-label="Year" style="width:auto;"></select>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="progress"></section>
+      <section class="card">
+        <div class="card-head"><h2>Set your targets</h2></div>
+        <form id="goal-form" class="card-pad">
+          <div class="notice notice-error" hidden></div>
+          <div class="notice notice-ok" id="saved" hidden>Saved.</div>
+          <div class="field">
+            <label for="basis">Count them by</label>
+            <select id="basis" name="basis">
+              <option value="purchase">When the reservation was taken</option>
+              <option value="departure">When people travel</option>
+            </select>
+            <p class="field-hint">The same target means different things on each. Counting by when
+              reservations were taken measures what you sold; counting by travel measures when the
+              commission arrives. They can differ by a whole quarter.</p>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="salesGoal">Trips booked (USD)</label>
+              <input id="salesGoal" name="salesGoal" inputmode="decimal" placeholder="200000"></div>
+            <div class="field"><label for="commissionGoal">Commission (USD)</label>
+              <input id="commissionGoal" name="commissionGoal" inputmode="decimal" placeholder="24000"></div>
+          </div>
+          <div class="field"><label for="bookingsGoal">Reservations</label>
+            <input id="bookingsGoal" name="bookingsGoal" type="number" min="0" max="100000" placeholder="80"></div>
+          <div class="field"><label for="aim">What this year is for</label>
+            <textarea id="aim" name="aim" maxlength="500"
+              placeholder="In your own words. It appears at the top of this page."></textarea></div>
+          <div class="field"><label for="edge">What sets you apart</label>
+            <textarea id="edge" name="edge" maxlength="500"
+              placeholder="The reason a client books with you rather than a website."></textarea></div>
+          <button class="btn btn-primary" type="submit">Save targets</button>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const yearSelect = document.getElementById('year');
+const form = document.getElementById('goal-form');
+const thisYear = new Date().getFullYear();
+for (const y of [thisYear - 1, thisYear, thisYear + 1]) {
+  const opt = document.createElement('option');
+  opt.value = String(y);
+  opt.textContent = String(y);
+  if (y === thisYear) opt.selected = true;
+  yearSelect.appendChild(opt);
+}
+
+/**
+ * A bar with two marks on it: where you are, and where you should be by today.
+ * The second is the whole point. A target without a pace is a number you look
+ * at in January and again in December.
+ */
+function bar(label, line, fmt) {
+  if (!line.goal) {
+    return `<div class="goal-row"><p class="goal-label">${esc(label)}</p>
+      <p class="goal-none">No target set.</p></div>`;
+  }
+  const pct = Math.min(100, Math.max(0, (line.actual / line.goal) * 100));
+  const pace = Math.min(100, Math.max(0, (line.pace / line.goal) * 100));
+  const ahead = line.ahead >= 0;
+  return `<div class="goal-row">
+    <p class="goal-label">${esc(label)}
+      <span>${fmt(line.actual)} of ${fmt(line.goal)}</span></p>
+    <div class="goal-bar">
+      <span class="fill ${ahead ? 'ahead' : 'behind'}" style="width:${pct}%"></span>
+      <span class="pace" style="left:${pace}%" title="Where you should be by today"></span>
+    </div>
+    <p class="goal-meta">
+      <strong class="${ahead ? 'up' : 'down'}">${ahead ? 'Ahead by' : 'Behind by'} ${fmt(Math.abs(line.ahead))}</strong>
+      <span class="muted">on track needs ${fmt(line.pace)} by today &middot; ${line.percent}% of target</span>
+    </p>
+  </div>`;
+}
+
+function render(d) {
+  const g = d.goals;
+  const asNumber = (n) => String(n);
+
+  document.getElementById('progress').innerHTML = `
+    ${g.aim ? `<div class="card card-pad" style="margin-bottom:1rem;">
+      <p class="goal-aim">${esc(g.aim)}</p>
+      ${g.edge ? `<p class="goal-edge">${esc(g.edge)}</p>` : ''}</div>` : ''}
+    <div class="card">
+      <div class="card-head"><h2>${g.year}</h2>
+        <span class="muted" style="font-size:.8rem;">${g.elapsed}% of the year gone &middot; counted by ${
+          g.basis === 'purchase' ? 'when reservations were taken' : 'when people travel'}</span></div>
+      <div class="card-pad">
+        ${g.set ? '' : '<p class="field-hint" style="margin:0 0 1rem;">Nothing set for this year yet. Fill in the form below.</p>'}
+        ${bar('Trips booked', g.sales, money)}
+        ${bar('Commission', g.commission, money)}
+        ${bar('Reservations', g.bookings, asNumber)}
+      </div>
+    </div>`;
+
+  form.elements.basis.value = g.basis;
+  form.elements.salesGoal.value = g.sales.goal ? (g.sales.goal / 100).toFixed(2) : '';
+  form.elements.commissionGoal.value = g.commission.goal ? (g.commission.goal / 100).toFixed(2) : '';
+  form.elements.bookingsGoal.value = g.bookings.goal || '';
+  form.elements.aim.value = g.aim;
+  form.elements.edge.value = g.edge;
+}
+
+async function load() {
+  try { render(await api(`/api/goals?year=${yearSelect.value}`)); }
+  catch (err) { showError(document.getElementById('err'), err); }
+}
+
+yearSelect.addEventListener('change', load);
+
+onSubmit(form, async (values) => {
+  const d = await api('/api/goals', { method: 'PUT', body: { ...values, year: yearSelect.value } });
+  render(d);
+  const ok = document.getElementById('saved');
+  ok.hidden = false;
+  setTimeout(() => { ok.hidden = true; }, 2500);
+});
+
+await load();
+</script>
+</body></html>

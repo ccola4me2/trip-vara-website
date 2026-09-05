@@ -11,6 +11,7 @@ import { readLayout, PANELS } from './prefs.js';
 import { listTasks } from './tasks.js';
 import { listGroups } from './groups.js';
 import { listCredits } from './credits.js';
+import { goalProgress } from './goals.js';
 import * as ghl from './ghl.js';
 
 function isoDay(offsetDays = 0) {
@@ -111,6 +112,10 @@ export async function handleDashboard(request, env) {
     tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
     groups: await listGroups(env, scope, { status: 'open', limit: 12 }).catch(() => []),
     rebook: await db.rebookCandidates(env, scope, { today, limit: 12 }).catch(() => []),
+    // Always the reader's own target, whatever scope the rest of the screen
+    // is showing. A target you did not set is not your target.
+    goal: await goalProgress(env, user, db.selfScope(user), Number(today.slice(0, 4)), today)
+      .catch(() => null),
     credits: await listCredits(env, scope, { state: 'open', limit: 25 }).catch(() => []),
   });
 }
