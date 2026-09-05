@@ -158,9 +158,7 @@ export async function handleBookingRecord(request, env, id) {
     // credit can show the credit's own amount beside it. A $250 credit against
     // a $1,000 payment is a difference worth seeing, not one worth hiding.
     env.DB.prepare(
-      `SELECT p.id, p.kind, p.payment_class, p.amount_cents, p.due_date, p.paid_date,
-              p.method, p.reference, p.notes, p.reminded_at, p.reminder_count,
-              p.payment_type, p.paid_by, p.credit_id, p.card_last4,
+      `SELECT ${db.PAYMENT_COLUMNS},
               t.name AS paid_by_name,
               cr.amount_cents AS credit_amount_cents, cr.vendor AS credit_vendor
          FROM booking_payments p

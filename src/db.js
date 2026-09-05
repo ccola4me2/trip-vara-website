@@ -1060,7 +1060,11 @@ export async function crmCounts(env, locationId) {
 // One row covers both sides of a payment: due_date with no paid_date is money
 // expected, and the same row gains paid_date when it arrives.
 // ---------------------------------------------------------------------------
-const PAYMENT_COLUMNS = `
+// Exported so the reservation record can select the same columns rather than
+// keeping a second list of its own. Two lists of one table's columns is how
+// a page ends up never showing a field that was added to both the table and
+// the canonical list months earlier.
+export const PAYMENT_COLUMNS = `
   p.id, p.booking_id, p.user_id, p.kind, p.payment_class, p.amount_cents,
   p.due_date, p.paid_date, p.method, p.reference, p.notes, p.created_at, p.updated_at,
   p.reminded_at, p.reminder_count,

@@ -13,9 +13,9 @@ import * as db from './db.js';
 const KINDS = ['credit', 'deposit', 'certificate'];
 
 const COLUMNS = `
-  c.id, c.user_id, c.client_name, c.contact_id, c.vendor, c.kind, c.reference,
-  c.amount_cents, c.issued_on, c.expires_on, c.used_on, c.booking_id, c.notes,
-  c.created_at, c.updated_at
+  c.id, c.user_id, c.client_name, c.client_id, c.contact_id, c.vendor, c.kind,
+  c.reference, c.amount_cents, c.issued_on, c.expires_on, c.used_on,
+  c.booking_id, c.notes, c.created_at, c.updated_at
 `;
 
 function parse(body) {
