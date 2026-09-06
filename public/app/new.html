@@ -143,13 +143,20 @@ document.getElementById('fields').innerHTML = [
   group('Who and what'),
   row(text('clientName', 'Client', 'required autofocus'),
       select('status', 'Status', o.statuses, 'quoted')),
+
+  // Asked rather than left to be noticed. It was a tickbox under the product
+  // type, which is where somebody booking their own holiday in a hurry would
+  // never look, and answering it wrong puts them on their own call list.
+  `<div class="field"><label for="f-reservation-type">Reservation type</label>
+     <select id="f-reservation-type">
+       <option value="client">Client reservation</option>
+       <option value="personal">My own travel</option>
+     </select>
+     <p class="field-hint" id="type-hint">Whose trip this is. Your own travel stays off the lists
+       of clients to ring, and the commission on it still counts.</p></div>`,
+
   row(select('productType', 'Type', o.productTypes, 'cruise'),
       select('bookingMethod', 'Booked through', o.bookingMethods, 'direct')),
-  `<label class="task-tick" style="gap:.5rem;margin:.2rem 0 .2rem;">
-     <input type="checkbox" id="f-personal" name="personal" style="width:auto;">
-     <span><span class="t">This is my own travel</span>
-       <span class="m">Kept off the lists of clients to ring. The commission still counts.</span></span>
-   </label>`,
 
   group('Vendor'),
   row(text('supplier', 'Vendor'), text('productName', 'Ship, hotel or product')),
@@ -179,6 +186,18 @@ document.getElementById('fields').innerHTML = [
 ].join('');
 
 suggestClients(form.elements.clientName, 'client-suggestions');
+
+// The client box means something different on a personal booking, so the
+// label says so rather than asking for a "client" who is the advisor.
+document.getElementById('f-reservation-type').addEventListener('change', (e) => {
+  const own = e.target.value === 'personal';
+  const label = document.querySelector('label[for="f-clientName"]');
+  if (label) label.textContent = own ? 'Travelling as' : 'Client';
+  document.getElementById('type-hint').textContent = own
+    ? 'Your own travel. It stays off the lists of clients to ring, and the commission still counts.'
+    : 'Whose trip this is. Your own travel stays off the lists of clients to ring, and the '
+      + 'commission on it still counts.';
+});
 
 /**
  * The people going, named on the way in.
@@ -299,7 +318,7 @@ pickDate.addEventListener('change', () => {
 onSubmit(form, async (values) => {
   // A checkbox reads as "on" or nothing through a form, and the API wants a
   // boolean either way round.
-  values.personal = document.getElementById('f-personal').checked;
+  values.personal = document.getElementById('f-reservation-type').value === 'personal';
   const names = [...document.querySelectorAll('.traveller-name')]
     .map((el) => el.value.trim()).filter(Boolean);
   // Nobody named means the client is the one travelling, which is true of most
