@@ -40,6 +40,16 @@ const BOOKING_METHODS = ['direct', 'portal', 'phone', 'group', 'other'];
 // asked is the honest default. Recording a decline is a deliberate act.
 const INSURANCE_STATUS = ['unknown', 'purchased', 'declined', 'covered_elsewhere', 'purchased_outside'];
 
+// Handed to every page that offers these as a choice. One list, so a form and
+// the validator behind it cannot disagree about what a status may be.
+const FIELD_OPTIONS = {
+  productTypes: PRODUCT_TYPES,
+  statuses: STATUSES,
+  commissionStatuses: COMMISSION_STATUSES,
+  bookingMethods: BOOKING_METHODS,
+  insuranceStatuses: INSURANCE_STATUS,
+};
+
 /** Shared parse and validate for create and update. */
 function parseBooking(body) {
   const clientName = clean(body.clientName, 120);
@@ -116,6 +126,9 @@ export async function handleListBookings(request, env) {
   return json({
     bookings,
     stats: await db.bookingStats(env, scope),
+    // The same lists the record page gets, so the new reservation form and the
+    // validator cannot disagree about what a status may be.
+    fieldOptions: FIELD_OPTIONS,
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),
   });
@@ -249,13 +262,7 @@ export async function handleBookingRecord(request, env, id) {
     // The lists the edit form needs, so the page and the validator can never
     // disagree about what a status or a product type may be. The reservations
     // list hardcoded its own copies and drifted from these twice.
-    fieldOptions: {
-      productTypes: PRODUCT_TYPES,
-      statuses: STATUSES,
-      commissionStatuses: COMMISSION_STATUSES,
-      bookingMethods: BOOKING_METHODS,
-      insuranceStatuses: INSURANCE_STATUS,
-    },
+    fieldOptions: FIELD_OPTIONS,
     documentsReady: docsReady(env),
     penalty: penaltyToday(booking, tiers, new Date().toISOString().slice(0, 10)),
     pricing: priceLines,

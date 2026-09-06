@@ -199,6 +199,15 @@ async function main() {
   // The soft row is a reminder to chase the same balance a week early, not a
   // second amount owed. Totalling both reported a $5,000 trip as owing $9,500
   // on every screen that summed a schedule.
+  // The new reservation page and the record page both build their selects from
+  // this, so a form and the validator behind it cannot disagree about what a
+  // status may be. The old dialog kept its own copies and drifted twice.
+  const opts = (await call(advisor, 'GET', '/api/bookings?limit=1')).data?.fieldOptions || {};
+  check(opts.statuses?.includes('quoted') && opts.productTypes?.includes('cruise')
+    && opts.insuranceStatuses?.[0] === 'unknown',
+    'the field lists come from the API rather than being written into each page',
+    JSON.stringify(Object.keys(opts)));
+
   const bal = await call(advisor, 'GET', '/api/payments?state=all');
   const thisTrip = (bal.data?.balances || []).find((b) => b.id === bookingId);
   check(thisTrip && (thisTrip.paid_cents + thisTrip.scheduled_cents) <= thisTrip.gross_cents,

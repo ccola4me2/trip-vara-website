@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New reservation | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <a class="back-link" href="/app/reservations">&larr; All reservations</a>
+        <h1>New reservation</h1>
+        <p class="sub">Everything on one page. Nothing here has to be filled in now except a client.</p>
+      </div>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+
+      <section class="card" style="margin-bottom:1.5rem;" id="picker-card">
+        <div class="card-head"><h2>Start from the catalog</h2></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin:0 0 .8rem;" id="picker-hint">
+            Pick the sailing and the vendor, ship, dates and itinerary fill themselves in.
+            Everything it sets can be typed over.</p>
+          <div class="field-row" id="picker">
+            <div class="field"><label for="pick-line">Cruise line</label>
+              <select id="pick-line"><option value="">Pick a cruise line</option></select></div>
+            <div class="field"><label for="pick-ship">Ship</label>
+              <select id="pick-ship" disabled><option value="">Ship</option></select></div>
+            <div class="field"><label for="pick-date">Departure</label>
+              <select id="pick-date" disabled><option value="">Departure</option></select></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Reservation information</h2></div>
+        <form id="new-form">
+          <div class="card-pad">
+            <div class="notice notice-error" hidden></div>
+            <div id="fields"></div>
+          </div>
+          <div class="card-foot">
+            <a class="btn btn-ghost" href="/app/reservations">Cancel</a>
+            <button class="btn btn-primary" type="submit">Create reservation</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, dateFmt, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const err = document.getElementById('err');
+const form = document.getElementById('new-form');
+
+const OPT_LABEL = {
+  event_ticket: 'Event ticket', visa_passport: 'Visa or passport', car: 'Car hire',
+  covered_elsewhere: 'Covered elsewhere', purchased_outside: 'Bought elsewhere',
+  unknown: 'Not discussed yet',
+};
+const optionText = (v) => OPT_LABEL[v] || (v ? v[0].toUpperCase() + v.slice(1) : '');
+const selectOptions = (list, current) => (list || [])
+  .map((v) => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(optionText(v))}</option>`)
+  .join('');
+
+// The lists come from the API rather than being written out here, so this form
+// and the validator behind it cannot disagree about what a status may be.
+const list = await api('/api/bookings?limit=1').catch(() => ({}));
+const o = list.fieldOptions || {};
+const ME = (await api('/api/auth/me').catch(() => ({}))).user?.id;
+
+// Only the advisor's own open groups: a reservation cannot be sold out of
+// somebody else's block.
+const groups = await api('/api/groups?status=open')
+  .then((g) => g.groups.filter((x) => x.user_id === ME)).catch(() => []);
+
+const text = (name, label, extra = '') => `
+  <div class="field"><label for="f-${name}">${esc(label)}</label>
+    <input id="f-${name}" name="${name}" ${extra}></div>`;
+const date = (name, label) => `
+  <div class="field"><label for="f-${name}">${esc(label)}</label>
+    <input id="f-${name}" name="${name}" type="date"></div>`;
+const select = (name, label, options, value) => `
+  <div class="field"><label for="f-${name}">${esc(label)}</label>
+    <select id="f-${name}" name="${name}">${selectOptions(options, value)}</select></div>`;
+const row = (...cells) => `<div class="field-row">${cells.join('')}</div>`;
+const group = (title) => `<p class="label" style="margin:1.4rem 0 .4rem;">${esc(title)}</p>`;
+
+document.getElementById('fields').innerHTML = [
+  group('Who and what'),
+  row(text('clientName', 'Client', 'required autofocus'),
+      select('status', 'Status', o.statuses, 'quoted')),
+  row(select('productType', 'Type', o.productTypes, 'cruise'),
+      select('bookingMethod', 'Booked through', o.bookingMethods, 'direct')),
+
+  group('Vendor'),
+  row(text('supplier', 'Vendor'), text('productName', 'Ship, hotel or product')),
+  row(text('confirmationNumber', 'Confirmation number'),
+      select('insuranceStatus', 'Insurance', o.insuranceStatuses, 'unknown')),
+  groups.length
+    ? `<div class="field"><label for="f-groupId">Sold from a group</label>
+        <select id="f-groupId" name="groupId"><option value="">Not from a group</option>
+        ${groups.map((g) => `<option value="${esc(g.id)}">${
+          esc([g.group_code, g.name].filter(Boolean).join(' / '))}</option>`).join('')}</select></div>`
+    : '',
+
+  group('Travel'),
+  row(date('departDate', 'Departing'), date('returnDate', 'Returning')),
+  row(text('destination', 'Destination'), text('itinerary', 'Itinerary')),
+  row(text('cabinCategory', 'Category'), text('cabin', 'Cabin or room'),
+      text('travellers', 'Travellers', 'inputmode="numeric" value="1"')),
+
+  group('Money'),
+  row(text('gross', 'Trip total', 'inputmode="decimal"'),
+      text('deposit', 'Deposit', 'inputmode="decimal"'),
+      text('commission', 'Commission', 'inputmode="decimal"')),
+  row(date('depositDue', 'Deposit due'), date('finalPaymentDue', 'Final payment due'),
+      select('commissionStatus', 'Commission status', o.commissionStatuses, 'pending')),
+
+  group('Notes'),
+  '<div class="field"><textarea id="f-notes" name="notes" maxlength="2000"></textarea></div>',
+].join('');
+
+/**
+ * The sailing picker: line, then ship, then departure.
+ *
+ * Filling the form from the catalog rather than from memory is the difference
+ * between one vendor in a report and three, and it is the only way to get a
+ * return date right without looking it up. Everything it sets can still be
+ * typed over: a chartered sailing or a private group will not be in a feed.
+ */
+const pickLine = document.getElementById('pick-line');
+const pickShip = document.getElementById('pick-ship');
+const pickDate = document.getElementById('pick-date');
+const pickerHint = document.getElementById('picker-hint');
+let dateRows = [];
+
+let cat;
+try { cat = await api('/api/catalog/lines'); } catch { cat = null; }
+if (!cat || !cat.ready || !cat.lines.length) {
+  document.getElementById('picker-card').hidden = true;
+} else {
+  pickLine.innerHTML = '<option value="">Pick a cruise line</option>'
+    + cat.lines.map((l) => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
+}
+
+pickLine.addEventListener('change', async () => {
+  pickShip.innerHTML = '<option value="">Ship</option>';
+  pickDate.innerHTML = '<option value="">Departure</option>';
+  pickShip.disabled = true;
+  pickDate.disabled = true;
+  if (!pickLine.value) return;
+  const d = await api(`/api/catalog/ships?line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
+  if (!d || !d.ships.length) return;
+  pickShip.innerHTML = '<option value="">Ship</option>'
+    + d.ships.map((sh) => `<option value="${esc(sh.name)}">${esc(sh.name)}</option>`).join('');
+  pickShip.disabled = false;
+});
+
+pickShip.addEventListener('change', async () => {
+  pickDate.innerHTML = '<option value="">Departure</option>';
+  pickDate.disabled = true;
+  dateRows = [];
+  if (!pickShip.value) return;
+  const d = await api(`/api/catalog/dates?ship=${encodeURIComponent(pickShip.value)}`
+    + `&line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
+  if (!d || !d.dates.length) return;
+  dateRows = d.dates;
+  pickDate.innerHTML = '<option value="">Departure</option>'
+    + d.dates.map((r) => `<option value="${esc(r.depart_date)}">${esc(dateFmt(r.depart_date))}`
+      + `${r.nights ? ` · ${r.nights} nights` : ''}</option>`).join('');
+  pickDate.disabled = false;
+});
+
+pickDate.addEventListener('change', () => {
+  const r = dateRows.find((x) => x.depart_date === pickDate.value);
+  if (!r) return;
+  const set = (n, v) => { const el = form.elements[n]; if (el && v) el.value = v; };
+  set('supplier', r.cruise_line);
+  set('productName', r.ship);
+  set('itinerary', r.name);
+  set('destination', r.destination);
+  set('departDate', r.depart_date);
+  set('returnDate', r.return_date);
+  set('productType', 'cruise');
+  pickerHint.textContent = `Filled from ${r.cruise_line}: ${r.name || r.ship}. `
+    + 'Change anything below that is not right.';
+});
+
+// Straight to the reservation, which is where the pricing, the travellers and
+// the payment schedule are. Creating one and being left on a list is being
+// sent back to look for the thing you just made.
+onSubmit(form, async (values) => {
+  const res = await api('/api/bookings', { method: 'POST', body: values });
+  location.href = `/app/reservation?id=${encodeURIComponent(res.booking.id)}`;
+});
+</script>
+</body></html>

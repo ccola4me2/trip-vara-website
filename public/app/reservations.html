@@ -16,7 +16,7 @@
       <div><h1>Reservations</h1><p class="sub">Trips, vendor deadlines and commission.</p></div>
       <div class="toolbar" style="margin:0;">
         <span id="scope"></span>
-        <button class="btn btn-primary btn-sm" id="add">Add a reservation</button>
+        <a class="btn btn-primary btn-sm" href="/app/new">Add a reservation</a>
       </div>
     </header>
     <div class="content">
@@ -36,127 +36,6 @@
   </div>
 </div>
 
-<dialog id="dlg">
-  <form id="booking-form" method="dialog">
-    <div class="card-head"><h2 id="dlg-title">Add a reservation</h2>
-      <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
-    <div class="dialog-body">
-      <div class="notice notice-error" hidden></div>
-      <div class="field"><label for="clientName">Client name</label>
-        <input id="clientName" name="clientName" required></div>
-      <div class="field-row">
-        <div class="field"><label for="productType">Type</label>
-          <select id="productType" name="productType">
-            <option value="cruise">Cruise</option><option value="hotel">Hotel</option>
-            <option value="resort">Resort</option><option value="package">Package</option>
-            <option value="tour">Tour</option><option value="air">Air</option>
-            <option value="rail">Rail</option><option value="car">Car hire</option>
-            <option value="transfer">Transfer</option><option value="excursion">Excursion</option>
-            <option value="attraction">Attraction</option><option value="event_ticket">Event ticket</option>
-            <option value="insurance">Travel insurance</option><option value="parking">Parking</option>
-            <option value="visa_passport">Visa or passport</option><option value="other">Other</option>
-          </select></div>
-        <div class="field"><label for="status">Status</label>
-          <select id="status" name="status">
-            <option value="quoted">Quoted</option><option value="booked">Booked</option>
-            <option value="travelled">Travelled</option><option value="cancelled">Cancelled</option>
-          </select></div>
-      </div>
-      <div class="field-row">
-        <div class="field" style="grid-column:1/-1;">
-          <label>Find the sailing</label>
-          <div class="toolbar" style="margin:0;" id="picker">
-            <select id="pick-line" aria-label="Cruise line" style="flex:1;min-width:0;">
-              <option value="">Pick a cruise line</option></select>
-            <select id="pick-ship" aria-label="Ship" style="flex:1;min-width:0;" disabled>
-              <option value="">Ship</option></select>
-            <select id="pick-date" aria-label="Departure" style="flex:1;min-width:0;" disabled>
-              <option value="">Departure</option></select>
-          </div>
-          <p class="field-hint" id="picker-hint">Optional. Picking a real sailing fills the vendor,
-            ship, dates and region below, spelled the way the vendor spells them.</p>
-        </div>
-        <div class="field"><label for="supplier">Vendor</label>
-          <input id="supplier" name="supplier" placeholder="Margaritaville at Sea"></div>
-        <div class="field"><label for="productName">Ship or property</label>
-          <input id="productName" name="productName"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="groupId">Group <span style="font-weight:400;color:var(--ink-400);">(optional)</span></label>
-          <select id="groupId" name="groupId"></select>
-          <p class="field-hint">Sold out of a block a vendor is holding for you.</p></div>
-        <div class="field"><label for="destination">Destination</label><input id="destination" name="destination"></div>
-        <div class="field"><label for="confirmationNumber">Confirmation number</label>
-          <input id="confirmationNumber" name="confirmationNumber"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="departDate">Departs</label><input id="departDate" name="departDate" type="date"></div>
-        <div class="field"><label for="returnDate">Returns</label><input id="returnDate" name="returnDate" type="date"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="depositDue">Deposit due by</label><input id="depositDue" name="depositDue" type="date"></div>
-        <div class="field"><label for="finalPaymentDue">Final balance due by</label>
-          <input id="finalPaymentDue" name="finalPaymentDue" type="date"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="gross">Trip cost (USD)</label>
-          <input id="gross" name="gross" inputmode="decimal" placeholder="0.00"></div>
-        <div class="field"><label for="commission">Your commission (USD)</label>
-          <input id="commission" name="commission" inputmode="decimal" placeholder="0.00"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="deposit">Deposit due to vendor (USD)</label>
-          <input id="deposit" name="deposit" inputmode="decimal" placeholder="0.00">
-          <p class="field-hint">What the client pays the vendor to hold the trip.</p></div>
-        <div class="field"><label>&nbsp;</label><span class="field-hint">The final balance is the trip cost less this deposit.</span></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="travellers">Travellers</label>
-          <input id="travellers" name="travellers" type="number" min="1" value="1"></div>
-        <div class="field"><label for="commissionStatus">Commission status</label>
-          <select id="commissionStatus" name="commissionStatus">
-            <option value="pending">Pending</option><option value="invoiced">Invoiced</option>
-            <option value="paid">Paid</option>
-          </select></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="cabinCategory">Category</label>
-          <input id="cabinCategory" name="cabinCategory" maxlength="120"
-                 placeholder="Picturesque Oceanview Stateroom"></div>
-        <div class="field"><label for="cabin">Cabin</label>
-          <input id="cabin" name="cabin" maxlength="40" placeholder="1223"></div>
-      </div>
-      <div class="field"><label for="itinerary">Itinerary</label>
-        <input id="itinerary" name="itinerary" maxlength="200" placeholder="4 Night Caribbean (Bahamas)"></div>
-      <div class="field-row">
-        <div class="field"><label for="insuranceStatus">Travel insurance</label>
-          <select id="insuranceStatus" name="insuranceStatus">
-            <option value="unknown">Not discussed yet</option>
-            <option value="purchased">Purchased through us</option>
-            <option value="declined">Client declined</option>
-            <option value="covered_elsewhere">Covered by another policy</option>
-            <option value="purchased_outside">Bought elsewhere</option>
-          </select>
-          <p class="field-hint">Recording a decline protects you later. Leaving it blank does not.</p></div>
-        <div class="field"><label for="bookingMethod">Booked by</label>
-          <select id="bookingMethod" name="bookingMethod">
-            <option value="direct">Direct with the vendor</option>
-            <option value="portal">Vendor portal</option>
-            <option value="phone">Phone</option>
-            <option value="group">From group space</option>
-            <option value="other">Other</option>
-          </select></div>
-      </div>
-      <div class="field"><label for="notes">Notes</label><textarea id="notes" name="notes"></textarea></div>
-    </div>
-    <div class="dialog-foot">
-      <button class="btn btn-danger" type="button" id="delete" hidden>Delete</button>
-      <span style="flex:1;"></span>
-      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
-      <button class="btn btn-primary" type="submit">Save reservation</button>
-    </div>
-  </form>
-</dialog>
 
 <script type="module">
 import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit,
@@ -165,12 +44,8 @@ const ME = (await mountShell()).id;
 
 const panel = document.getElementById('panel');
 const statsEl = document.getElementById('stats');
-const dlg = document.getElementById('dlg');
-const form = document.getElementById('booking-form');
 const search = document.getElementById('search');
 const statusFilter = document.getElementById('status-filter');
-const deleteBtn = document.getElementById('delete');
-let editingId = null;
 let cache = [];
 
 const STATUS_TONE = { booked: 'badge-green', quoted: 'badge-amber', travelled: 'badge-navy', cancelled: 'badge-red' };
@@ -224,48 +99,6 @@ function render(bookings, stats, scope) {
 
 }
 
-function openCreate() {
-  editingId = null;
-  form.reset();
-  fillGroups('');
-  document.getElementById('dlg-title').textContent = 'Add a reservation';
-  deleteBtn.hidden = true;
-  form.querySelector('.notice-error').hidden = true;
-  dlg.showModal();
-}
-
-function openEdit(b) {
-  if (!b) return;
-  editingId = b.id;
-  document.getElementById('dlg-title').textContent = 'Edit reservation';
-  deleteBtn.hidden = false;
-  form.querySelector('.notice-error').hidden = true;
-  const set = (name, value) => { const el = form.elements[name]; if (el) el.value = value ?? ''; };
-  set('clientName', b.client_name); set('supplier', b.supplier);
-  set('productType', b.product_type); set('productName', b.product_name);
-  set('destination', b.destination); set('confirmationNumber', b.confirmation_number);
-  fillGroups(b.group_id || '');
-  set('departDate', b.depart_date); set('returnDate', b.return_date);
-  set('depositDue', b.deposit_due); set('finalPaymentDue', b.final_payment_due);
-  set('travellers', b.travellers); set('status', b.status);
-  set('commissionStatus', b.commission_status); set('notes', b.notes);
-  set('cabin', b.cabin); set('cabinCategory', b.cabin_category);
-  set('itinerary', b.itinerary); set('bookingMethod', b.booking_method);
-  set('insuranceStatus', b.insurance_status);
-  set('gross', (b.gross_cents / 100).toFixed(2));
-  set('deposit', ((b.deposit_cents || 0) / 100).toFixed(2));
-  set('commission', (b.commission_cents / 100).toFixed(2));
-  dlg.showModal();
-}
-
-let groups = [];
-function fillGroups(selected) {
-  document.getElementById('groupId').innerHTML =
-    '<option value="">Not part of a group</option>' +
-    groups.map((g) => `<option value="${esc(g.id)}"${g.id === selected ? ' selected' : ''}>
-      ${esc([g.group_code, g.name].filter(Boolean).join(' / '))}</option>`).join('');
-}
-
 async function load() {
   panel.innerHTML = '<p class="spinner">Loading reservations...</p>';
   try {
@@ -281,106 +114,14 @@ async function load() {
   }
 }
 
-document.getElementById('add').addEventListener('click', openCreate);
-dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
+// Adding a reservation is a page now, so the button is a link in the markup.
 
 let timer;
 search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 350); });
 statusFilter.addEventListener('change', load);
 
-deleteBtn.addEventListener('click', async () => {
-  if (!editingId) return;
-  if (!confirm('Delete this reservation? This cannot be undone.')) return;
-  await api(`/api/bookings/${encodeURIComponent(editingId)}`, { method: 'DELETE' });
-  dlg.close();
-  await load();
-});
-
-onSubmit(form, async (values) => {
-  const path = editingId ? `/api/bookings/${encodeURIComponent(editingId)}` : '/api/bookings';
-  await api(path, { method: editingId ? 'PUT' : 'POST', body: values });
-  dlg.close();
-  await load();
-});
-
-/**
- * The sailing picker: line, then ship, then departure.
- *
- * Filling the form from the catalog rather than from memory is the difference
- * between one vendor in a report and three, and it is the only way to get a
- * return date right without looking it up. Everything it sets can still be
- * typed over: a chartered sailing or a private group will not be in a feed.
- */
-const pickLine = document.getElementById('pick-line');
-const pickShip = document.getElementById('pick-ship');
-const pickDate = document.getElementById('pick-date');
-const pickerHint = document.getElementById('picker-hint');
-let dateRows = [];
-
-async function setUpPicker() {
-  let d;
-  try { d = await api('/api/catalog/lines'); } catch { d = null; }
-  if (!d || !d.ready || !d.lines.length) {
-    document.getElementById('picker').hidden = true;
-    pickerHint.textContent = 'The sailing catalog has not been imported yet, so type the details below.';
-    return;
-  }
-  pickLine.innerHTML = '<option value="">Pick a cruise line</option>'
-    + d.lines.map((l) => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
-}
-
-pickLine.addEventListener('change', async () => {
-  pickShip.innerHTML = '<option value="">Ship</option>';
-  pickDate.innerHTML = '<option value="">Departure</option>';
-  pickShip.disabled = true;
-  pickDate.disabled = true;
-  if (!pickLine.value) return;
-  const d = await api(`/api/catalog/ships?line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
-  if (!d || !d.ships.length) return;
-  pickShip.innerHTML = '<option value="">Ship</option>'
-    + d.ships.map((sh) => `<option value="${esc(sh.name)}">${esc(sh.name)}</option>`).join('');
-  pickShip.disabled = false;
-});
-
-pickShip.addEventListener('change', async () => {
-  pickDate.innerHTML = '<option value="">Departure</option>';
-  pickDate.disabled = true;
-  dateRows = [];
-  if (!pickShip.value) return;
-  const d = await api(`/api/catalog/dates?ship=${encodeURIComponent(pickShip.value)}`
-    + `&line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
-  if (!d || !d.dates.length) return;
-  dateRows = d.dates;
-  pickDate.innerHTML = '<option value="">Departure</option>'
-    + d.dates.map((r) => `<option value="${esc(r.depart_date)}">${esc(dateFmt(r.depart_date))}`
-      + `${r.nights ? ` · ${r.nights} nights` : ''}</option>`).join('');
-  pickDate.disabled = false;
-});
-
-pickDate.addEventListener('change', () => {
-  const row = dateRows.find((r) => r.depart_date === pickDate.value);
-  if (!row) return;
-  const set = (n, v) => { const el = form.elements[n]; if (el && v) el.value = v; };
-  set('supplier', row.cruise_line);
-  set('productName', row.ship);
-  set('itinerary', row.name);
-  set('destination', row.destination);
-  set('departDate', row.depart_date);
-  set('returnDate', row.return_date);
-  set('productType', 'cruise');
-  pickerHint.textContent = `Filled from ${row.cruise_line}: ${row.name || row.ship}. `
-    + 'Change anything below that is not right.';
-});
-
-// Only the advisor's own open groups: a reservation cannot be sold out of
-// somebody else's block.
-groups = await api('/api/groups?status=open')
-  .then((g) => g.groups.filter((x) => x.user_id === ME)).catch(() => []);
-
-await setUpPicker();
 
 const params = new URLSearchParams(location.search);
-if (params.get('new')) openCreate();
 await load();
 
 // Arriving from search: open the reservation that was picked. It may not be in
@@ -389,7 +130,11 @@ await load();
 // Kept because links to it exist. A reservation is edited on its own page
 // now, so this sends you there rather than reopening a dialog that no longer
 // does the job.
+// Both deep links kept, because links to them exist. A reservation is created
+// and edited on its own page now, so these send you there rather than opening
+// a dialog that is no longer here.
 const focus = params.get('focus');
 if (focus) location.replace(`/app/reservation?id=${encodeURIComponent(focus)}`);
+if (params.get('new')) location.replace('/app/new');
 </script>
 </body></html>

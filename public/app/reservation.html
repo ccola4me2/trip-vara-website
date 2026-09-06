@@ -54,7 +54,8 @@
                 <div id="detail-fields"></div>
               </div>
               <div class="card-foot" id="detail-foot" hidden>
-                <span class="muted" id="detail-meta"></span>
+                <button class="btn btn-danger btn-sm" type="button" id="delete-booking">Delete</button>
+                <span style="flex:1;"></span>
                 <button class="btn btn-primary" type="submit">Save reservation</button>
               </div>
             </form>
@@ -101,34 +102,6 @@
     </div>
   </div>
 </div>
-
-<dialog id="price-dlg">
-  <form id="price-form" method="dialog">
-    <div class="card-head"><h2>Price line</h2>
-      <button class="btn btn-ghost btn-sm" type="button" data-close-price>Close</button></div>
-    <div class="card-pad">
-      <div class="notice notice-error" hidden></div>
-      <div class="field"><label for="p-kind">What is it</label>
-        <select id="p-kind" name="kind"></select></div>
-      <div class="field"><label for="p-label">Description</label>
-        <input id="p-label" name="label" maxlength="120" placeholder="Cruise fare, two passengers"></div>
-      <div class="field-row">
-        <div class="field"><label for="p-amount">Amount (USD)</label>
-          <input id="p-amount" name="amount" inputmode="decimal" placeholder="1400.00">
-          <p class="field-hint">A discount goes in as a positive number and is subtracted.</p></div>
-        <div class="field"><label for="p-commission">Commission on it (USD)</label>
-          <input id="p-commission" name="commission" inputmode="decimal" placeholder="224.00"></div>
-      </div>
-      <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;">
-        <input type="checkbox" id="p-commissionable" style="width:auto;">
-        The vendor pays commission on this</label>
-    </div>
-    <div class="card-foot">
-      <button class="btn btn-danger btn-sm" type="button" id="p-delete" hidden>Remove</button>
-      <button class="btn btn-primary" type="submit">Save line</button>
-    </div>
-  </form>
-</dialog>
 
 <dialog id="tier-dlg">
   <form id="tier-form" method="dialog">
@@ -1273,6 +1246,16 @@ onSubmit(tierForm, async (values) => {
   await load();
 });
 
+// Deleting used to live in the dialog on the list. It belongs with the record
+// it destroys, where you can see what you are about to lose.
+document.getElementById('delete-booking').addEventListener('click', async () => {
+  if (!confirm('Delete this reservation? Its pricing, travellers, payments and documents go too.')) return;
+  try {
+    await api(`/api/bookings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    location.href = '/app/reservations';
+  } catch (e) { showError(err, e); }
+});
+
 const detailForm = document.getElementById('detail-form');
 onSubmit(detailForm, async (values) => {
   await api(`/api/bookings/${encodeURIComponent(id)}`, { method: 'PUT', body: values });
@@ -1313,52 +1296,8 @@ onSubmit(optionForm, async (values) => {
   await load();
 });
 
-const priceDlg = document.getElementById('price-dlg');
-const priceForm = document.getElementById('price-form');
-let editingPrice = null;
-
-function openPrice(l) {
-  editingPrice = l ? l.id : null;
-  priceForm.reset();
-  priceForm.querySelector('.notice-error').hidden = true;
-  document.getElementById('p-delete').hidden = !l;
-  document.getElementById('p-kind').innerHTML = (d.priceKinds || [])
-    .map((k) => `<option value="${esc(k.kind)}">${esc(k.label)}</option>`).join('');
-  if (l) {
-    priceForm.elements.kind.value = l.kind;
-    priceForm.elements.label.value = l.label || '';
-    priceForm.elements.amount.value = (l.amount_cents / 100).toFixed(2);
-    priceForm.elements.commission.value = l.commission_cents ? (l.commission_cents / 100).toFixed(2) : '';
-    document.getElementById('p-commissionable').checked = Boolean(l.commissionable);
-  } else {
-    // Default the tick to what that kind usually is, so the common case is
-    // one fewer decision and the unusual one is still a single click.
-    const k = (d.priceKinds || [])[0];
-    document.getElementById('p-commissionable').checked = Boolean(k && k.commissionable);
-  }
-  priceDlg.showModal();
-}
-
-document.getElementById('p-kind').addEventListener('change', (e) => {
-  const k = (d.priceKinds || []).find((x) => x.kind === e.target.value);
-  if (k && !editingPrice) document.getElementById('p-commissionable').checked = Boolean(k.commissionable);
-});
-document.querySelector('[data-close-price]').addEventListener('click', () => priceDlg.close());
-document.getElementById('p-delete').addEventListener('click', async () => {
-  if (!editingPrice || !confirm('Remove this line?')) return;
-  await api(`/api/pricing/${encodeURIComponent(editingPrice)}`, { method: 'DELETE' });
-  priceDlg.close();
-  await load();
-});
-onSubmit(priceForm, async (values) => {
-  values.commissionable = document.getElementById('p-commissionable').checked;
-  const path = editingPrice
-    ? `/api/pricing/${encodeURIComponent(editingPrice)}`
-    : `/api/bookings/${encodeURIComponent(id)}/pricing`;
-  await api(path, { method: editingPrice ? 'PUT' : 'POST', body: values });
-  priceDlg.close();
-  await load();
-});
+// The pricing dialog is gone: the grid replaced it, and two ways to edit one
+// number is one way too many.
 
 /**
  * Posting a payment asks the three questions a bare "mark posted" button

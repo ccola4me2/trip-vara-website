@@ -143,6 +143,7 @@ const PAGE_FILES = {
   '/app/account': '/app/account.html',
   '/app/pipeline': '/app/pipeline.html',
   '/app/tasks': '/app/tasks.html',
+  '/app/new': '/app/new.html',
   '/app/groups': '/app/groups.html',
   '/app/credits': '/app/credits.html',
   '/app/goals': '/app/goals.html',
