@@ -77,6 +77,106 @@ function hydrate(row) {
 // ---------------------------------------------------------------------------
 // Portal side
 // ---------------------------------------------------------------------------
+/**
+ * Ready-made lead forms, for the places advisors actually meet people.
+ *
+ * A blank form builder is a blank page: the useful part is not the field
+ * types, it is knowing that a bridal show wants the wedding date and a party
+ * size, and that a cruise night wants to know which sailing they came to hear
+ * about. These are starting points, editable once created, not fixed shapes.
+ *
+ * Every one of them opens with name, email and phone, because a lead without
+ * a way to reach them is not a lead.
+ */
+const REACH = [
+  { label: 'Your name', key: 'name', type: 'text', required: true },
+  { label: 'Email', key: 'email', type: 'email', required: true },
+  { label: 'Mobile', key: 'phone', type: 'tel', required: false },
+];
+
+export const FORM_TEMPLATES = [
+  {
+    key: 'bridal',
+    label: 'Bridal show',
+    blurb: 'Honeymoons and destination weddings, captured at the stand.',
+    headline: 'Tell us about the honeymoon',
+    description: 'Leave your details and we will come back with real options, not brochures.',
+    fields: [
+      ...REACH,
+      { label: 'Wedding date', key: 'wedding_date', type: 'date', required: false },
+      { label: 'Where you have in mind', key: 'destination', type: 'text', required: false },
+      { label: 'Roughly how long', key: 'nights', type: 'select', required: false,
+        options: ['A long weekend', 'About a week', 'Ten days or so', 'Two weeks or more'] },
+      { label: 'Budget you are working to', key: 'budget', type: 'select', required: false,
+        options: ['Under 5,000', '5,000 to 10,000', '10,000 to 20,000', 'Over 20,000', 'Not sure yet'] },
+      { label: 'Anything else', key: 'notes', type: 'textarea', required: false },
+    ],
+  },
+  {
+    key: 'consumer_show',
+    label: 'Travel show',
+    blurb: 'A short form for a busy stand, where nobody fills in ten boxes.',
+    headline: 'What are you thinking about?',
+    description: 'Four questions and we will be in touch.',
+    fields: [
+      ...REACH,
+      { label: 'Where do you want to go', key: 'destination', type: 'text', required: false },
+      { label: 'Roughly when', key: 'when', type: 'text', required: false },
+      { label: 'How should we reach you', key: 'contact_preference', type: 'select',
+        required: false, options: ['Email', 'Phone', 'Either'] },
+    ],
+  },
+  {
+    key: 'cruise_night',
+    label: 'Cruise or tour evening',
+    blurb: 'For a hosted event, where the sailing on offer is the reason they came.',
+    headline: 'Thanks for coming',
+    description: 'Leave your details and we will follow up on what you saw tonight.',
+    fields: [
+      ...REACH,
+      { label: 'Which sailing interests you', key: 'sailing', type: 'text', required: false },
+      { label: 'How many travelling', key: 'party_size', type: 'number', required: false },
+      { label: 'Sailed with this line before', key: 'sailed_before', type: 'checkbox',
+        required: false },
+      { label: 'Best time to call', key: 'best_time', type: 'text', required: false },
+      { label: 'Anything else', key: 'notes', type: 'textarea', required: false },
+    ],
+  },
+  {
+    key: 'quick',
+    label: 'Quick enquiry',
+    blurb: 'The four things you need before you can quote anything.',
+    headline: 'Tell us about the trip',
+    description: 'The essentials, and we will come back with options.',
+    fields: [
+      ...REACH,
+      { label: 'Where to', key: 'destination', type: 'text', required: true },
+      { label: 'When', key: 'travel_date', type: 'date', required: false },
+      { label: 'How many travelling', key: 'party_size', type: 'number', required: false },
+      { label: 'Budget you are working to', key: 'budget', type: 'text', required: false },
+    ],
+  },
+  {
+    key: 'documents',
+    label: 'Traveller details',
+    blurb: 'What a vendor needs on the booking, asked once rather than by email.',
+    headline: 'Traveller details',
+    description: 'These have to match the passport exactly, or the vendor will reject the booking.',
+    fields: [
+      ...REACH,
+      { label: 'Full name as printed in the passport', key: 'passport_name', type: 'text',
+        required: true },
+      { label: 'Date of birth', key: 'date_of_birth', type: 'date', required: true },
+      { label: 'Citizenship', key: 'citizenship', type: 'text', required: false },
+      { label: 'Passport expires', key: 'passport_expiry', type: 'date', required: false },
+      // Deliberately not the passport number. A public form is not the place
+      // to collect one, and an advisor does not need it to hold a booking.
+      { label: 'Any access needs or dietary requirements', key: 'needs', type: 'textarea',
+        required: false },
+    ],
+  },
+];
+
 export async function handleListForms(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
@@ -89,6 +189,9 @@ export async function handleListForms(request, env) {
 
   return json({
     forms: (results || []).map((r) => ({ ...hydrate(r), submissions: r.submissions || 0 })),
+    // Sent with the list so the builder can offer a starting point without a
+    // second round trip before anybody has typed anything.
+    templates: FORM_TEMPLATES,
   });
 }
 
@@ -117,6 +220,79 @@ export async function handleGetForm(request, env, id) {
         contactId: s.contact_id, createdAt: s.created_at, data,
       };
     }),
+  });
+}
+
+/**
+ * Every lead the forms have brought in, across all of them.
+ *
+ * The per-form view answers "who filled this one in". This answers the
+ * questions an owner actually asks: is any of this working, which form is
+ * pulling its weight, and did the leads reach the CRM or stop here.
+ */
+export async function handleFormsReport(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const locationId = ghl.locationFor(env, user);
+  const url = new URL(request.url);
+  const days = Math.min(Math.max(Number(url.searchParams.get('days')) || 90, 1), 730);
+  // Seconds. now() is seconds in this codebase and mixing the two has been the
+  // most repeated bug in it.
+  const since = now() - days * 86400;
+
+  const { results: rows } = await env.DB.prepare(
+    `SELECT s.id, s.form_id, s.name, s.email, s.phone, s.contact_id, s.created_at,
+            s.source, s.data_json, f.name AS form_name, f.slug
+       FROM form_submissions s
+       JOIN forms f ON f.id = s.form_id
+      WHERE s.location_id = ? AND s.created_at >= ?
+      ORDER BY s.created_at DESC
+      LIMIT 500`
+  ).bind(locationId, since).all();
+
+  const submissions = (rows || []).map((r) => {
+    let data = {};
+    try { data = JSON.parse(r.data_json); } catch { data = {}; }
+    return {
+      id: r.id, formId: r.form_id, formName: r.form_name, slug: r.slug,
+      name: r.name, email: r.email, phone: r.phone,
+      contactId: r.contact_id, createdAt: r.created_at, source: r.source, data,
+    };
+  });
+
+  const { results: forms } = await env.DB.prepare(
+    `SELECT f.id, f.name, f.slug, f.active,
+            (SELECT COUNT(*) FROM form_submissions s WHERE s.form_id = f.id) AS total,
+            (SELECT MAX(created_at) FROM form_submissions s WHERE s.form_id = f.id) AS last_at
+       FROM forms f WHERE f.location_id = ?
+      ORDER BY total DESC, f.name ASC`
+  ).bind(locationId).all();
+
+  const byMonth = {};
+  for (const s of submissions) {
+    const key = new Date(s.createdAt * 1000).toISOString().slice(0, 7);
+    byMonth[key] = (byMonth[key] || 0) + 1;
+  }
+
+  // A lead that never reached the CRM is one nobody is following up, which is
+  // worth its own number rather than being buried in a total.
+  const reachedCrm = submissions.filter((s) => s.contactId).length;
+
+  return json({
+    days,
+    submissions,
+    forms: forms || [],
+    byMonth: Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, count]) => ({ month, count })),
+    totals: {
+      submissions: submissions.length,
+      forms: (forms || []).length,
+      activeForms: (forms || []).filter((f) => f.active).length,
+      reachedCrm,
+      strandedHere: submissions.length - reachedCrm,
+      allTime: (forms || []).reduce((n, f) => n + (f.total || 0), 0),
+    },
   });
 }
 

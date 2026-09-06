@@ -353,6 +353,37 @@ async function main() {
   check(subs.some((s) => s.email === `anna-${stamp}@test.dev`),
     'and lands as a submission on the form', `${subs.length} submission(s)`);
 
+  // ------------------------------------------------------ the lead report --
+  step('What the forms brought in');
+
+  const listed = await call(advisor, 'GET', '/api/myforms');
+  const templates = listed.data?.templates || [];
+  check(templates.length >= 5, 'the builder offers ready-made lead forms',
+    `${templates.length} template(s)`);
+  // A template whose fields carry no key would have them derived from labels,
+  // which is how the first version of these quietly produced "your_name".
+  check(templates.every((t) => t.fields.length && t.fields.every((f) => f.key && f.label)),
+    'each with named fields, not just labels');
+  check(templates.every((t) => t.fields.some((f) => f.type === 'email')),
+    'and every one asks for an email, since a lead you cannot reach is not one');
+
+  const leadReport = await call(advisor, 'GET', '/api/myforms/report?days=90');
+  check(leadReport.status === 200, 'the lead report loads', `status ${leadReport.status}`);
+  const myLead = (leadReport.data?.submissions || []).find((x) => x.email === `anna-${stamp}@test.dev`);
+  check(Boolean(myLead), 'a submission shows up in it across every form');
+  check(myLead?.formName === form.name, 'named by the form it came from', myLead?.formName);
+  check(leadReport.data?.totals?.submissions >= 1, 'with a count for the period');
+  // Leads that never reached the CRM are the ones nobody is chasing, so they
+  // get their own number instead of being buried in the total.
+  check(leadReport.data.totals.reachedCrm + leadReport.data.totals.strandedHere
+    === leadReport.data.totals.submissions,
+    'and the ones that reached the CRM plus the ones that did not are all of them',
+    JSON.stringify(leadReport.data.totals));
+
+  const shortWindow = await call(advisor, 'GET', '/api/myforms/report?days=1');
+  check(shortWindow.status === 200 && shortWindow.data?.days === 1,
+    'the period can be narrowed', `${shortWindow.data?.days}`);
+
   // ------------------------------------------------------- automation run --
   step('The submission drives the automation');
   let detail = await call(advisor, 'GET', `/api/automations/${automationId}`);

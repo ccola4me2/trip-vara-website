@@ -13,13 +13,27 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Forms</h1><p class="sub">Your own forms, hosted on your domain. Submissions land here.</p></div>
-      <button class="btn btn-primary btn-sm" id="new-form">Build a form</button>
+      <div><h1>Lead forms</h1><p class="sub">Your own forms, hosted on your domain. Every
+        submission is a lead here and a contact in the CRM.</p></div>
+      <div class="toolbar" style="margin:0;padding:0;">
+        <select id="report-days" aria-label="Period" style="width:auto;">
+          <option value="30">Last 30 days</option>
+          <option value="90" selected>Last 90 days</option>
+          <option value="365">Last year</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="new-form">Build a form</button>
+      </div>
     </header>
     <div class="content">
       <div id="err"></div>
-      <section class="card" id="panel"><p class="spinner">Loading forms...</p></section>
-      <section class="card" id="subs" hidden></section>
+      <section id="stats" class="stat-grid"></section>
+      <section class="card" id="panel" style="margin-top:1.25rem;"><p class="spinner">Loading forms...</p></section>
+      <section class="card" id="subs" hidden style="margin-top:1.25rem;"></section>
+      <section class="card" id="all-subs" style="margin-top:1.25rem;">
+        <div class="card-head"><h2>Leads from your forms</h2>
+          <span class="muted" id="subs-count"></span></div>
+        <div id="lead-list"><p class="spinner">Loading...</p></div>
+      </section>
     </div>
   </div>
 </div>
@@ -30,6 +44,10 @@
       <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button></div>
     <div class="dialog-body">
       <div class="notice notice-error" hidden></div>
+      <div class="field" id="template-field"><label for="template">Start from</label>
+        <select id="template"></select>
+        <p class="field-hint">A starting point with the questions that kind of form usually
+          needs. Every field can be changed afterwards.</p></div>
       <div class="field"><label for="name">Form name</label>
         <input id="name" name="name" required placeholder="Cruise quote request">
         <p class="field-hint">Internal only. The public page uses the headline below.</p></div>
@@ -68,6 +86,7 @@ import { api, mountShell, esc, timeAgo, showError, onSubmit } from '/js/app.js';
 await mountShell();
 
 const panel = document.getElementById('panel');
+let templates = [];
 const subsEl = document.getElementById('subs');
 const dlg = document.getElementById('builder');
 const form = document.getElementById('builder-form');
@@ -127,6 +146,16 @@ function openBuilder(f) {
   form.querySelector('.notice-error').hidden = true;
   document.getElementById('builder-title').textContent = f ? 'Edit form' : 'Build a form';
   delBtn.hidden = !f;
+
+  // A starting point is only offered for a new form. Applying one to a form
+  // that already has answers under it would throw away the shape those answers
+  // were given in.
+  const tf = document.getElementById('template-field');
+  tf.hidden = Boolean(f);
+  const sel = document.getElementById('template');
+  sel.innerHTML = `<option value="">A blank form</option>${
+    templates.map((t) => `<option value="${esc(t.key)}">${esc(t.label)} - ${esc(t.blurb)}</option>`).join('')}`;
+  sel.value = '';
 
   if (f) {
     form.elements.name.value = f.name || '';
@@ -203,6 +232,16 @@ async function showSubs(id) {
 }
 
 document.getElementById('new-form').addEventListener('click', () => openBuilder(null));
+
+document.getElementById('template').addEventListener('change', (e) => {
+  const t = templates.find((x) => x.key === e.target.value);
+  if (!t) return;
+  form.elements.name.value = t.label;
+  form.elements.headline.value = t.headline;
+  form.elements.description.value = t.description;
+  fieldsEl.innerHTML = '';
+  t.fields.forEach((fl) => fieldsEl.appendChild(fieldRow(fl)));
+});
 document.getElementById('add-field').addEventListener('click', () => fieldsEl.appendChild(fieldRow()));
 dlg.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dlg.close()));
 
@@ -224,9 +263,65 @@ onSubmit(form, async (values) => {
   await load();
 });
 
+const daysSel = document.getElementById('report-days');
+const leadList = document.getElementById('lead-list');
+
+function drawReport(r) {
+  const t = r.totals;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Leads in</p><p class="value">${t.submissions}</p>
+      <p class="meta">Last ${r.days} days</p></div>
+    <div class="stat"><p class="label">Reached the CRM</p><p class="value">${t.reachedCrm}</p>
+      <p class="meta">${t.strandedHere
+        ? `${t.strandedHere} stopped here and nobody was told`
+        : 'Every one of them'}</p></div>
+    <div class="stat"><p class="label">Live forms</p><p class="value">${t.activeForms}</p>
+      <p class="meta">Of ${t.forms} built</p></div>
+    <div class="stat"><p class="label">All time</p><p class="value">${t.allTime}</p>
+      <p class="meta">Every submission ever</p></div>`;
+
+  document.getElementById('subs-count').textContent =
+    `${r.submissions.length} in the last ${r.days} days`;
+
+  leadList.innerHTML = r.submissions.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Who</th><th>Form</th><th>They said</th><th>When</th><th>CRM</th></tr></thead>
+        <tbody>${r.submissions.map((s) => {
+          // The answers beyond name, email and phone, which is the part that
+          // says what they actually want.
+          const said = Object.entries(s.data || {})
+            .filter(([k]) => !/^(first_?name|last_?name|name|email|phone|mobile)$/i.test(k))
+            .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
+            .filter((x) => x.length < 120)
+            .slice(0, 3).join(' · ');
+          return `<tr>
+            <td><span class="name">${esc(s.name || s.email || 'Anonymous')}</span>
+              <div class="muted">${esc([s.email, s.phone].filter(Boolean).join(' · '))}</div></td>
+            <td>${esc(s.formName)}</td>
+            <td class="muted" style="max-width:22rem;">${esc(said)}</td>
+            <td class="muted">${esc(timeAgo(s.createdAt))}</td>
+            <td>${s.contactId
+              ? `<a class="muted" href="/app/contact?id=${encodeURIComponent(s.contactId)}">open</a>`
+              : '<span class="badge badge-amber">not sent</span>'}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>No leads yet</h3>
+        <p>Share a form's link and the people who fill it in appear here.</p></div>`;
+}
+
+daysSel.addEventListener('change', load);
+
 async function load() {
   panel.innerHTML = '<p class="spinner">Loading forms...</p>';
-  try { render((await api('/api/myforms')).forms); }
+  try {
+    const [list, report] = await Promise.all([
+      api('/api/myforms'),
+      api(`/api/myforms/report?days=${daysSel.value}`),
+    ]);
+    templates = list.templates || [];
+    render(list.forms);
+    drawReport(report);
+  }
   catch (err) { showError(document.getElementById('err'), err); panel.innerHTML = ''; }
 }
 await load();

@@ -54,6 +54,7 @@ import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './for
 import { handleCrmLinks } from './crm.js';
 import {
   handleListForms as handleListOwnForms, handleGetForm, handleSaveForm, handleDeleteForm,
+  handleFormsReport,
 } from './formbuilder.js';
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
 import { handleSearch } from './search.js';
@@ -410,6 +411,8 @@ async function routeApi(request, env, path, method) {
 
   // Our own forms, built and hosted here.
   if (path === '/api/myforms' && method === 'GET') return handleListOwnForms(request, env);
+  // Before the /:id match, or "report" is read as a form id.
+  if (path === '/api/myforms/report' && method === 'GET') return handleFormsReport(request, env);
   if (path === '/api/myforms' && method === 'POST') return handleSaveForm(request, env, null);
   if (ownFormMatch && method === 'GET') return handleGetForm(request, env, ownFormMatch[1]);
   if (ownFormMatch && method === 'PUT') return handleSaveForm(request, env, ownFormMatch[1]);
