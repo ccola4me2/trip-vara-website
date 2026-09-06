@@ -1300,6 +1300,84 @@ async function main() {
   check(badStatus.status === 400, 'an unknown status is refused rather than defaulted',
     `status ${badStatus.status}`);
 
+  // ------------------------------------------------- commission reconciled --
+  step('What the vendor actually paid');
+
+  // The case the old model could not see. A vendor pays less than the expected
+  // commission and stops; before receipts existed the reservation was marked
+  // paid and the full figure was counted, so the shortfall was absorbed in
+  // silence. Here it has to show as short, with the difference still owed.
+  const shortBooking = await call(advisor, 'POST', '/api/bookings', {
+    clientName: 'Short Payer', supplier: 'Test Cruise Line', productName: 'Seven nights',
+    status: 'travelled', departDate: isoDay(-60), returnDate: isoDay(-50),
+    gross: 4000, commission: 600,
+  });
+  const shortId = shortBooking.data?.booking?.id;
+  check(Boolean(shortId), 'a travelled reservation expecting 600 in commission');
+
+  const receipt = await call(advisor, 'POST', '/api/commissions/receipts', {
+    bookingId: shortId, amount: 450, receivedOn: isoDay(-3), reference: 'EFT 88213',
+  });
+  check(receipt.status === 200, 'the vendor pays 450 of it', `status ${receipt.status}`);
+
+  const shortView = await call(advisor, 'GET', '/api/commissions');
+  const shortRow = (shortView.data?.rows || []).find((r) => r.id === shortId);
+  check(shortRow?.settlement === 'short', 'which reads as paid short, not as paid',
+    `settlement ${shortRow?.settlement}`);
+  check(shortRow?.variance_cents === -15000, 'with the 150 difference named',
+    `variance ${shortRow?.variance_cents}`);
+  check(shortRow?.outstanding_cents === 15000, 'and the shortfall still owed',
+    `outstanding ${shortRow?.outstanding_cents}`);
+  check(shortView.data?.totals?.shortCents >= 15000,
+    'and counted in what vendors have underpaid', `${shortView.data?.totals?.shortCents}`);
+
+  // Receipts are money, so a second one tops the reservation up rather than
+  // replacing what came before.
+  await call(advisor, 'POST', '/api/commissions/receipts', {
+    bookingId: shortId, amount: 150, receivedOn: isoDay(-1),
+  });
+  const settledView = await call(advisor, 'GET', '/api/commissions');
+  const settledRow = (settledView.data?.rows || []).find((r) => r.id === shortId);
+  check(settledRow?.settlement === 'settled', 'the rest arriving settles it',
+    `settlement ${settledRow?.settlement}`);
+  check(settledRow?.commission_status === 'paid',
+    'and the reservation marks itself paid from the money, not by hand',
+    `status ${settledRow?.commission_status}`);
+
+  // A statement is the vendor's own document: its total is entered from the
+  // paper, and the lines matched underneath. The two agreeing is the proof.
+  const stmt = await call(advisor, 'POST', '/api/commissions/statements', {
+    vendorName: 'Test Cruise Line', reference: 'STMT-1', statementDate: isoDay(-2), total: 600,
+  });
+  const stmtId = stmt.data?.id;
+  check(Boolean(stmtId), 'a vendor statement for 600 is filed');
+
+  const unmatched = await call(advisor, 'GET', '/api/commissions/statements');
+  const filed = (unmatched.data?.statements || []).find((x) => x.id === stmtId);
+  check(filed && filed.reconciled === false && filed.unmatched_cents === 60000,
+    'unreconciled until something is matched to it',
+    `unmatched ${filed?.unmatched_cents}`);
+
+  const cands = await call(advisor, 'GET', `/api/commissions/statements/${stmtId}/candidates`);
+  check(!(cands.data?.candidates || []).some((c) => c.id === shortId),
+    'a reservation already settled is not offered as a line',
+    `${cands.data?.candidates?.length} candidate(s)`);
+
+  // Somebody else's reservation cannot be given a receipt, whatever the
+  // browser sends.
+  const receiptNotMine = await call(admin, 'POST', '/api/commissions/receipts', {
+    bookingId: shortId, amount: 100,
+  });
+  check(receiptNotMine.status === 404, 'a receipt cannot be filed against another advisor\'s reservation',
+    `status ${receiptNotMine.status}`);
+
+  await call(advisor, 'DELETE', `/api/commissions/statements/${stmtId}`);
+  const afterDelete = await call(advisor, 'GET', '/api/commissions');
+  const stillPaid = (afterDelete.data?.rows || []).find((r) => r.id === shortId);
+  check(stillPaid?.received_cents === 60000,
+    'deleting a statement leaves the money it recorded on the books',
+    `received ${stillPaid?.received_cents}`);
+
   // ------------------------------------------------ the reservation record --
   step('One trip on one screen');
 

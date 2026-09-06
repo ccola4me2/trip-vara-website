@@ -74,6 +74,11 @@ import {
 } from './credits.js';
 import { handleGetGoals, handleSaveGoals } from './goals.js';
 import { handleListCommissions, handleSetCommissionStatus } from './commissions.js';
+import {
+  handleListReceipts, handleAddReceipt, handleDeleteReceipt,
+  handleListStatements, handleCreateStatement, handleUpdateStatement,
+  handleDeleteStatement, handleStatementCandidates,
+} from './reconcile.js';
 import { handleClientRecord, handleListClients, handleUpdateClient } from './clients.js';
 import { handlePreviewImport, handleRunImport } from './importer.js';
 import {
@@ -280,6 +285,9 @@ async function routeApi(request, env, path, method) {
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
+  const receiptMatch = path.match(/^\/api\/commissions\/receipts\/([^/]+)$/);
+  const vendorStatementMatch = path.match(/^\/api\/commissions\/statements\/([^/]+)$/);
+  const candidatesMatch = path.match(/^\/api\/commissions\/statements\/([^/]+)\/candidates$/);
   const clientMatch = path.match(/^\/api\/clients\/([^/]+)$/);
   const vendorMatch = path.match(/^\/api\/vendors\/([^/]+)$/);
 
@@ -499,6 +507,16 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/admin/catalog' && method === 'POST') return handleCatalogImport(request, env);
   if (clientMatch && method === 'PUT') return handleUpdateClient(request, env, clientMatch[1]);
   if (path === '/api/commissions' && method === 'GET') return handleListCommissions(request, env);
+  // Ordered before the bare statement match so the longer path wins: a regex
+  // for /statements/:id also matches /statements/:id/candidates otherwise.
+  if (candidatesMatch && method === 'GET') return handleStatementCandidates(request, env, candidatesMatch[1]);
+  if (path === '/api/commissions/receipts' && method === 'GET') return handleListReceipts(request, env);
+  if (path === '/api/commissions/receipts' && method === 'POST') return handleAddReceipt(request, env);
+  if (receiptMatch && method === 'DELETE') return handleDeleteReceipt(request, env, receiptMatch[1]);
+  if (path === '/api/commissions/statements' && method === 'GET') return handleListStatements(request, env);
+  if (path === '/api/commissions/statements' && method === 'POST') return handleCreateStatement(request, env);
+  if (vendorStatementMatch && method === 'PUT') return handleUpdateStatement(request, env, vendorStatementMatch[1]);
+  if (vendorStatementMatch && method === 'DELETE') return handleDeleteStatement(request, env, vendorStatementMatch[1]);
   if (path === '/api/commissions/status' && method === 'POST') {
     return handleSetCommissionStatus(request, env);
   }

@@ -10,10 +10,11 @@
 // however long ago it was sold, and mixing the two makes everything look
 // overdue and the report worth ignoring.
 
-import { json, badRequest, oneOf, now, readJson } from './util.js';
+import { json, badRequest, oneOf, uid, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { SPLIT_PCT_SQL, ADVISOR_SHARE_SQL } from './split.js';
+import { settlement, SETTLEMENT_STATES } from './reconcile.js';
 
 const STATUSES = ['pending', 'invoiced', 'paid'];
 
@@ -62,6 +63,10 @@ export async function handleListCommissions(request, env) {
     `SELECT b.id, b.client_name, b.supplier, b.product_name, b.depart_date, b.return_date,
             b.gross_cents, b.commission_cents, b.commission_status, b.confirmation_number,
             b.user_id, ${pct} AS split_pct,
+            COALESCE((SELECT SUM(r.amount_cents) FROM commission_receipts r
+                       WHERE r.booking_id = b.id), 0) AS received_cents,
+            (SELECT MAX(r.received_on) FROM commission_receipts r
+              WHERE r.booking_id = b.id) AS last_received_on,
             ${ADVISOR_SHARE_SQL('b.commission_cents', pct)} AS advisor_cents,
             COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email)
               AS advisor_name
@@ -78,18 +83,27 @@ export async function handleListCommissions(request, env) {
       : null;
     // The agency's share is the remainder, so the two halves always add back
     // up to the commission rather than drifting a cent apart.
+    // Expected against received, rather than a status somebody ticked. A
+    // vendor paying short used to leave the reservation looking settled.
+    const { state, variance } = settlement(r.commission_cents, r.received_cents);
     return {
       ...r, back, daysSince, bucket: bucketFor(daysSince),
       agency_cents: (r.commission_cents || 0) - (r.advisor_cents || 0),
+      settlement: state,
+      variance_cents: variance,
+      outstanding_cents: Math.max((r.commission_cents || 0) - (r.received_cents || 0), 0),
     };
   });
 
   // Only unpaid commission ages. Once it has arrived, how long it took is
   // history rather than a thing to act on.
-  const owed = rows.filter((r) => r.commission_status !== 'paid');
+  // Owed is now a fact about money rather than about a status: anything the
+  // vendor has not fully paid, including the part-paid ones that used to
+  // disappear from this list the moment somebody marked them paid.
+  const owed = rows.filter((r) => r.outstanding_cents > 0);
   const ageing = Object.fromEntries(BUCKETS.map((b) => [b.key, { cents: 0, count: 0 }]));
   for (const r of owed) {
-    ageing[r.bucket].cents += r.commission_cents || 0;
+    ageing[r.bucket].cents += r.outstanding_cents || 0;
     ageing[r.bucket].count += 1;
   }
 
@@ -97,7 +111,7 @@ export async function handleListCommissions(request, env) {
   for (const r of owed) {
     const key = r.supplier || 'Unrecorded vendor';
     byVendor[key] = byVendor[key] || { vendor: key, cents: 0, count: 0, oldestDays: null };
-    byVendor[key].cents += r.commission_cents || 0;
+    byVendor[key].cents += r.outstanding_cents || 0;
     byVendor[key].count += 1;
     if (r.daysSince !== null && r.daysSince > (byVendor[key].oldestDays ?? -1)) {
       byVendor[key].oldestDays = r.daysSince;
@@ -107,10 +121,11 @@ export async function handleListCommissions(request, env) {
   return json({
     rows,
     buckets: BUCKETS,
+    settlementStates: SETTLEMENT_STATES,
     ageing,
     byVendor: Object.values(byVendor).sort((a, b) => b.cents - a.cents),
     totals: {
-      owedCents: owed.reduce((n, r) => n + (r.commission_cents || 0), 0),
+      owedCents: owed.reduce((n, r) => n + (r.outstanding_cents || 0), 0),
       // What the advisors are owed out of it, and what the agency keeps. An
       // associate reading their own page wants the first; an owner reading the
       // combined one is looking at the difference.
@@ -120,13 +135,21 @@ export async function handleListCommissions(request, env) {
       // Claimable means they are home and it has not been paid: the number to
       // act on, as opposed to everything that will eventually be due.
       claimableCents: owed.filter((r) => r.bucket !== 'travelling')
-        .reduce((n, r) => n + (r.commission_cents || 0), 0),
-      paidCents: rows.filter((r) => r.commission_status === 'paid')
-        .reduce((n, r) => n + (r.commission_cents || 0), 0),
-      paidAdvisorCents: rows.filter((r) => r.commission_status === 'paid')
+        .reduce((n, r) => n + (r.outstanding_cents || 0), 0),
+      // Money actually received, summed from the receipts. This used to be the
+      // expected figure on everything somebody had marked paid, which is a
+      // different number whenever a vendor pays short.
+      paidCents: rows.reduce((n, r) => n + (r.received_cents || 0), 0),
+      paidAdvisorCents: rows.filter((r) => r.settlement === 'settled' || r.settlement === 'over')
         .reduce((n, r) => n + (r.advisor_cents || 0), 0),
       lateCents: owed.filter((r) => r.bucket === 'older')
-        .reduce((n, r) => n + (r.commission_cents || 0), 0),
+        .reduce((n, r) => n + (r.outstanding_cents || 0), 0),
+      // Reservations the vendor has paid something towards and then stopped.
+      // Not late, not unpaid, and previously invisible.
+      shortCents: rows.filter((r) => r.settlement === 'short')
+        .reduce((n, r) => n + Math.abs(r.variance_cents || 0), 0),
+      shortCount: rows.filter((r) => r.settlement === 'short').length,
+      overCount: rows.filter((r) => r.settlement === 'over').length,
     },
     today,
     // Whether any of this is actually split. A sole advisor keeping all of it
@@ -165,10 +188,57 @@ export async function handleSetCommissionStatus(request, env) {
   ).bind(status, now(), user.id, ...ids).run();
 
   const changed = res.meta ? res.meta.changes || 0 : 0;
+
+  // Marking a reservation paid has to move money, not just a label.
+  //
+  // Since commission is reconciled against what the vendor actually sent, a
+  // status on its own no longer settles anything: the reservation would still
+  // read as owed, and the next receipt would flip the label back to invoiced.
+  // So marking paid records the outstanding amount as received. That is what
+  // the person clicking it means, it keeps the one-click batch workflow, and
+  // the figure lands somewhere it can later be corrected line by line.
+  let recorded = 0;
+  if (status === 'paid') recorded = await recordExpectedAsReceived(env, user.id, ids);
   await db.logActivity(env, user.id, 'commission.status',
     `Marked ${changed} reservation${changed === 1 ? '' : 's'} ${status}`, { status, count: changed });
 
   // Says how many actually moved rather than how many were asked for, so
   // selecting somebody else's reservation is visible rather than silent.
-  return json({ ok: true, status, requested: ids.length, changed });
+  return json({ ok: true, status, requested: ids.length, changed, recorded });
+}
+
+/**
+ * Book the outstanding balance on each reservation as money received.
+ *
+ * Only the shortfall, so marking an already part-paid reservation paid tops it
+ * up rather than double counting what has already arrived. A reservation with
+ * nothing outstanding is skipped rather than given a zero receipt.
+ */
+async function recordExpectedAsReceived(env, userId, ids) {
+  const marks = ids.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.commission_cents,
+            COALESCE((SELECT SUM(r.amount_cents) FROM commission_receipts r
+                       WHERE r.booking_id = b.id), 0) AS received_cents
+       FROM bookings b
+      WHERE b.user_id = ? AND b.id IN (${marks})`
+  ).bind(userId, ...ids).all();
+
+  const ts = now();
+  const today = isoDay(0);
+  const writes = [];
+  for (const b of results || []) {
+    const outstanding = (b.commission_cents || 0) - (b.received_cents || 0);
+    if (outstanding <= 0) continue;
+    writes.push(env.DB.prepare(
+      `INSERT INTO commission_receipts
+         (id, user_id, booking_id, statement_id, amount_cents, received_on,
+          reference, notes, created_at, updated_at)
+       VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?)`
+    ).bind(uid(), userId, b.id, outstanding, today,
+      'Recorded by marking the commission paid', ts, ts));
+  }
+
+  if (writes.length) await env.DB.batch(writes);
+  return writes.length;
 }
