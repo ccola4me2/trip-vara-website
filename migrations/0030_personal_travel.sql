@@ -1,0 +1,15 @@
+-- An advisor's own holiday is not client production.
+--
+-- Every advisor books their own travel through the agency, and until now it
+-- counted as a sale: it inflated the year's production, moved the target they
+-- set themselves, added them to their own client list, and eventually put them
+-- on the list of people worth ringing about a trip they took themselves.
+--
+-- CP Maxx asks the same question on the first screen of a reservation and
+-- warns you to answer it, which is a good sign it costs somebody something
+-- when it is answered wrong.
+--
+-- The commission is still commission. A personal booking earns real money and
+-- stays in what the agency is owed; what it leaves is production, targets and
+-- the rebooking list, which are all about clients.
+ALTER TABLE bookings ADD COLUMN personal INTEGER NOT NULL DEFAULT 0;

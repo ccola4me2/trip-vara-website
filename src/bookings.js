@@ -94,6 +94,10 @@ function parseBooking(body) {
       // advisor who recorded the refusal is in a very different position
       // afterwards from one who left it blank.
       insuranceStatus: oneOf(body.insuranceStatus, INSURANCE_STATUS),
+      // An advisor's own holiday. Kept out of production and targets, kept in
+      // commission, because the money is real even when the sale is not client
+      // business.
+      personal: body.personal ? 1 : 0,
       advisorSplitPct: body.advisorSplitPct === '' || body.advisorSplitPct == null
         ? null
         : Math.max(0, Math.min(Number(body.advisorSplitPct) || 0, 100)),
@@ -375,6 +379,7 @@ const QUICK_FIELDS = {
   productType: ['product_type', (v) => oneOf(v, PRODUCT_TYPES)],
   commissionStatus: ['commission_status', (v) => oneOf(v, COMMISSION_STATUSES)],
   invoiceNotes: ['invoice_notes', (v) => clean(v, 1000)],
+  personal: ['personal', (v) => (v ? 1 : 0)],
   // Blank clears the override and puts the trip back on the advisor's standing
   // agreement, which is why this cannot go through toCents or oneOf: both turn
   // "nothing set" into a value.

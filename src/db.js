@@ -308,7 +308,7 @@ const BOOKING_COLUMNS = `
   commission_cents, commission_status, status, notes, group_id, client_id, vendor_id,
   cabin, cabin_category, itinerary, booking_method, insurance_status, advisor_split_pct,
   quote_sent_at, quote_sent_count, statement_sent_at, welcomed_at,
-  invoice_no, invoice_issued_at, invoice_notes,
+  invoice_no, invoice_issued_at, invoice_notes, personal,
   created_at, updated_at
 `;
 
@@ -358,8 +358,8 @@ export async function createBooking(env, userId, f) {
         depart_date, return_date, deposit_due, final_payment_due, travellers,
         gross_cents, deposit_cents, commission_cents, commission_status, status, notes,
         group_id, client_id, vendor_id, cabin, cabin_category, itinerary,
-        booking_method, insurance_status, advisor_split_pct, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        booking_method, insurance_status, advisor_split_pct, personal, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, userId, f.ghlContactId || null, f.ghlOpportunityId || null,
     f.clientName, f.supplier || null, f.productType, f.productName || null,
@@ -368,7 +368,8 @@ export async function createBooking(env, userId, f) {
     f.travellers, f.grossCents, f.depositCents || 0, f.commissionCents, f.commissionStatus,
     f.status, f.notes || null, f.groupId || null, f.clientId || null, f.vendorId || null,
     f.cabin || null, f.cabinCategory || null, f.itinerary || null, f.bookingMethod || null,
-    f.insuranceStatus || 'unknown', f.advisorSplitPct == null ? null : f.advisorSplitPct, ts, ts
+    f.insuranceStatus || 'unknown', f.advisorSplitPct == null ? null : f.advisorSplitPct,
+    f.personal ? 1 : 0, ts, ts
   ).run();
   return getBooking(env, id, userId);
 }
@@ -382,7 +383,7 @@ export async function updateBooking(env, id, userId, f) {
        travellers = ?, gross_cents = ?, deposit_cents = ?, commission_cents = ?, commission_status = ?,
        status = ?, notes = ?, group_id = ?, client_id = ?, vendor_id = ?,
        cabin = ?, cabin_category = ?, itinerary = ?, booking_method = ?,
-       insurance_status = ?, advisor_split_pct = ?, updated_at = ?
+       insurance_status = ?, advisor_split_pct = ?, personal = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(
     f.ghlContactId || null, f.ghlOpportunityId || null, f.clientName, f.supplier || null,
@@ -392,7 +393,7 @@ export async function updateBooking(env, id, userId, f) {
     f.status, f.notes || null, f.groupId || null, f.clientId || null, f.vendorId || null,
     f.cabin || null, f.cabinCategory || null, f.itinerary || null, f.bookingMethod || null,
     f.insuranceStatus || 'unknown', f.advisorSplitPct == null ? null : f.advisorSplitPct,
-    now(), id, userId
+    f.personal ? 1 : 0, now(), id, userId
   ).run();
   if (!res.meta || res.meta.changes === 0) return null;
   return getBooking(env, id, userId);
@@ -631,6 +632,7 @@ export async function welcomeHomeCandidates(env, scope, { today, days = 30, limi
        FROM bookings b LEFT JOIN users u ON u.id = b.user_id
       WHERE ${scoped.sql}
         AND b.status = 'travelled'
+        AND b.personal = 0
         AND b.welcomed_at IS NULL
         AND COALESCE(b.return_date, b.depart_date) IS NOT NULL
         AND COALESCE(b.return_date, b.depart_date) <= ?
@@ -760,6 +762,9 @@ export async function rebookCandidates(env, scope, { today, limit = 25 } = {}) {
        FROM bookings b
       WHERE ${scoped.sql}
         AND b.status IN ('booked','travelled')
+        -- Not your own holiday. This list is people to ring about booking
+        -- again, and ringing yourself is not a lead.
+        AND b.personal = 0
         AND COALESCE(b.return_date, b.depart_date) IS NOT NULL
         AND COALESCE(b.return_date, b.depart_date) < ?
       GROUP BY b.client_name

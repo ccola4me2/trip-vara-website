@@ -2040,6 +2040,42 @@ async function main() {
     `status ${notYours.status}`);
   }
 
+  // --------------------------------------------------- personal travel -----
+  {
+  step('An advisor\'s own holiday is not client production');
+
+  const mine = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Me Myself ${stamp}`, supplier: 'Virgin Voyages', status: 'travelled',
+    departDate: isoDay(-60), returnDate: isoDay(-50), gross: '3000', commission: '300',
+    personal: true,
+  });
+  const mineId = mine.data?.booking?.id;
+  if (mineId) cleanup('my own holiday', () => call(advisor, 'DELETE', `/api/bookings/${mineId}`));
+
+  check(mine.data?.booking?.personal === 1, 'a reservation can be marked as my own travel',
+    mine.data?.booking?.personal);
+
+  // The two lists of people to ring. Ringing yourself is not a lead, and
+  // welcoming yourself home is not a client touch.
+  const dash = await call(advisor, 'GET', '/api/dashboard');
+  check(!(dash.data?.welcome || []).some((b) => b.id === mineId),
+    'and it is not on the list of clients to ring now they are home');
+  check(!(dash.data?.rebook || []).some((r) => r.client_name === `Me Myself ${stamp}`),
+    'nor on the list of people worth calling about another trip');
+
+  // The commission is real money whoever travelled.
+  const owed = await call(advisor, 'GET', '/api/commissions');
+  check((owed.data?.rows || []).some((r) => r.id === mineId),
+    'while the commission on it is still owed to the agency');
+
+  // Off and on again, because a checkbox that only works one way is half a
+  // checkbox and this one is unticked by default.
+  await call(advisor, 'POST', `/api/bookings/${mineId}/quick`, { personal: false });
+  const back = await call(advisor, 'GET', `/api/bookings/${mineId}/record`);
+  check(back.data?.booking?.personal === 0, 'and it can be turned back off',
+    back.data?.booking?.personal);
+  }
+
   // ------------------------------------------------------- documents -------
   {
   step('The paperwork a trip generates');

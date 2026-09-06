@@ -614,6 +614,12 @@ function drawDetail() {
         select('status', 'Status', o.statuses, b.status)),
     row(select('productType', 'Type', o.productTypes, b.product_type),
         select('bookingMethod', 'Booked through', o.bookingMethods, b.booking_method)),
+    `<label class="task-tick" style="gap:.5rem;margin:.2rem 0;">
+       <input type="checkbox" name="personal" style="width:auto;"${b.personal ? ' checked' : ''}${
+         ro ? ' disabled' : ''}>
+       <span><span class="t">This is my own travel</span>
+         <span class="m">Kept off the lists of clients to ring. The commission still counts.</span></span>
+     </label>`,
 
     group('Vendor'),
     row(text('supplier', 'Vendor', b.supplier),
@@ -1518,6 +1524,9 @@ document.getElementById('delete-booking').addEventListener('click', async () => 
 
 const detailForm = document.getElementById('detail-form');
 onSubmit(detailForm, async (values) => {
+  // Unticked, a checkbox sends nothing at all, and the API would read that as
+  // no change rather than as false. Sent explicitly both ways.
+  values.personal = detailForm.elements.personal.checked;
   await api(`/api/bookings/${encodeURIComponent(id)}`, { method: 'PUT', body: values });
   await load();
   err.innerHTML = '<div class="notice notice-ok">Saved.</div>';

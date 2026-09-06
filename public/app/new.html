@@ -145,6 +145,11 @@ document.getElementById('fields').innerHTML = [
       select('status', 'Status', o.statuses, 'quoted')),
   row(select('productType', 'Type', o.productTypes, 'cruise'),
       select('bookingMethod', 'Booked through', o.bookingMethods, 'direct')),
+  `<label class="task-tick" style="gap:.5rem;margin:.2rem 0 .2rem;">
+     <input type="checkbox" id="f-personal" name="personal" style="width:auto;">
+     <span><span class="t">This is my own travel</span>
+       <span class="m">Kept off the lists of clients to ring. The commission still counts.</span></span>
+   </label>`,
 
   group('Vendor'),
   row(text('supplier', 'Vendor'), text('productName', 'Ship, hotel or product')),
@@ -292,6 +297,9 @@ pickDate.addEventListener('change', () => {
 // the payment schedule are. Creating one and being left on a list is being
 // sent back to look for the thing you just made.
 onSubmit(form, async (values) => {
+  // A checkbox reads as "on" or nothing through a form, and the API wants a
+  // boolean either way round.
+  values.personal = document.getElementById('f-personal').checked;
   const names = [...document.querySelectorAll('.traveller-name')]
     .map((el) => el.value.trim()).filter(Boolean);
   // Nobody named means the client is the one travelling, which is true of most
