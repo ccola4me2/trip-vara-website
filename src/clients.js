@@ -144,10 +144,12 @@ export async function handleUpdateClient(request, env, id) {
          clean(body.notes, 4000) || null, now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Client not found.');
 
+  // A rename that reaches the client and not their reservations leaves the
+  // same person under two names, so a failure here is the caller's problem.
   await env.DB.prepare('UPDATE bookings SET client_name = ? WHERE client_id = ? AND user_id = ?')
-    .bind(name, id, user.id).run().catch(() => {});
+    .bind(name, id, user.id).run();
   await env.DB.prepare('UPDATE client_credits SET client_name = ? WHERE client_id = ? AND user_id = ?')
-    .bind(name, id, user.id).run().catch(() => {});
+    .bind(name, id, user.id).run();
 
   return json({ ok: true, client: await db.getClient(env, db.selfScope(user), { id }) });
 }

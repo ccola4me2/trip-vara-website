@@ -126,7 +126,7 @@ async function ownsTarget(env, userId, { vendorId, bookingId }) {
   if (bookingId) return Boolean(await db.getBooking(env, bookingId, userId));
   if (vendorId) {
     const row = await env.DB.prepare('SELECT id FROM vendors WHERE id = ? AND user_id = ?')
-      .bind(vendorId, userId).first().catch(() => null);
+      .bind(vendorId, userId).first();
     return Boolean(row);
   }
   return false;

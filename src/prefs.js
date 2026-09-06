@@ -85,7 +85,7 @@ export function normalizeLayout(raw) {
 
 export async function readLayout(env, userId) {
   const row = await env.DB.prepare('SELECT dashboard_json FROM user_prefs WHERE user_id = ?')
-    .bind(userId).first().catch(() => null);
+    .bind(userId).first();
   let parsed = null;
   try { parsed = row && row.dashboard_json ? JSON.parse(row.dashboard_json) : null; } catch { parsed = null; }
   return normalizeLayout(parsed);

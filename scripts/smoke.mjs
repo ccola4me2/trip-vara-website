@@ -1618,6 +1618,19 @@ async function main() {
   const dates = travel.map((e) => e.date);
   check(dates.join() === [...dates].sort().join(), 'in date order');
 
+  // ------------------------------------------------ nothing fails quietly --
+  step('A broken panel says so');
+
+  const panelDash = await call(advisor, 'GET', '/api/dashboard');
+  check(Array.isArray(panelDash.data?.failed), 'the dashboard reports which panels it could not build',
+    JSON.stringify(panelDash.data?.failed));
+  check(panelDash.data.failed.length === 0, 'and on a working system that list is empty',
+    panelDash.data.failed.join(', '));
+  // An empty panel and a panel that could not load look identical on screen,
+  // and the empty one reads as "nothing to do today".
+  check('tasks' in panelDash.data && 'welcome' in panelDash.data && 'insurance' in panelDash.data,
+    'while still building every panel it can');
+
   // ------------------------------------------- commission in three parts --
   step('Base, package and bonus');
 

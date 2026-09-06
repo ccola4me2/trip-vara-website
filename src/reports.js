@@ -21,6 +21,25 @@ function isoDay(offsetDays = 0) {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * A dashboard panel that fails without taking the screen with it.
+ *
+ * Isolating each panel is right: one broken query should not blank a page that
+ * answers a dozen questions. Doing it silently is not, because an empty panel
+ * and a panel that could not load look identical, and the empty one reads as
+ * "nothing to do today". The names of the ones that failed go back with the
+ * payload so the page can say so.
+ */
+async function panel(failed, name, work, fallback) {
+  try {
+    return await work;
+  } catch (e) {
+    console.error('dashboard panel', name, e);
+    failed.push(name);
+    return fallback;
+  }
+}
+
 export async function handleDashboard(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
@@ -28,6 +47,9 @@ export async function handleDashboard(request, env) {
   const today = isoDay(0);
 
   const scope = db.scopeFor(env, user, request);
+
+  // Filled in by panel() as it goes, and returned with the payload.
+  const failed = [];
 
   const [stats, payStats, payments, activity, recentAdded, recentModified,
          upcoming, traveling, returned] = await Promise.all([
@@ -111,32 +133,36 @@ export async function handleDashboard(request, env) {
     // forward looking question, and departures are in the future.
     byType: await db.productionBreakdown(env, scope, isoDay(0), 'type'),
     byVendor: await db.productionBreakdown(env, scope, isoDay(0), 'vendor'),
-    tasks: await listTasks(env, scope, { state: 'open', limit: 25 }).catch(() => []),
-    groups: await listGroups(env, scope, { status: 'open', limit: 12 }).catch(() => []),
-    rebook: await db.rebookCandidates(env, scope, { today, limit: 12 }).catch(() => []),
+    tasks: await panel(failed, 'tasks', listTasks(env, scope, { state: 'open', limit: 25 }), []),
+    groups: await panel(failed, 'groups', listGroups(env, scope, { status: 'open', limit: 12 }), []),
+    rebook: await panel(failed, 'rebook', db.rebookCandidates(env, scope, { today, limit: 12 }), []),
     // Quotes nobody has answered, and quotes nobody has sent. Neither shows up
     // in production, on the to do list, or anywhere else on this screen.
-    quotes: await db.quoteFollowUps(env, scope, { limit: 12 }).catch(() => []),
+    quotes: await panel(failed, 'quotes', db.quoteFollowUps(env, scope, { limit: 12 }), []),
     // A date of birth collected on every traveller and shown nowhere is a
     // field an advisor fills in for nothing.
-    birthdays: await upcomingBirthdays(env, scope, { today }).catch(() => []),
+    birthdays: await panel(failed, 'birthdays', upcomingBirthdays(env, scope, { today }), []),
     // Back from a trip and not yet rung. The one contact in the whole arc that
     // nothing goes wrong when you skip, which is why it gets skipped.
-    welcome: await db.welcomeHomeCandidates(env, scope, { today }).catch(() => []),
+    welcome: await panel(failed, 'welcome', db.welcomeHomeCandidates(env, scope, { today }), []),
     // Trips where nobody has asked about insurance. Declined is a different
     // fact from not asked, and the difference is the advisor's position if
     // something goes wrong.
-    insurance: await db.insuranceExposure(env, scope, { today }).catch(() => []),
-    pinned: await db.listClients(env, scope, { pinnedOnly: true, limit: 12 }).catch(() => []),
+    insurance: await panel(failed, 'insurance', db.insuranceExposure(env, scope, { today }), []),
+    pinned: await panel(failed, 'pinned', db.listClients(env, scope, { pinnedOnly: true, limit: 12 }), []),
     // Always the reader's own target, whatever scope the rest of the screen
     // is showing. A target you did not set is not your target.
-    goal: await goalProgress(env, user, db.selfScope(user), Number(today.slice(0, 4)), today)
-      .catch(() => null),
-    commission: await commissionSummary(env, scope, today).catch(() => null),
-    credits: await listCredits(env, scope, { state: 'open', limit: 25 }).catch(() => []),
+    goal: await panel(failed, 'goal',
+      goalProgress(env, user, db.selfScope(user), Number(today.slice(0, 4)), today), null),
+    commission: await panel(failed, 'commission', commissionSummary(env, scope, today), null),
+    credits: await panel(failed, 'credits', listCredits(env, scope, { state: 'open', limit: 25 }), []),
     // The rule that decides whether somebody gets on the plane, applied to
     // every upcoming trip rather than only to the one you happen to have open.
-    documents: await documentWatch(env, scope, { today }).catch(() => []),
+    documents: await panel(failed, 'documents', documentWatch(env, scope, { today }), []),
+    // Which panels could not be built. An empty list is the normal answer; a
+    // name in it means that panel is blank because it broke, not because
+    // there is nothing to do.
+    failed,
   });
 }
 

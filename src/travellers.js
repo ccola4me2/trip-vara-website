@@ -154,11 +154,13 @@ export async function handleDeleteTraveller(request, env, id) {
 
 async function syncTravellerCount(env, bookingId, userId) {
   const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM travellers WHERE booking_id = ?')
-    .bind(bookingId).first().catch(() => null);
+    .bind(bookingId).first();
   const n = row ? row.n : 0;
   if (!n) return;
+  // The count drives the pricing grid's columns, so a stale one means a
+  // traveller with no column to be priced in.
   await env.DB.prepare('UPDATE bookings SET travellers = ?, updated_at = ? WHERE id = ? AND user_id = ?')
-    .bind(n, now(), bookingId, userId).run().catch(() => {});
+    .bind(n, now(), bookingId, userId).run();
 }
 
 export async function handleAddAmenity(request, env, bookingId) {

@@ -126,7 +126,7 @@ export async function handleDeleteComponent(request, env, id) {
 
   const row = await env.DB.prepare(
     'SELECT id, booking_id FROM components WHERE id = ? AND user_id = ?'
-  ).bind(id, user.id).first().catch(() => null);
+  ).bind(id, user.id).first();
   if (!row) return notFound('Component not found.');
 
   await env.DB.prepare(

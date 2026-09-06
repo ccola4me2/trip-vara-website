@@ -21,6 +21,7 @@
       </div>
     </header>
     <div class="content">
+      <div id="err"></div>
       <section id="stats" class="stat-grid"></section>
       <section id="stat-note"></section>
       <section id="ghl-state"></section>
@@ -924,6 +925,18 @@ try {
   d = await api(`/api/dashboard${advisorParam() ? '?' + advisorParam() : ''}`);
   layout = d.layout;
   mountScopePicker(document.getElementById('scope'), d, () => location.reload());
+
+  // A panel that failed to build is blank, and a blank panel reads as nothing
+  // to do. Said out loud instead, because "no clients to welcome home" and
+  // "we could not work out who to welcome home" are different facts.
+  const err = document.getElementById('err');
+  if (err && d.failed?.length) {
+    err.innerHTML = `<div class="notice notice-error">${d.failed.length} panel${
+      d.failed.length === 1 ? '' : 's'} could not be built, so ${
+      d.failed.length === 1 ? 'it is' : 'they are'} showing empty: ${
+      esc(d.failed.join(', '))}.</div>`;
+  }
+
   build();
 }
 catch (err) { showError(document.getElementById('ghl-state'), err); }

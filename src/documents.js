@@ -130,7 +130,7 @@ export async function handleGetDocument(request, env, id) {
   const scoped = db.scopeWhere(scope, 'user_id');
   const row = await env.DB.prepare(
     `SELECT ${COLUMNS} FROM documents WHERE id = ? AND ${scoped.sql}`
-  ).bind(id, ...scoped.binds).first().catch(() => null);
+  ).bind(id, ...scoped.binds).first();
   if (!row) return notFound('Document not found.');
 
   const object = await env.DOCS.get(row.object_key);
@@ -155,7 +155,7 @@ export async function handleDeleteDocument(request, env, id) {
 
   const row = await env.DB.prepare(
     `SELECT ${COLUMNS} FROM documents WHERE id = ? AND user_id = ?`
-  ).bind(id, user.id).first().catch(() => null);
+  ).bind(id, user.id).first();
   if (!row) return notFound('Document not found.');
 
   // The object first. A row without its file is a broken download; a file

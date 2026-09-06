@@ -339,5 +339,8 @@ async function syncBookingTotals(env, bookingId, userId) {
   const s = summarise(lines, null);
   await env.DB.prepare(
     'UPDATE bookings SET gross_cents = ?, commission_cents = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-  ).bind(s.clientTotalCents, s.commissionCents, now(), bookingId, userId).run().catch(() => {});
+    // Not caught. This is the write that puts the price and the commission on
+    // the reservation, so swallowing it leaves the screen showing one figure
+    // and the database holding another, with the save reported as a success.
+  ).bind(s.clientTotalCents, s.commissionCents, now(), bookingId, userId).run();
 }

@@ -318,7 +318,7 @@ async function nextInvoiceNo(env, userId, year) {
     const candidate = `${prefix}${String(i).padStart(4, '0')}`;
     const clash = await env.DB.prepare(
       'SELECT id FROM bookings WHERE user_id = ? AND invoice_no = ?'
-    ).bind(userId, candidate).first().catch(() => null);
+    ).bind(userId, candidate).first();
     if (!clash) return candidate;
   }
   return `${prefix}${Date.now().toString(36).toUpperCase()}`;

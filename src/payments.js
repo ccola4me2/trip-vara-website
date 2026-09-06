@@ -108,7 +108,7 @@ async function payerProblem(env, userId, bookingId, paidBy) {
   if (!paidBy) return null;
   const row = await env.DB.prepare(
     'SELECT id FROM travellers WHERE id = ? AND booking_id = ? AND user_id = ?'
-  ).bind(paidBy, bookingId, userId).first().catch(() => null);
+  ).bind(paidBy, bookingId, userId).first();
   return row ? null : 'That payer is not a traveller on this reservation.';
 }
 

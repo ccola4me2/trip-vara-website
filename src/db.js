@@ -1092,12 +1092,15 @@ export async function resolveClient(env, userId, name, { ghlContactId } = {}) {
 
   const existing = await env.DB.prepare(
     'SELECT id, ghl_contact_id FROM clients WHERE user_id = ? AND name = ?'
-  ).bind(userId, clean).first().catch(() => null);
+  ).bind(userId, clean).first();
 
   if (existing) {
     // A reservation that knows the CRM contact teaches the client record,
     // which is how a locally created client eventually gets linked up.
     if (ghlContactId && !existing.ghl_contact_id) {
+      // Kept catching, and this one is deliberate: it is an opportunistic
+      // backfill on the way past, and failing to link a CRM id should not fail
+      // the reservation somebody was actually trying to save.
       await env.DB.prepare('UPDATE clients SET ghl_contact_id = ?, updated_at = ? WHERE id = ?')
         .bind(ghlContactId, now(), existing.id).run().catch(() => {});
     }
@@ -1153,7 +1156,7 @@ export async function getClient(env, scope, { id, name }) {
   const scoped = scopeWhere(scope, 'c.user_id');
   const sql = `SELECT ${CLIENT_COLUMNS} FROM clients c
                 WHERE ${scoped.sql} AND ${id ? 'c.id = ?' : 'c.name = ?'} LIMIT 1`;
-  return env.DB.prepare(sql).bind(...scoped.binds, id || name).first().catch(() => null);
+  return env.DB.prepare(sql).bind(...scoped.binds, id || name).first();
 }
 
 export async function logActivity(env, userId, kind, subject, meta = null) {

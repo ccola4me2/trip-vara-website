@@ -220,7 +220,7 @@ export async function handleBookingRecord(request, env, id) {
     booking.group_id
       ? env.DB.prepare(
           'SELECT id, name, group_code, vendor, option_date, cabins_held FROM travel_groups WHERE id = ?'
-        ).bind(booking.group_id).first().catch(() => null)
+        ).bind(booking.group_id).first()
       : Promise.resolve(null),
     listTravellers(env, id, scope),
     listAmenities(env, id, scope),
@@ -235,7 +235,7 @@ export async function handleBookingRecord(request, env, id) {
   // compared with what actually arrived.
   const vendor = booking.vendor_id
     ? await env.DB.prepare('SELECT name, commission_pct FROM vendors WHERE id = ?')
-        .bind(booking.vendor_id).first().catch(() => null)
+        .bind(booking.vendor_id).first()
     : null;
 
   // Hard rows only. A soft row is a reminder to chase the same balance a week

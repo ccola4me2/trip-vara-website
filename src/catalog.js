@@ -176,7 +176,7 @@ export async function importCatalogStep(env, opts = {}) {
 /** Whether there is anything local to read yet. */
 export async function catalogReady(env) {
   if (!env.DB) return false;
-  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM sailings').first().catch(() => null);
+  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM sailings').first();
   return Boolean(row && row.n > 0);
 }
 
@@ -186,7 +186,7 @@ export async function importStatus(env) {
                 'last_run', 'last_full_import', 'last_remaining'];
   const out = {};
   for (const k of keys) out[k] = await stateGet(env, k);
-  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM sailings').first().catch(() => null);
+  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM sailings').first();
   return {
     configured: Boolean(env.CRUISEFEED_KEY),
     // Counted from the table rather than read from the cursor. The cursor says
@@ -258,5 +258,5 @@ export async function matchSailing(env, ship, departDate) {
     `SELECT id, cruise_line, ship, name, depart_date, return_date, nights,
             departure_port, disembark_port, destination
        FROM sailings WHERE ship_norm = ? AND depart_date = ? LIMIT 1`
-  ).bind(shipNorm, date).first().catch(() => null);
+  ).bind(shipNorm, date).first();
 }

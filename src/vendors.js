@@ -68,7 +68,7 @@ export async function resolveVendor(env, userId, name) {
 
   const existing = await env.DB.prepare(
     'SELECT id FROM vendors WHERE user_id = ? AND name = ?'
-  ).bind(userId, value).first().catch(() => null);
+  ).bind(userId, value).first();
   if (existing) return existing.id;
 
   const ts = now();
@@ -664,8 +664,11 @@ export async function handleUpdateVendor(request, env, id) {
 
   // The name is what every report groups by and what a vendor prints on a
   // confirmation, so renaming has to carry the reservations with it.
+  // Not caught, because the line above says it has to happen: a rename that
+  // reaches the vendor and not its reservations splits every report that
+  // groups by the name, which is the thing vendors exist to prevent.
   await env.DB.prepare('UPDATE bookings SET supplier = ? WHERE vendor_id = ? AND user_id = ?')
-    .bind(name, id, user.id).run().catch(() => {});
+    .bind(name, id, user.id).run();
 
   return json({ ok: true });
 }
