@@ -218,15 +218,10 @@ function render(bookings, stats, scope) {
         <td class="num">${money(b.gross_cents)}</td>
         <td class="num">${money(b.commission_cents)}
           <div class="muted">${esc(b.commission_status)}</div></td>
-        <td class="num"><a class="btn btn-ghost btn-sm" href="/app/reservation?id=${esc(b.id)}">Open</a>
-          ${b.user_id === ME
-            ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(b.id)}">Edit</button>` : ''}</td>
+        <td class="num"><a class="btn btn-ghost btn-sm" href="/app/reservation?id=${esc(b.id)}">Open</a></td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
 
-  panel.querySelectorAll('[data-edit]').forEach((btn) => {
-    btn.addEventListener('click', () => openEdit(cache.find((x) => x.id === btn.dataset.edit)));
-  });
 }
 
 function openCreate() {
@@ -391,16 +386,10 @@ await load();
 // Arriving from search: open the reservation that was picked. It may not be in
 // the list that just loaded, since the list is filtered and capped, so fall
 // back to fetching that one record rather than silently doing nothing.
+// Kept because links to it exist. A reservation is edited on its own page
+// now, so this sends you there rather than reopening a dialog that no longer
+// does the job.
 const focus = params.get('focus');
-if (focus) {
-  let booking = cache.find((b) => b.id === focus);
-  if (!booking) {
-    booking = await api(`/api/bookings/${encodeURIComponent(focus)}`)
-      .then((d) => d.booking).catch(() => null);
-  }
-  if (booking) openEdit(booking);
-  // Leaves the address bar clean, so a refresh does not reopen the dialog.
-  history.replaceState(null, '', location.pathname);
-}
+if (focus) location.replace(`/app/reservation?id=${encodeURIComponent(focus)}`);
 </script>
 </body></html>

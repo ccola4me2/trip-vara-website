@@ -246,6 +246,16 @@ export async function handleBookingRecord(request, env, id) {
     // rather than showing an upload button that fails.
     documents: docs,
     documentCategories: DOC_CATEGORIES,
+    // The lists the edit form needs, so the page and the validator can never
+    // disagree about what a status or a product type may be. The reservations
+    // list hardcoded its own copies and drifted from these twice.
+    fieldOptions: {
+      productTypes: PRODUCT_TYPES,
+      statuses: STATUSES,
+      commissionStatuses: COMMISSION_STATUSES,
+      bookingMethods: BOOKING_METHODS,
+      insuranceStatuses: INSURANCE_STATUS,
+    },
     documentsReady: docsReady(env),
     penalty: penaltyToday(booking, tiers, new Date().toISOString().slice(0, 10)),
     pricing: priceLines,
