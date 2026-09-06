@@ -28,6 +28,13 @@
             confirmations have no standard shape and this will misread some of them.
           </p>
           <div class="field">
+            <label for="conf-pdf">The confirmation as a PDF</label>
+            <input id="conf-pdf" type="file" accept="application/pdf,.pdf">
+            <p class="field-hint">Read in your browser: the file itself is never uploaded, only
+              the text it contains. Then check what it found, the same as pasting.</p>
+          </div>
+          <div class="field">
+            <label for="conf-text">Or paste it</label>
             <textarea id="conf-text" rows="7" placeholder="Confirmation Number: 54455257
 Cruise Line: Holland America Line
 Ship: Nieuw Amsterdam
@@ -94,6 +101,10 @@ Guest 1: COLE/DEBORAH"></textarea>
   </div>
 </div>
 
+<!-- Reading a PDF is genuinely hard: compressed streams, font encodings, text
+     positioned rather than flowed. This is the library that does it, pinned,
+     loaded only on this page. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script type="module">
 import { api, mountShell, esc, money, showError } from '/js/app.js';
 await mountShell();
@@ -119,11 +130,71 @@ const CONF_FIELDS = [
   ['travellers', 'Travellers'],
   ['gross', 'Trip total'],
   ['deposit', 'Deposit'],
+  // The number the agency is actually working for, and it was being read off
+  // the confirmation and then not shown.
+  ['commission', 'Commission'],
   ['finalPaymentDue', 'Final payment due'],
 ];
 
 const confErr = document.getElementById('conf-error');
 const confResult = document.getElementById('conf-result');
+
+/**
+ * A supplier's agent confirmation, read out of the PDF they sent.
+ *
+ * The text is pulled out in the browser and dropped into the box below, so
+ * what happens next is exactly what happens when somebody pastes: the same
+ * reader, the same review step, the same chance to correct it. The file is
+ * never uploaded, which matters because these documents carry a client's name
+ * and what they paid.
+ */
+async function textFromPdf(file) {
+  if (!window.pdfjsLib) throw new Error('The PDF reader did not load. Paste the text instead.');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const doc = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const out = [];
+  // Ten pages. A confirmation is one or two, and a hundred page document is
+  // not a confirmation.
+  for (let i = 1; i <= Math.min(doc.numPages, 10); i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+
+    // Rebuilt into lines by vertical position. The reader below works label by
+    // label on each line, and a PDF hands back words with coordinates rather
+    // than lines, so joining them all with spaces would put every label and
+    // every value on one enormous line and match nothing.
+    const rows = new Map();
+    for (const item of content.items) {
+      if (!item.str || !item.str.trim()) continue;
+      const y = Math.round(item.transform[5]);
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push({ x: item.transform[4], str: item.str });
+    }
+    for (const y of [...rows.keys()].sort((a, b) => b - a)) {
+      out.push(rows.get(y).sort((a, b) => a.x - b.x).map((w) => w.str).join(' ')
+        .replace(/\s+/g, ' ').trim());
+    }
+  }
+  return out.join('\n');
+}
+
+document.getElementById('conf-pdf').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const err = document.getElementById('conf-error');
+  err.hidden = true;
+  try {
+    const text = await textFromPdf(file);
+    if (!text.trim()) throw new Error('No text in that PDF. It may be a scan, which has none.');
+    document.getElementById('conf-text').value = text;
+    document.getElementById('conf-read').click();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.hidden = false;
+  }
+});
 
 document.getElementById('conf-read').addEventListener('click', async () => {
   confErr.hidden = true;

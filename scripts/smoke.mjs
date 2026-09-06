@@ -1618,6 +1618,45 @@ async function main() {
   const dates = travel.map((e) => e.date);
   check(dates.join() === [...dates].sort().join(), 'in date order');
 
+  // ------------------------------------------- reading a real confirmation --
+  step('An agent confirmation, as a vendor lays one out');
+
+  // Taken from a real Margaritaville agent copy: two columns on the page, so
+  // every line carries two labels and their values.
+  const agentCopy = [
+    'Angela Simic BOOKING ID: 54408822',
+    'Departure Date: Nov 30, 2026 Return Date: Dec 05, 2026',
+    'Itinerary: 5-Night Mexico Duo Stateroom Category: Partial View Balcony',
+    'Ship: Margaritaville at Sea Islander Stateroom(s): 5235',
+    'Departure Port: Port Tampa Bay Total Guests: 2',
+    'Total Booking Amount: $ 1,976.80 Remaining Due: $ 0.00',
+    'Advisor ID: 247345160 Fare Commission: $80.93',
+    'Advisor Phone: 5617779911 Enhancement Commission: $107.70',
+  ].join('\n');
+
+  const readConf = await call(advisor, 'POST', '/api/import/confirmation', { text: agentCopy });
+  const cf = readConf.data?.fields || {};
+  check(readConf.status === 200, 'a two column confirmation is read', `status ${readConf.status}`);
+  // The left column used to swallow the right, so only the first label on each
+  // line was ever seen.
+  check(cf.confirmationNumber === '54408822' && cf.returnDate === '2026-12-05',
+    'both columns are read, not just the left one',
+    `${cf.confirmationNumber} / ${cf.returnDate}`);
+  check(cf.productName === 'Margaritaville at Sea Islander',
+    'and a ship name is not cut in half by a label that looks like one', cf.productName);
+  check(cf.cabin === '5235' && cf.cabinCategory === 'Partial View Balcony',
+    'the cabin number and the category are different facts and both are kept',
+    `${cf.cabin} / ${cf.cabinCategory}`);
+  check(cf.gross === '1976.80', 'the total comes across', cf.gross);
+  // Commission arrives in two parts on this document, which is the split the
+  // reservation already holds.
+  check(cf.commission === '80.93' && cf.commissionPackage === '107.70',
+    'fare commission and enhancement commission are kept apart',
+    `${cf.commission} / ${cf.commissionPackage}`);
+  check(cf.clientName === 'Angela Simic',
+    'and the guest printed at the top with no label at all is the client', cf.clientName);
+  check(cf.travellers === 2, 'with the guest count read from a total', `${cf.travellers}`);
+
   // ------------------------------------------------ the mirrored catalog --
   step('Sailings borrowed from CruiseShoppers');
 
