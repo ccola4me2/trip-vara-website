@@ -910,16 +910,18 @@ async function main() {
     'FIT', `Collette ${stamp}`,
   ].join('\n');
 
-  const dry = await call(advisor, 'POST', '/api/vendors/import', { text: pasted });
+  // Importing is an owner's job, so these run as the admin. The advisor is
+  // used below to prove the endpoint refuses them.
+  const dry = await call(admin, 'POST', '/api/vendors/import', { text: pasted });
   check(dry.data?.add === 4, 'a pasted supplier list is read into vendors',
     `${dry.data?.add} to add`);
   check(dry.data?.preview === true && dry.status === 200,
     'and nothing is written until it is asked for');
 
-  const ran = await call(advisor, 'POST', '/api/vendors/import', { text: pasted, commit: true });
+  const ran = await call(admin, 'POST', '/api/vendors/import', { text: pasted, commit: true });
   check(ran.data?.added === 4, 'then the import adds them', `${ran.data?.added} added`);
 
-  const listed = await call(advisor, 'GET', '/api/vendors');
+  const listed = await call(admin, 'GET', '/api/vendors');
   const byName = new Map((listed.data?.vendors || []).map((v) => [v.name, v]));
   check(byName.get(`Seabourn ${stamp}`)?.category === 'Cruise Lines',
     'each filed under the heading it sat beneath');
@@ -935,15 +937,33 @@ async function main() {
 
   // Pasting the same page twice is what somebody does when they are not sure
   // it worked the first time.
-  const again = await call(advisor, 'POST', '/api/vendors/import', { text: pasted, commit: true });
+  const again = await call(admin, 'POST', '/api/vendors/import', { text: pasted, commit: true });
   check(again.data?.added === 0, 'importing the same list twice adds nothing',
     `${again.data?.added} added`);
 
-  const junk = await call(advisor, 'POST', '/api/vendors/import', { text: '   ' });
+  const multi = [
+    'Cruise Lines', `Celebrity ${stamp}`,
+    'Expedition Experiences & Yacht', `Celebrity ${stamp}`,
+  ].join('\n');
+  await call(admin, 'POST', '/api/vendors/import', { text: multi, commit: true });
+  const shelved = (await call(admin, 'GET', '/api/vendors')).data?.vendors
+    ?.find((v) => v.name === `Celebrity ${stamp}`);
+  check(JSON.parse(shelved?.categories_json || '[]').length === 2,
+    'a pasted name under two headings is shelved under both, not just the first',
+    shelved?.categories_json);
+
+  // A hidden button is not a permission. The endpoint has to refuse.
+  const notAllowed = await call(advisor, 'POST', '/api/vendors/import', {
+    text: 'Cruise Lines\nSomething Line', commit: true,
+  });
+  check(notAllowed.status === 403, 'an advisor cannot import a supplier list',
+    `status ${notAllowed.status}`);
+
+  const junk = await call(admin, 'POST', '/api/vendors/import', { text: '   ' });
   check(junk.status === 400, 'an empty paste is refused', `status ${junk.status}`);
 
   // A partner directory export: a row per supplier, with everything on it.
-  const exported = await call(advisor, 'POST', '/api/vendors/import', {
+  const exported = await call(admin, 'POST', '/api/vendors/import', {
     commit: true,
     rows: [
       {
@@ -963,10 +983,16 @@ async function main() {
   check(exported.data?.skipped === 1, 'and leaves tourism boards out, as asked',
     `${exported.data?.skipped} skipped`);
 
-  const rich = (await call(advisor, 'GET', '/api/vendors')).data?.vendors
+  const rich = (await call(admin, 'GET', '/api/vendors')).data?.vendors
     ?.find((v) => v.name === `Royal Caribbean ${stamp}`);
   check(rich?.category === 'Cruise Lines',
-    'the first of several categories is the one it is filed under', rich?.category);
+    'the first of several categories is the primary one', rich?.category);
+  // Thirty-five of the partner directory's suppliers sit on more than one
+  // shelf. Keeping only the first hid them from every category but one.
+  check(JSON.parse(rich?.categories_json || '[]').join(', ')
+    === 'Cruise Lines, Expedition Experiences & Yacht',
+    'and every category it is listed under is kept',
+    rich?.categories_json);
   check(rich?.partner_status === 'Preferred' && rich?.budget_category === 'Moderate',
     'standing and price bracket come across');
   const desks = JSON.parse(rich?.phones_json || '[]');

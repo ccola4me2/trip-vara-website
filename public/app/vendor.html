@@ -72,6 +72,15 @@ const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '');
 const initials = (name) => String(name || '?').replace(/[^A-Za-z ]/g, '').trim()
   .split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
 
+/** Every shelf this supplier sits on, the primary one first. */
+function categoriesOf(v) {
+  let list = [];
+  try { const a = JSON.parse(v.categories_json || '[]'); if (Array.isArray(a)) list = a; }
+  catch { list = []; }
+  if (v.category && !list.includes(v.category)) list.unshift(v.category);
+  return list;
+}
+
 function parsePhones(v) {
   try { const a = JSON.parse(v.phones_json || '[]'); return Array.isArray(a) ? a : []; }
   catch { return []; }
@@ -359,7 +368,7 @@ function render() {
       <span class="v-title">
         <h1 style="font-size:1.5rem;">${esc(v.name)}</h1>
         <span class="v-meta">
-          ${v.category ? `<span class="badge badge-navy">${esc(v.category)}</span>` : ''}
+          ${categoriesOf(v).map((c) => `<span class="badge badge-navy">${esc(c)}</span>`).join(' ')}
           ${v.partner_status ? `<span class="badge ${
             v.partner_status === 'Preferred' ? 'badge-green' : 'badge-amber'}">${
             esc(v.partner_status)}</span>` : ''}

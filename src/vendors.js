@@ -7,7 +7,7 @@
 // final payment date from a guess into an answer.
 
 import { json, badRequest, notFound, clean, cleanText, uid, now, readJson } from './util.js';
-import { requireUser } from './auth.js';
+import { requireUser, requireAdmin } from './auth.js';
 import * as db from './db.js';
 
 const COLUMNS = `
@@ -17,7 +17,7 @@ const COLUMNS = `
   v.signup_url, v.website, v.account_number,
   v.phones_json, v.commission_structure, v.registration_instructions,
   v.partner_status, v.travel_types, v.budget_category, v.booking_instructions,
-  v.bdm_info, v.vendor_login
+  v.bdm_info, v.vendor_login, v.categories_json
 `;
 
 // The shelves a directory of suppliers falls into. Fixed, because a free text
@@ -245,6 +245,7 @@ export function parseVendorList(text) {
   // visible and fixable, where a guess is neither.
   const found = [];
   const seen = new Map();
+  const alsoListed = [];
   const duplicates = [];
   const unknownHeadings = [];
   let category = null;
@@ -282,17 +283,28 @@ export function parseVendorList(text) {
       // category, so the real shelf arrives on the second sighting. Taking
       // only the first left every starred supplier uncategorised.
       if (starring) first.favourite = true;
-      if (!first.category && rowCategory) { first.category = rowCategory; continue; }
-      if (rowCategory) duplicates.push({ name, keptUnder: first.category });
+      if (rowCategory && !first.categories.includes(rowCategory)) {
+        // Listed under another heading as well. Both shelves are true, so it
+        // gets both rather than the page's second mention being thrown away.
+        first.categories.push(rowCategory);
+        if (!first.category) first.category = rowCategory;
+        alsoListed.push({ name, category: rowCategory });
+      }
       continue;
     }
 
-    const row = { name, category: rowCategory, favourite: starring };
+    const row = {
+      name, category: rowCategory, favourite: starring,
+      categories: rowCategory ? [rowCategory] : [],
+    };
     seen.set(key, row);
     found.push(row);
   }
 
-  return { vendors: found, duplicates, skipped, unknownHeadings: [...new Set(unknownHeadings)] };
+  return {
+    vendors: found, duplicates, alsoListed, skipped,
+    unknownHeadings: [...new Set(unknownHeadings)],
+  };
 }
 
 /**
@@ -356,14 +368,21 @@ export function parseVendorRow(raw) {
       // and it is not the name of a person to ring.
       && l.toLowerCase() !== name.toLowerCase());
 
-  // The first of several. A supplier that sells cruises and expeditions both
-  // has to sit somewhere, and the export lists the main one first.
-  const category = decodeEntities(raw.category).split(',')[0].trim();
+  // Every category the supplier is listed under, not just the first. Keeping
+  // one meant Celebrity Cruises appeared under Cruise Lines and nowhere near
+  // Expedition Experiences, which is half of what it sells.
+  const listed = decodeEntities(raw.category).split(',')
+    .map((c) => c.trim())
+    .filter((c) => CATEGORIES.includes(c));
+  const category = listed[0] || '';
 
   return {
     name,
-    category: CATEGORIES.includes(category) ? category : null,
-    skip: SKIP_CATEGORIES.has(category.toLowerCase()),
+    category: category || null,
+    categories: listed,
+    // Skipped on the first listing, since that is the shelf the directory
+    // considers it to be on.
+    skip: SKIP_CATEGORIES.has(decodeEntities(raw.category).split(',')[0].trim().toLowerCase()),
     favourite: Boolean(raw.favourite),
     partnerStatus: text(raw.status, 60),
     travelTypes: text(raw.travelTypes, 200),
@@ -382,7 +401,10 @@ export function parseVendorRow(raw) {
 }
 
 export async function handleImportVendors(request, env) {
-  const { user, response } = await requireUser(request, env);
+  // Admin only. Bringing in a supplier directory writes several hundred rows
+  // in one go, and the enforcement is here rather than only on the button:
+  // hiding a control does not stop the request it would have sent.
+  const { user, response } = await requireAdmin(request, env);
   if (response) return response;
 
   const body = await readJson(request);
@@ -420,6 +442,7 @@ export async function handleImportVendors(request, env) {
     const cur = have.get(v.name.toLowerCase());
     if (!cur) return false;
     if (fromRows) return true;
+    if (v.categories?.length > 1) return true;
     return (v.category && !cur.category) || (v.favourite && !cur.favourite);
   });
 
@@ -444,38 +467,48 @@ export async function handleImportVendors(request, env) {
     writes.push(fromRows
       ? env.DB.prepare(
         `INSERT INTO vendors
-           (id, user_id, name, category, favourite, partner_status, travel_types,
-            budget_category, commission_structure, booking_instructions,
+           (id, user_id, name, category, categories_json, favourite, partner_status,
+            travel_types, budget_category, commission_structure, booking_instructions,
             registration_instructions, bdm_info, bdm_name, bdm_phone, bdm_email,
             vendor_login, notes, phones_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(uid(), user.id, v.name, v.category, v.favourite ? 1 : 0,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(uid(), user.id, v.name, v.category,
+             v.categories?.length ? JSON.stringify(v.categories) : null,
+             v.favourite ? 1 : 0,
              v.partnerStatus, v.travelTypes, v.budgetCategory, v.commissionStructure,
              v.bookingInstructions, v.registrationInstructions, v.bdmInfo,
              v.bdmName, v.bdmPhone, v.bdmEmail, v.vendorLogin, v.notes,
              v.phonesJson, ts, ts)
       : env.DB.prepare(
-        `INSERT INTO vendors (id, user_id, name, category, favourite, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).bind(uid(), user.id, v.name, v.category, v.favourite ? 1 : 0, ts, ts));
+        `INSERT INTO vendors
+           (id, user_id, name, category, categories_json, favourite, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(uid(), user.id, v.name, v.category,
+             v.categories?.length ? JSON.stringify(v.categories) : null,
+             v.favourite ? 1 : 0, ts, ts));
   }
   for (const v of toUpdate) {
     const cur = have.get(v.name.toLowerCase());
     writes.push(fromRows
       ? env.DB.prepare(
         `UPDATE vendors SET
-           category = COALESCE(?, category), partner_status = ?, travel_types = ?,
+           category = COALESCE(?, category), categories_json = COALESCE(?, categories_json),
+           partner_status = ?, travel_types = ?,
            budget_category = ?, commission_structure = ?, booking_instructions = ?,
            registration_instructions = ?, bdm_info = ?, bdm_name = ?, bdm_phone = ?,
            bdm_email = ?, vendor_login = ?, notes = ?, phones_json = ?, updated_at = ?
          WHERE id = ? AND user_id = ?`
-      ).bind(v.category, v.partnerStatus, v.travelTypes, v.budgetCategory,
+      ).bind(v.category, v.categories?.length ? JSON.stringify(v.categories) : null,
+             v.partnerStatus, v.travelTypes, v.budgetCategory,
              v.commissionStructure, v.bookingInstructions, v.registrationInstructions,
              v.bdmInfo, v.bdmName, v.bdmPhone, v.bdmEmail, v.vendorLogin, v.notes,
              v.phonesJson, ts, cur.id, user.id)
       : env.DB.prepare(
-        'UPDATE vendors SET category = ?, favourite = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-      ).bind(cur.category || v.category, (cur.favourite || v.favourite) ? 1 : 0, ts, cur.id, user.id));
+        `UPDATE vendors SET category = ?, categories_json = COALESCE(?, categories_json),
+           favourite = ?, updated_at = ? WHERE id = ? AND user_id = ?`
+      ).bind(cur.category || v.category,
+             v.categories?.length ? JSON.stringify(v.categories) : null,
+             (cur.favourite || v.favourite) ? 1 : 0, ts, cur.id, user.id));
   }
 
   // In batches, because a partner directory is several hundred rows and one

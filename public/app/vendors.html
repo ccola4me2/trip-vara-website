@@ -111,7 +111,7 @@
           <input id="search" type="search" placeholder="Search suppliers or managers"
             aria-label="Search vendors" style="width:20rem;max-width:100%;">
           <div class="toolbar" style="margin:0;padding:0;">
-            <button class="btn btn-ghost btn-sm" id="import-open">Import a list</button>
+            <button class="btn btn-ghost btn-sm" id="import-open" hidden>Import a list</button>
             <button class="btn btn-primary btn-sm" id="add-vendor">Add a vendor</button>
           </div>
         </div>
@@ -146,7 +146,9 @@
 <script type="module">
 import { api, mountShell, esc, showError, onSubmit,
          mountScopePicker, advisorParam } from '/js/app.js';
-const ME = (await mountShell()).id;
+const me = await mountShell();
+const ME = me.id;
+const IS_ADMIN = me.role === 'admin';
 
 const err = document.getElementById('err');
 const panel = document.getElementById('panel');
@@ -162,15 +164,30 @@ let filter = 'all';   // 'all' | 'favourites' | a category name
 const initials = (name) => String(name || '?').replace(/[^A-Za-z ]/g, '').trim()
   .split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
 
+/**
+ * Every shelf a supplier sits on.
+ *
+ * Thirty-five of the partner directory's suppliers are listed under more than
+ * one, so counting or filtering on the primary alone hides them from the other
+ * categories, which is where somebody would look.
+ */
+function categoriesOf(v) {
+  let list = [];
+  try { const a = JSON.parse(v.categories_json || '[]'); if (Array.isArray(a)) list = a; }
+  catch { list = []; }
+  if (v.category && !list.includes(v.category)) list.unshift(v.category);
+  return list.length ? list : ['Other'];
+}
+
 function visible() {
   const q = search.value.trim().toLowerCase();
   return cache.filter((v) => {
     if (filter === 'favourites' && !v.favourite) return false;
-    if (filter !== 'all' && filter !== 'favourites' && (v.category || 'Other') !== filter) return false;
+    if (filter !== 'all' && filter !== 'favourites' && !categoriesOf(v).includes(filter)) return false;
     if (!q) return true;
     // Searched across what somebody would actually recall: the name, their
     // manager, and the account number on the paperwork.
-    return [v.name, v.bdm_name, v.account_number, v.category]
+    return [v.name, v.bdm_name, v.account_number, ...categoriesOf(v)]
       .some((x) => String(x || '').toLowerCase().includes(q));
   });
 }
@@ -178,8 +195,7 @@ function visible() {
 function drawRail() {
   const counts = new Map();
   for (const v of cache) {
-    const k = v.category || 'Other';
-    counts.set(k, (counts.get(k) || 0) + 1);
+    for (const k of categoriesOf(v)) counts.set(k, (counts.get(k) || 0) + 1);
   }
   const favs = cache.filter((v) => v.favourite).length;
   const order = [...counts.keys()].sort((a, b) => (
@@ -245,7 +261,7 @@ function drawList() {
         ${subLine(v) ? `<span class="sub">${subLine(v)}</span>` : ''}
       </span>
       ${filter === 'all' || filter === 'favourites'
-        ? `<span class="cat">${esc(v.category || '')}</span>` : ''}
+        ? `<span class="cat">${esc(categoriesOf(v).join(', ').replace('Other', ''))}</span>` : ''}
       ${starButton(v)}
     </li>`).join('')}</ul>`;
 
@@ -450,6 +466,9 @@ function rowsFromSheet(sheet) {
 }
 
 let pendingRows = null;
+
+// Shown to an owner only, matching what the endpoint will actually allow.
+document.getElementById('import-open').hidden = !IS_ADMIN;
 
 const importCard = document.getElementById('import-card');
 const importResult = document.getElementById('import-result');
