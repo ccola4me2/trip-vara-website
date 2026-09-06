@@ -110,6 +110,7 @@ const I = {
   shield: 'M12 3l8 4v5c0 4.5-3.2 8.3-8 9-4.8-.7-8-4.5-8-9V7l8-4Z',
   back: 'M10 19l-7-7 7-7M3 12h18',
   chevron: 'm6 9 6 6 6-6',
+  handshake: 'M7 11.5 4 8.5l3-2.5h4l2 1.5 2-1.5h4l3 2.5-3 3-1.5-1.2-3.2 3.4a1.6 1.6 0 0 1-2.3 0l-.6-.6-.9.8a1.5 1.5 0 0 1-2.1-2.1M7 11.5l2 2',
 };
 
 // The portal is organised into hubs, the way a back office is: pick the area
@@ -125,10 +126,14 @@ const NAV = [
       { href: '/app/payments', label: 'Payments Due' },
       { href: '/app/commissions', label: 'Commission owed' },
       { href: '/app/billing', label: 'Invoices' },
-      { href: '/app/vendors', label: 'Vendors' },
       { href: '/app/catalog', label: 'Vendor products' },
     ],
   },
+  // A page of its own, next to the dashboard. A supplier directory is opened
+  // to look somebody up, which is a thing you do between other things: behind
+  // a hub it takes two clicks and reads as a setting for reservations rather
+  // than the place you go to find a manager's phone number.
+  { href: '/app/vendors', label: 'Vendors', icon: I.handshake },
   {
     hub: 'Client', icon: I.people, items: [
       { href: '/app/tasks', label: 'To do' },

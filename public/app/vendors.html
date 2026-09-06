@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vendors Hub | Trip Vara Portal</title>
+<title>Vendors | Trip Vara Portal</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/app.css">
@@ -43,7 +43,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Vendors Hub</h1><p class="sub">Suppliers, their people, and how to sign up, in one place.</p></div>
+      <div><h1>Vendors</h1><p class="sub">Suppliers, their people, and how to sign up, in one place.</p></div>
       <span id="scope"></span>
     </header>
     <div class="content">
@@ -108,7 +108,7 @@
       </div>
       <div class="field"><label for="category">Category</label>
         <select id="category" name="category"></select>
-        <p class="field-hint">What shelf they sit on in the hub. Uncategorised vendors gather
+        <p class="field-hint">Which group they appear under here. Uncategorised vendors gather
           under Other rather than disappearing.</p></div>
       <div class="field-row">
         <div class="field"><label for="portalUrl">Booking portal</label>
@@ -261,6 +261,11 @@ function contactLine(v) {
 }
 
 function starButton(v) {
+  // Only on your own vendors. An owner reading the agency sees every advisor's
+  // suppliers, and starring one of those fails: favourites live on the vendor
+  // row and the row belongs to somebody else. A star that cannot work is worse
+  // than no star, so it is not offered, the same way Edit is not.
+  if (v.user_id !== ME) return '';
   return `<button class="star" data-star="${esc(v.id)}" aria-pressed="${v.favourite ? 'true' : 'false'}"
     title="${v.favourite ? 'Remove from favourites' : 'Add to favourites'}"
     aria-label="${v.favourite ? 'Remove' : 'Add'} ${esc(v.name)} ${v.favourite ? 'from' : 'to'} favourites"
