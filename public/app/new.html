@@ -305,6 +305,7 @@ const CATALOG_CATEGORY = 'Cruise Lines';
 
 // Names differing only in spacing or punctuation are the same supplier.
 const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const UNSHELVED = 'Not categorised yet';
 
 (async () => {
   let vendors = [];
@@ -359,25 +360,66 @@ const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
   if (!offered.length) return;
 
-  const byShelf = new Map();
-  for (const { v, shelves } of offered) {
-    const key = shelves[0] || 'Other';
-    if (!byShelf.has(key)) byShelf.set(key, []);
-    byShelf.get(key).push(v);
+  const sel = document.getElementById('vendor-pick');
+  const field = document.getElementById('vendor-pick-field');
+  const hint = field.querySelector('.field-hint');
+
+  /** The product types a vendor could be booked as, from the shelves it sits on. */
+  const typesOf = (v) => [...new Set(
+    shelvesOf(v).map((shelf) => VENDOR_TYPE[shelf]).filter(Boolean)
+  )];
+
+  function draw() {
+    const want = form.elements.productType.value;
+
+    // Only the vendors that sell this kind of trip. Picking Resort and then
+    // scrolling past sixty tour operators is the list being unhelpful in a way
+    // that is worse than no list. A vendor with no category cannot be ruled
+    // out, so it stays offered whatever the type.
+    const matching = offered.filter(({ v }) => {
+      const types = typesOf(v);
+      return !types.length || types.includes(want);
+    });
+
+    const byShelf = new Map();
+    for (const { v, shelves } of matching) {
+      // A vendor with no category is offered whatever the type, because
+      // nothing rules it out. Kept in its own group rather than mixed into
+      // Other, which is a category somebody chose.
+      const key = shelves[0] || UNSHELVED;
+      if (!byShelf.has(key)) byShelf.set(key, []);
+      byShelf.get(key).push(v);
+    }
+
+    const last = (k) => (k === UNSHELVED ? 2 : k === 'Other' ? 1 : 0);
+    const order = [...byShelf.keys()].sort((a, b) => (
+      last(a) - last(b) || a.localeCompare(b)));
+
+    sel.innerHTML = '<option value="">Type the name, or pick one</option>'
+      + order.map((shelf) => `<optgroup label="${esc(shelf)}">${
+        byShelf.get(shelf)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((v) => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('')
+      }</optgroup>`).join('');
+
+    const n = matching.length;
+    hint.textContent = n
+      ? `${n} vendor${n === 1 ? '' : 's'} you sell for this kind of trip. Cruise lines are not `
+        + 'here: pick those from the catalog above, where the ship and the sailing dates come '
+        + 'with them.'
+      : 'No vendors on your list sell this kind of trip yet. Type the name and it becomes one.';
+
+    field.hidden = false;
   }
 
-  const sel = document.getElementById('vendor-pick');
-  const order = [...byShelf.keys()].sort((a, b) => (
-    a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)));
-
-  sel.innerHTML = '<option value="">Type the name, or pick one</option>'
-    + order.map((shelf) => `<optgroup label="${esc(shelf)}">${
-      byShelf.get(shelf)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((v) => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('')
-    }</optgroup>`).join('');
-
-  document.getElementById('vendor-pick-field').hidden = false;
+  draw();
+  form.elements.productType.addEventListener('change', () => {
+    // The vendor already chosen may not sell the new type, so it is cleared
+    // rather than left sitting under a list it is no longer in.
+    const chosen = sel.value;
+    draw();
+    sel.value = [...sel.options].some((o) => o.value === chosen) ? chosen : '';
+  });
 
   sel.addEventListener('change', () => {
     const v = vendors.find((x) => x.id === sel.value);
@@ -387,11 +429,6 @@ const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
     // joins the reservation to the vendor, and every report groups by it.
     form.elements.supplier.value = v.name;
 
-    const shelf = shelvesOf(v).find((c) => c !== CATALOG_CATEGORY);
-    const type = VENDOR_TYPE[shelf];
-    if (type) form.elements.productType.value = type;
-
-    // Booking through a vendor you have a record for is a direct booking.
     if (form.elements.bookingMethod && !form.elements.bookingMethod.value) {
       form.elements.bookingMethod.value = 'direct';
     }
