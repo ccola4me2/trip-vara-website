@@ -601,6 +601,31 @@ async function loadShips(line) {
   pickShip.disabled = false;
 }
 
+/**
+ * A departure, said the way somebody picks one.
+ *
+ * The date alone is not enough to choose between two sailings on the same
+ * ship: a week in the Western Caribbean and a week in the Eastern leave from
+ * the same pier a fortnight apart and read identically as dates. The
+ * itinerary is what is actually being chosen, so it goes in the option next
+ * to the date. Where the catalog has no itinerary title the broad region
+ * stands in, and where it has neither the date carries on alone.
+ */
+function sailingLabel(r) {
+  // The feed writes the length into the itinerary title as often as not
+  // ("7 Night Western Caribbean"), and printing "7 nights" after that reads
+  // as a stutter. The prefix comes off; the count is shown once, at the end,
+  // where it lines up down the list.
+  const itinerary = String(r.name || r.destination || '')
+    .replace(/^\s*\d+\s*[- ]?\s*(night|nt|day)s?\s+/i, '')
+    .trim();
+  return [
+    dateFmt(r.depart_date),
+    itinerary,
+    r.nights ? `${r.nights} nights` : '',
+  ].filter(Boolean).join('  ·  ');
+}
+
 pickShip.addEventListener('change', async () => {
   pickDate.innerHTML = '<option value="">Departure</option>';
   pickDate.disabled = true;
@@ -611,8 +636,8 @@ pickShip.addEventListener('change', async () => {
   if (!d || !d.dates.length) return;
   dateRows = d.dates;
   pickDate.innerHTML = '<option value="">Departure</option>'
-    + d.dates.map((r) => `<option value="${esc(r.depart_date)}">${esc(dateFmt(r.depart_date))}`
-      + `${r.nights ? ` · ${r.nights} nights` : ''}</option>`).join('');
+    + d.dates.map((r) => `<option value="${esc(r.depart_date)}">${esc(sailingLabel(r))}</option>`)
+      .join('');
   pickDate.disabled = false;
 });
 

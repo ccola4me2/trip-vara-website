@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <a class="back-link" href="/app/groups">&larr; Group space</a>
+        <h1 id="title">Open a group</h1>
+        <p class="sub" id="sub">A vendor is holding cabins for you. This is where you track them.</p>
+      </div>
+      <div class="toolbar" style="margin:0;" id="actions"></div>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <section id="stats" class="stat-grid" hidden></section>
+
+      <section class="card" id="link-card" hidden style="margin-top:1.5rem;">
+        <div class="card-pad" id="link-body"></div>
+      </section>
+
+      <div class="split" style="margin-top:1.5rem;">
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>Group details</h2></div>
+            <form id="group-form">
+              <div class="card-pad">
+                <div class="notice notice-error" hidden></div>
+                <div class="field"><label for="name">Group name</label>
+                  <input id="name" name="name" maxlength="160" required
+                    placeholder="Islander New Year Cruise"></div>
+                <div class="field-row">
+                  <div class="field"><label for="vendor">Vendor</label>
+                    <input id="vendor" name="vendor" placeholder="Margaritaville at Sea"></div>
+                  <div class="field"><label for="groupCode">Group number</label>
+                    <input id="groupCode" name="groupCode" placeholder="4668">
+                    <p class="field-hint">The vendor's reference for the block. It is also the
+                      web address people sign up on, so no two groups can share one.</p></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="productName">Ship or property</label>
+                    <input id="productName" name="productName" placeholder="Islander"></div>
+                  <div class="field"><label for="destination">Destination</label>
+                    <input id="destination" name="destination" placeholder="Bahamas"></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="departDate">Departing</label>
+                    <input id="departDate" name="departDate" type="date"></div>
+                  <div class="field"><label for="returnDate">Returning</label>
+                    <input id="returnDate" name="returnDate" type="date"></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="optionDate">Option date</label>
+                    <input id="optionDate" name="optionDate" type="date">
+                    <p class="field-hint">Unsold cabins go back to the vendor on this day.</p></div>
+                  <div class="field"><label for="cabinsHeld">Cabins held</label>
+                    <input id="cabinsHeld" name="cabinsHeld" type="number" min="0" max="9999"
+                      value="0"></div>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="groupType">Kind of group</label>
+                    <select id="groupType" name="groupType">
+                      <option value="cruise">Cruise</option>
+                      <option value="package">Package</option>
+                      <option value="lodging">Rooms</option>
+                      <option value="tour">Tour</option>
+                      <option value="other">Something else</option>
+                    </select>
+                    <p class="field-hint">Cabins, a package and a room block are held and sold
+                      differently.</p></div>
+                  <div class="field"><label for="status">Status</label>
+                    <select id="status" name="status">
+                      <option value="open">Open</option>
+                      <option value="closed">Closed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select></div>
+                </div>
+                <div class="field"><label for="notes">Notes</label>
+                  <textarea id="notes" name="notes" maxlength="4000"></textarea></div>
+              </div>
+              <div class="card-foot">
+                <button class="btn btn-danger btn-sm" type="button" id="delete" hidden>Delete</button>
+                <span style="flex:1;"></span>
+                <button class="btn btn-primary" type="submit" id="save">Save group</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card" id="signups-card" hidden style="margin-top:1.5rem;">
+            <div class="card-head"><h2>Who has put their name down</h2>
+              <span class="muted" id="signup-count"></span></div>
+            <div id="signups"></div>
+          </section>
+
+          <section class="card" id="bookings-card" hidden style="margin-top:1.5rem;">
+            <div class="card-head"><h2>Reservations in this group</h2></div>
+            <div id="bookings"></div>
+          </section>
+        </div>
+
+        <div>
+          <section class="card">
+            <div class="card-head"><h2>Sign-up page</h2></div>
+            <form id="reg-form">
+              <div class="card-pad">
+                <div class="notice notice-error" hidden></div>
+                <div class="field">
+                  <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;">
+                    <input type="checkbox" id="registrationOpen" name="registrationOpen">
+                    Take names on a page of its own
+                  </label>
+                  <p class="field-hint" id="reg-link-hint">Gives the group a public link people can
+                    sign up on, so who is interested is a list rather than a pile of replies.
+                    Needs a group number, which becomes the address.</p>
+                </div>
+                <div class="field"><label for="registrationBlurb">What that page should say</label>
+                  <textarea id="registrationBlurb" name="registrationBlurb" maxlength="1500"
+                    rows="6"
+                    placeholder="Seven nights out of Miami in March. Put your name down and we will send the cabin options."></textarea>
+                  <p class="field-hint">Everything else on the page comes from the details on the
+                    left. This is the part in your own words.</p></div>
+              </div>
+              <div class="card-foot">
+                <span style="flex:1;"></span>
+                <button class="btn btn-primary btn-sm" type="submit">Save page</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, daysUntil, showError, onSubmit }
+  from '/js/app.js';
+const ME = (await mountShell()).id;
+
+const groupId = new URL(location.href).searchParams.get('id');
+const form = document.getElementById('group-form');
+const regForm = document.getElementById('reg-form');
+const deleteBtn = document.getElementById('delete');
+let group = null;
+let canEdit = true;
+
+const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '');
+
+// A new group has no sign-up page to configure yet: the page hangs off a
+// group number the group does not have until it is saved once.
+if (!groupId) {
+  regForm.closest('.card').hidden = true;
+  document.getElementById('save').textContent = 'Open the group';
+}
+
+function fill(g) {
+  const set = (n, v) => { const el = form.elements[n] || regForm.elements[n];
+    if (el) el.value = v ?? ''; };
+  set('name', g.name); set('vendor', g.vendor); set('groupCode', g.group_code);
+  set('productName', g.product_name); set('destination', g.destination);
+  set('departDate', g.depart_date); set('returnDate', g.return_date);
+  set('optionDate', g.option_date); set('cabinsHeld', g.cabins_held || 0);
+  set('status', g.status); set('notes', g.notes);
+  set('groupType', g.group_type || 'cruise');
+  set('registrationBlurb', g.registration_blurb);
+  regForm.elements.registrationOpen.checked = Boolean(g.registration_open);
+}
+
+function renderHeader(g) {
+  document.getElementById('title').textContent = g.name;
+  document.getElementById('sub').textContent = [
+    g.vendor, g.product_name,
+    g.depart_date ? `sails ${short(g.depart_date)}` : '',
+    g.group_code ? `group ${g.group_code}` : '',
+  ].filter(Boolean).join(' · ') || 'No details yet.';
+
+  const held = g.cabins_held || 0;
+  const sold = g.cabins_sold || 0;
+  const days = daysUntil(g.option_date);
+  const stats = document.getElementById('stats');
+  stats.hidden = false;
+  stats.innerHTML = `
+    <div class="stat"><p class="label">Cabins held</p><p class="value">${held}</p>
+      <p class="meta">What the vendor is holding</p></div>
+    <div class="stat"><p class="label">Sold</p><p class="value">${sold}</p>
+      <p class="meta">Reservations in the block</p></div>
+    <div class="stat"><p class="label">Still to sell</p>
+      <p class="value">${Math.max(0, held - sold)}</p>
+      <p class="meta">Before the option date</p></div>
+    <div class="stat"><p class="label">Option date</p>
+      <p class="value" style="font-size:1.2rem;${days !== null && days <= 14 ? 'color:var(--red-600);' : ''}">${
+        g.option_date ? esc(short(g.option_date)) : 'none set'}</p>
+      <p class="meta">${days === null ? 'Nothing is due back' : days < 0 ? 'Space already released'
+        : days === 0 ? 'Releases today' : `Releases in ${days} days`}</p></div>`;
+}
+
+function renderLink(g, codeShared) {
+  const card = document.getElementById('link-card');
+  const body = document.getElementById('link-body');
+  const hint = document.getElementById('reg-link-hint');
+
+  if (codeShared) {
+    hint.innerHTML = `Another group already answers to <code>${esc(g.group_code)}</code>. `
+      + 'Change this one before sharing the link.';
+  } else if (g.group_code) {
+    hint.innerHTML = `People will sign up at <code>/g/${esc(g.group_code)}</code>.`;
+  }
+
+  if (codeShared) {
+    card.hidden = false;
+    body.innerHTML = `<p><strong>Two groups share the number ${esc(g.group_code)}.</strong>
+      Only one of the two sign-up pages can be reached, so change this group's number
+      before you hand the link to anybody.</p>`;
+    return;
+  }
+
+  if (!g.registration_open || !g.group_code) { card.hidden = true; return; }
+
+  const url = `${location.origin}/g/${g.group_code}`;
+  card.hidden = false;
+  body.innerHTML = `<p class="label" style="margin:0 0 .4rem;">Sign-up page is live</p>
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;">
+      <code style="font-size:.95rem;">${esc(url)}</code>
+      <button class="btn btn-ghost btn-sm" id="copy-link">Copy link</button>
+      <a class="btn btn-ghost btn-sm" href="/g/${encodeURIComponent(g.group_code)}"
+        target="_blank" rel="noopener">Open it</a>
+    </div>
+    <p class="field-hint" style="margin-top:.5rem;">Anybody with this link can put their name
+      down. They do not need an account.</p>`;
+
+  document.getElementById('copy-link').addEventListener('click', async (e) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      e.target.textContent = 'Copied';
+      setTimeout(() => { e.target.textContent = 'Copy link'; }, 1500);
+    } catch { e.target.textContent = 'Press Cmd-C'; }
+  });
+}
+
+function renderSignups(rows) {
+  const card = document.getElementById('signups-card');
+  const host = document.getElementById('signups');
+  card.hidden = false;
+
+  const waiting = rows.filter((r) => !r.booking_id).length;
+  document.getElementById('signup-count').textContent = rows.length
+    ? `${rows.length} name${rows.length === 1 ? '' : 's'}, ${waiting} not yet booked`
+    : '';
+
+  if (!rows.length) {
+    host.innerHTML = `<div class="empty"><h3>Nobody yet</h3>
+      <p>Turn the sign-up page on and share the link. Names arrive here.</p></div>`;
+    return;
+  }
+
+  host.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Reach them on</th><th class="num">Party</th>
+      <th>What they said</th><th></th></tr></thead>
+    <tbody>${rows.map((r) => `<tr>
+      <td style="min-width:9rem;"><span class="name">${esc(r.name)}</span>
+        <div class="muted">${esc(dateFmt(new Date(r.created_at * 1000).toISOString().slice(0, 10)))}</div></td>
+      <td class="muted">${esc(r.email || '')}${r.phone ? `<div>${esc(r.phone)}</div>` : ''}</td>
+      <td class="num">${r.party_size || 1}</td>
+      <td class="muted" style="max-width:22rem;white-space:normal;">${esc(r.notes || '')}</td>
+      <td class="num">${r.booking_id
+        ? `<a class="btn btn-ghost btn-sm" href="/app/reservation?id=${encodeURIComponent(r.booking_id)}">Booked</a>`
+        : canEdit
+          ? `<button class="btn btn-primary btn-sm" data-book="${esc(r.id)}">Book them</button>`
+          : '<span class="muted">-</span>'}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+
+  host.querySelectorAll('[data-book]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Booking...';
+      try {
+        const r = await api(`/api/group-registrations/${encodeURIComponent(btn.dataset.book)}/book`,
+          { method: 'POST' });
+        location.href = `/app/reservation?id=${encodeURIComponent(r.bookingId)}`;
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Book them';
+        showError(document.getElementById('err'), err);
+      }
+    });
+  });
+}
+
+function renderBookings(rows) {
+  const card = document.getElementById('bookings-card');
+  const host = document.getElementById('bookings');
+  card.hidden = false;
+
+  if (!rows.length) {
+    host.innerHTML = `<div class="empty"><h3>No cabins sold yet</h3>
+      <p>Reservations you attach to this group show here.</p></div>`;
+    return;
+  }
+
+  host.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Client</th><th>Confirmation</th><th class="num">Travellers</th>
+      <th>Status</th><th class="num">Gross</th><th class="num">Commission</th></tr></thead>
+    <tbody>${rows.map((b) => `<tr>
+      <td><a class="name" href="/app/reservation?id=${encodeURIComponent(b.id)}">${esc(b.client_name || 'Unnamed')}</a></td>
+      <td class="muted">${esc(b.confirmation_number || '-')}</td>
+      <td class="num">${b.travellers || 1}</td>
+      <td><span class="badge ${b.status === 'booked' ? 'badge-green' : 'badge-navy'}">${esc(b.status)}</span></td>
+      <td class="num">${money(b.gross_cents || 0)}</td>
+      <td class="num">${money(b.commission_cents || 0)}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function load() {
+  if (!groupId) return;
+  try {
+    const d = await api(`/api/groups/${encodeURIComponent(groupId)}`);
+    group = d.group;
+    canEdit = group.user_id === ME;
+    fill(group);
+    renderHeader(group);
+    renderLink(group, d.codeShared);
+    renderSignups(d.registrations);
+    renderBookings(d.bookings);
+    deleteBtn.hidden = !canEdit;
+
+    if (!canEdit) {
+      // Somebody else's group. Readable, because an owner can see the whole
+      // agency, but not editable from here.
+      [...form.elements, ...regForm.elements].forEach((el) => { el.disabled = true; });
+      document.getElementById('actions').innerHTML =
+        `<span class="badge badge-navy">${esc(group.advisor_name || 'Another advisor')}'s group</span>`;
+    }
+  } catch (err) { showError(document.getElementById('err'), err); }
+}
+
+// Both forms save the same group, so each sends what the other holds too.
+// Splitting them into two cards was a layout decision, not a data one.
+function allValues(values) {
+  const other = groupId ? {
+    registrationOpen: regForm.elements.registrationOpen.checked,
+    registrationBlurb: regForm.elements.registrationBlurb.value,
+    name: form.elements.name.value,
+    vendor: form.elements.vendor.value,
+    groupCode: form.elements.groupCode.value,
+    productName: form.elements.productName.value,
+    destination: form.elements.destination.value,
+    departDate: form.elements.departDate.value,
+    returnDate: form.elements.returnDate.value,
+    optionDate: form.elements.optionDate.value,
+    cabinsHeld: form.elements.cabinsHeld.value,
+    groupType: form.elements.groupType.value,
+    status: form.elements.status.value,
+    notes: form.elements.notes.value,
+  } : {};
+  return { ...other, ...values };
+}
+
+async function save(values) {
+  const body = allValues(values);
+  if (groupId) {
+    await api(`/api/groups/${encodeURIComponent(groupId)}`, { method: 'PUT', body });
+    await load();
+  } else {
+    const created = await api('/api/groups', { method: 'POST', body });
+    location.href = `/app/group?id=${encodeURIComponent(created.group.id)}`;
+  }
+}
+
+onSubmit(form, save);
+onSubmit(regForm, (values) => save({
+  ...values,
+  registrationOpen: regForm.elements.registrationOpen.checked,
+}));
+
+deleteBtn.addEventListener('click', async () => {
+  if (!confirm('Delete this group? The reservations made from it are kept.')) return;
+  await api(`/api/groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
+  location.href = '/app/groups';
+});
+
+await load();
+</script>
+</body></html>

@@ -173,6 +173,7 @@ const PAGE_FILES = {
   '/app/complete': '/app/complete.html',
   '/app/vendors': '/app/vendors.html',
   '/app/vendor': '/app/vendor.html',
+  '/app/group': '/app/group.html',
   '/app/cruise-search': '/app/cruise-search.html',
   '/app/form': '/app/form.html',
   '/app/bookings': '/app/reservations.html',

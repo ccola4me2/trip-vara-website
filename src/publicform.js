@@ -146,6 +146,35 @@ async function loadGroup(env, code) {
   return row || null;
 }
 
+/**
+ * A date the way somebody says it out loud.
+ *
+ * The advisor's own pages format dates in script; this one is server-rendered
+ * for people with no account, and 2026-12-29 on a page inviting them on a
+ * cruise reads like a database. Built in UTC so the day never shifts.
+ */
+function sayDate(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return iso || '';
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US',
+    { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * The advisor's own words, kept in the shape they typed them.
+ *
+ * They write the blurb in a textarea with a blank line between thoughts, and
+ * running that into one block loses the only formatting the page offers.
+ * Escaped first, so this splits text that can no longer carry markup.
+ */
+function paragraphs(text) {
+  if (!text) return '';
+  return String(text).split(/\n{2,}/)
+    .map((para) => para.trim())
+    .filter(Boolean)
+    .map((para) => `<p>${esc(para).replace(/\n/g, '<br>')}</p>`)
+    .join('\n');
+}
+
 export async function renderGroupPage(request, env, code) {
   const g = await loadGroup(env, code);
   if (!g || g.status === 'cancelled') {
@@ -157,13 +186,14 @@ export async function renderGroupPage(request, env, code) {
 
   const facts = [g.vendor, g.product_name, g.destination].filter(Boolean);
   const when = g.depart_date
-    ? `<p>${esc(g.depart_date)}${g.return_date ? ` to ${esc(g.return_date)}` : ''}</p>` : '';
+    ? `<p>${esc(sayDate(g.depart_date))}${
+        g.return_date ? ` to ${esc(sayDate(g.return_date))}` : ''}</p>` : '';
 
   const body = [
     `<h1>${esc(g.name)}</h1>`,
     facts.length ? `<p>${esc(facts.join(' \u00b7 '))}</p>` : '',
     when,
-    g.registration_blurb ? `<p>${esc(g.registration_blurb)}</p>` : '',
+    paragraphs(g.registration_blurb),
     '<form id="f" novalidate>',
     '<label for="name">Your name</label><input id="name" name="name" required maxlength="120">',
     '<label for="email">Email</label><input id="email" name="email" type="email" required maxlength="254">',

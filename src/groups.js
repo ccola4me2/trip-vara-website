@@ -9,7 +9,7 @@
 // Cabins sold is counted from the reservations pointing at the group rather
 // than stored on it. Two numbers that can disagree eventually will.
 
-import { json, badRequest, notFound, clean, cleanDate, oneOf, uid, now, readJson } from './util.js';
+import { json, badRequest, notFound, clean, cleanText, cleanDate, oneOf, uid, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 
@@ -62,8 +62,10 @@ function parse(body) {
       status: oneOf(body.status, STATUSES),
       groupType: oneOf(body.groupType, GROUP_TYPES),
       registrationOpen: body.registrationOpen ? 1 : 0,
-      registrationBlurb: clean(body.registrationBlurb, 1500),
-      notes: clean(body.notes, 4000),
+      // Prose, and paragraphs are how somebody writes a page. clean() would
+      // fold the whole thing onto one line.
+      registrationBlurb: cleanText(body.registrationBlurb, 1500),
+      notes: cleanText(body.notes, 4000),
     },
   };
 }
@@ -183,6 +185,9 @@ export async function handleGetGroup(request, env, id) {
     bookings: results || [],
     registrations: registrations || [],
     groupTypes: GROUP_TYPES,
+    // Whether the link is safe to hand out, which is only true if this group
+    // is the only one on the code.
+    codeShared: (await clashingCodes(env, [group])).length > 0,
   });
 }
 
