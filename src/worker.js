@@ -170,8 +170,19 @@ export default {
     try {
       return await routeRequest(request, env, ctx);
     } catch (e) {
-      console.error('unhandled', e);
-      return json({ error: 'Something went wrong.' }, 500);
+      // Say what happened and where. This returned "Something went wrong."
+      // and nothing else, which is how a 500 on the Payments page cost most
+      // of a day: the page showed the server's own shrug, I read it as the
+      // client giving up, and there was nothing on either side to read.
+      //
+      // Everything behind this router needs a session, so the reader is an
+      // advisor rather than the internet. Handing a trusted user the message
+      // and the path is worth more than withholding it from them, and the
+      // message is capped in case a driver ever puts a row in one.
+      const path = new URL(request.url).pathname;
+      const detail = String((e && e.message) || e).slice(0, 200);
+      console.error('unhandled', path, e);
+      return json({ error: `${path} failed: ${detail}` }, 500);
     }
   },
 
