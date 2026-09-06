@@ -773,7 +773,12 @@ function drawOptions() {
  * kinds of charge and a typical cruise uses four, and a wall of zeroes is a
  * grid nobody reads.
  */
-let showAllRows = false;
+// Every charge row, from the start. Hiding the unused ones was meant to keep
+// the grid short and instead hid the thing the grid is for: somebody looking
+// for where to type gratuities found one row called Fare and no sign that
+// twenty one others existed. The toggle still collapses it to what is in use,
+// which is the right view once a trip is priced and the wrong one before.
+let showAllRows = true;
 // Which vendor's charges the grid is showing. Null is the reservation's own.
 let pricingComponent = null;
 
@@ -809,7 +814,7 @@ function drawPricing() {
           esc([KIND_WORD[c.kind] || c.kind, c.supplier].filter(Boolean).join(' with '))}</option>`).join('')}
        </select>` : ''}
        <button class="btn btn-ghost btn-sm" id="toggle-rows">${
-        showAllRows ? 'Only what is used' : 'All charge types'}</button>
+        showAllRows ? 'Hide empty rows' : 'Show every charge'}</button>
        ${people.length > 1 ? '<button class="btn btn-ghost btn-sm" id="copy-across">Copy first column across</button>' : ''}`
     : '';
 
