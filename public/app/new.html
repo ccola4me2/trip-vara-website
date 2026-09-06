@@ -7,6 +7,24 @@
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/app.css">
+<style>
+  .suggest {
+    position: absolute; z-index: 20; left: 0; right: 0; top: 100%;
+    background: #fff; border: 1px solid var(--navy-200, #c3ccd8);
+    border-radius: 8px; box-shadow: 0 6px 18px rgba(16, 32, 48, .12);
+    max-height: 16rem; overflow-y: auto; margin-top: 2px;
+  }
+  .suggest-row {
+    display: block; width: 100%; text-align: left; background: none;
+    border: 0; border-bottom: 1px solid var(--navy-50, #eef1f5);
+    padding: .5rem .7rem; cursor: pointer; font: inherit;
+  }
+  .suggest-row:last-child { border-bottom: 0; }
+  .suggest-row:hover, .suggest-row.on { background: var(--navy-50, #eef1f5); }
+  .suggest-row .nm { display: block; font-size: .92rem; }
+  .suggest-row .hint { display: block; font-size: .74rem; color: var(--navy-400, #7b8798); }
+  .suggest-empty { margin: 0; padding: .55rem .7rem; font-size: .84rem; color: var(--navy-400, #7b8798); }
+</style>
 </head>
 <body>
 <div class="shell">
@@ -100,44 +118,90 @@ const groups = await api('/api/groups?status=open')
 // contact id and details onto the reservation instead of just their name.
 let crmByName = new Map();
 
-function suggestClients(input, listId) {
-  const list = document.createElement('datalist');
-  list.id = listId;
-  input.setAttribute('list', listId);
+function suggestClients(input) {
+  // Built here rather than with a datalist.
+  //
+  // A datalist looks like the right control and is not: Chrome ignores the
+  // label on an option, so the thing that tells two people apart never shows,
+  // the browser decides what matches, and when nothing does it renders
+  // nothing, which is indistinguishable from a search that never ran.
+  const box = document.createElement('div');
+  box.className = 'suggest';
+  box.hidden = true;
   input.setAttribute('autocomplete', 'off');
-  input.after(list);
+  input.parentElement.style.position = 'relative';
+  input.after(box);
 
+  let rows = [];
+  let cursor = -1;
   let timer;
-  let last = '';
+
+  const close = () => { box.hidden = true; cursor = -1; };
+
+  function choose(row) {
+    input.value = row.name;
+    if (row.source === 'crm') crmByName.set(row.name, row);
+    close();
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function draw() {
+    if (!rows.length) {
+      box.innerHTML = '<p class="suggest-empty">Nobody by that name yet. Keep typing to add them.</p>';
+      box.hidden = false;
+      return;
+    }
+    box.innerHTML = rows.map((c, i) => {
+      // What is shown beside the name is what tells two Smiths apart.
+      const hint = [
+        c.email,
+        c.trips ? `${c.trips} trip${c.trips === 1 ? '' : 's'}` : '',
+        c.source === 'crm' ? 'in the CRM, not yet booked' : '',
+      ].filter(Boolean).join(' · ');
+      return `<button type="button" class="suggest-row${i === cursor ? ' on' : ''}" data-i="${i}">
+        <span class="nm">${esc(c.name)}</span>
+        ${hint ? `<span class="hint">${esc(hint)}</span>` : ''}
+      </button>`;
+    }).join('');
+    box.hidden = false;
+    box.querySelectorAll('[data-i]').forEach((b) => {
+      // mousedown, not click: blurring the input on click closes the list
+      // before the click lands.
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); choose(rows[Number(b.dataset.i)]); });
+    });
+  }
+
   input.addEventListener('input', () => {
     const q = input.value.trim();
     // Two letters, because one matches most of the book and suggesting all of
     // it is the same as suggesting nothing.
-    if (q.length < 2 || q === last) return;
     clearTimeout(timer);
+    if (q.length < 2) { close(); return; }
     timer = setTimeout(async () => {
-      last = q;
       let found;
       try {
         found = await api(`/api/clients?q=${encodeURIComponent(q)}&limit=8`);
-      } catch { return; }
+      } catch { close(); return; }
       // People already booked here first, then people the CRM knows who have
       // never been booked. Without the second group the first booking for an
       // existing contact means typing a name the system already holds, and
       // creating a second version of them.
-      const rows = [...(found.clients || []), ...(found.fromCrm || [])];
-      crmByName = new Map((found.fromCrm || []).map((c) => [c.name, c]));
-      list.innerHTML = rows.map((c) => {
-        // What is shown beside the name is what tells two Smiths apart.
-        const hint = [
-          c.email,
-          c.trips ? `${c.trips} trip${c.trips === 1 ? '' : 's'}` : '',
-          c.source === 'crm' ? 'in the CRM, not yet booked' : '',
-        ].filter(Boolean).join(' · ');
-        return `<option value="${esc(c.name)}"${hint ? ` label="${esc(hint)}"` : ''}></option>`;
-      }).join('');
-    }, 250);
+      rows = [...(found.clients || []).slice(0, 8), ...(found.fromCrm || [])].slice(0, 10);
+      for (const c of found.fromCrm || []) crmByName.set(c.name, c);
+      cursor = -1;
+      draw();
+    }, 200);
   });
+
+  input.addEventListener('keydown', (e) => {
+    if (box.hidden || !rows.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); cursor = (cursor + 1) % rows.length; draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); cursor = (cursor - 1 + rows.length) % rows.length; draw(); }
+    else if (e.key === 'Enter' && cursor >= 0) { e.preventDefault(); choose(rows[cursor]); }
+    else if (e.key === 'Escape') close();
+  });
+
+  input.addEventListener('blur', () => setTimeout(close, 120));
 }
 
 const text = (name, label, extra = '') => `
@@ -198,7 +262,7 @@ document.getElementById('fields').innerHTML = [
   '<div class="field"><textarea id="f-notes" name="notes" maxlength="2000"></textarea></div>',
 ].join('');
 
-suggestClients(form.elements.clientName, 'client-suggestions');
+suggestClients(form.elements.clientName);
 
 // The client box means something different on a personal booking, so the
 // label says so rather than asking for a "client" who is the advisor.
@@ -232,7 +296,7 @@ function addTravellerRow(value = '') {
     placeholder="${n === 1 ? 'Full name, as on the passport' : 'Another traveller'}"
     value="${esc(value)}">`;
   document.getElementById('traveller-rows').append(box);
-  suggestClients(box.querySelector('input'), `traveller-suggestions-${n}`);
+  suggestClients(box.querySelector('input'));
 }
 addTravellerRow();
 document.getElementById('add-traveller').addEventListener('click', () => addTravellerRow());
