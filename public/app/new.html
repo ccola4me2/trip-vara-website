@@ -324,8 +324,10 @@ const UNSHELVED = 'Not categorised yet';
   // have no category at all, so filtering on the shelf alone left Carnival,
   // Royal Caribbean and Celebrity sitting in Other and being offered here.
   let catalogLines = new Set();
+  let catalogRows = [];
   try {
     const c = await api('/api/catalog/lines');
+    catalogRows = c.lines || [];
     // knownCruiseLines is every line the source knows; lines is only what has
     // been imported so far. Both, so a part-finished import still keeps cruise
     // lines out of a list they do not belong in.
@@ -371,6 +373,23 @@ const UNSHELVED = 'Not categorised yet';
 
   function draw() {
     const want = form.elements.productType.value;
+
+    // Booking a cruise: the lines come from the catalog, not from the vendor
+    // records. It is the same list the sailing picker above uses, so choosing
+    // a line here loads its ships rather than leaving two pickers that know
+    // different things.
+    if (want === 'cruise') {
+      const lines = (catalogRows || []).map((l) => l.name);
+      sel.innerHTML = '<option value="">Type the name, or pick a cruise line</option>'
+        + lines.map((n) => `<option value="line:${esc(n)}">${esc(n)}</option>`).join('');
+      hint.textContent = lines.length
+        ? `${lines.length} cruise line${lines.length === 1 ? '' : 's'} from the catalog. `
+          + 'Picking one loads its ships and sailing dates above.'
+        : 'The sailing catalog has not been imported yet, so there are no cruise lines to '
+          + 'pick from. Type the name instead.';
+      field.hidden = false;
+      return;
+    }
 
     // Only the vendors that sell this kind of trip. Picking Resort and then
     // scrolling past sixty tour operators is the list being unhelpful in a way
@@ -422,6 +441,19 @@ const UNSHELVED = 'Not categorised yet';
   });
 
   sel.addEventListener('change', () => {
+    // A cruise line, chosen from the catalog rather than from the vendor list.
+    if (sel.value.startsWith('line:')) {
+      const line = sel.value.slice(5);
+      form.elements.supplier.value = line;
+      // Drive the sailing picker above, so the ship and the dates follow from
+      // the same choice instead of being asked for twice.
+      if (pickLine && [...pickLine.options].some((o) => o.value === line)) {
+        pickLine.value = line;
+        pickLine.dispatchEvent(new Event('change'));
+      }
+      return;
+    }
+
     const v = vendors.find((x) => x.id === sel.value);
     if (!v) return;
 
