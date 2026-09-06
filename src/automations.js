@@ -28,10 +28,24 @@ export const TRIGGERS = [
   'contact.created',
   'booking.created',
   'booking.final_payment_due',
+  // The travel moments worth saying something at. The portal already finds
+  // these for its own to-do lists; firing them as triggers lets a GoHighLevel
+  // campaign do the talking instead of the advisor remembering to.
+  'booking.returned',
 ];
 
 export const ACTIONS = [
   'wait', 'send_email', 'send_sms', 'add_tag', 'add_note', 'create_task', 'notify_team',
+  // Hand the contact to a drip campaign that already exists in GoHighLevel.
+  //
+  // The campaigns Brent has built there are not going to be rebuilt here, and
+  // GoHighLevel's API does not offer a way to read a workflow's steps even if
+  // they were. What it does offer is enrolling a contact, which is the half
+  // that matters: this portal knows the travel moment (a reservation made, a
+  // final payment looming, a client home from a trip) and GoHighLevel knows
+  // what to say. Triggering the existing campaign beats reimplementing it
+  // badly.
+  'add_to_workflow',
 ];
 
 const MAX_RUNS_PER_PASS = 25;
@@ -66,6 +80,9 @@ export function parseSteps(raw) {
       step.title = clean(s.title, 160);
       step.dueInDays = Math.max(0, Math.min(Number(s.dueInDays) || 1, 365));
       if (!step.title) continue;
+    } else if (action === 'add_to_workflow') {
+      step.workflowId = clean(s.workflowId, 64);
+      step.workflowName = clean(s.workflowName, 120);
     } else if (action === 'notify_team') {
       step.subject = clean(s.subject, 200) || 'Automation notification';
       step.body = clean(s.body, 4000);
@@ -210,6 +227,12 @@ async function runStep(env, run, step, context) {
       });
       return { status: 'ok', detail: 'task created' };
     }
+    case 'add_to_workflow': {
+      if (!context.contactId) return { status: 'skipped', detail: 'no contact to enrol' };
+      if (!step.workflowId) return { status: 'skipped', detail: 'no workflow chosen' };
+      await ghl.addContactToWorkflow(env, context.contactId, step.workflowId);
+      return { status: 'ok', detail: `enrolled in ${step.workflowName || step.workflowId}` };
+    }
     case 'notify_team': {
       const to = env.NOTIFY_EMAIL;
       if (!to) return { status: 'skipped', detail: 'NOTIFY_EMAIL is not set' };
@@ -343,6 +366,36 @@ export async function scanTimeTriggers(env, locationId, { withinDays = 7 } = {})
   ).bind(env.GHL_DEFAULT_LOCATION_ID || '', locationId, today, through).all();
 
   let fired = 0;
+
+  // Clients home from a trip and not yet welcomed back. Same location filter as
+  // the payments above, and for the same reason: one advisor's clients must
+  // never reach another advisor's campaigns.
+  const { results: home } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.supplier, b.product_name, b.return_date,
+            b.ghl_contact_id
+       FROM bookings b
+       JOIN users u ON u.id = b.user_id
+      WHERE COALESCE(NULLIF(u.ghl_location_id, ''), ?) = ?
+        AND b.status = 'travelled'
+        AND b.personal = 0
+        AND b.welcomed_at IS NULL
+        AND b.return_date IS NOT NULL
+        AND b.return_date <= ?
+      LIMIT 100`
+  ).bind(env.GHL_DEFAULT_LOCATION_ID || '', locationId, today).all();
+
+  for (const row of home || []) {
+    await fireTrigger(env, locationId, 'booking.returned', {
+      bookingId: row.id,
+      contactId: row.ghl_contact_id || null,
+      name: row.client_name,
+      supplier: row.supplier || '',
+      product: row.product_name || '',
+      return_date: row.return_date || '',
+    }, { key: `home:${row.id}` });
+    fired += 1;
+  }
+
   for (const row of results || []) {
     await fireTrigger(env, locationId, 'booking.final_payment_due', {
       paymentId: row.id,
