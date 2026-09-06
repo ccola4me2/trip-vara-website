@@ -7,6 +7,7 @@ import { listSyncState, runSync, resetSync } from './sync.js';
 import { requireAdmin, publicUser } from './auth.js';
 import * as db from './db.js';
 import { sendAdvisorApprovedEmail, checkResend, sendTestEmail } from './email.js';
+import { schemaDrift } from './schema-drift.js';
 
 const STATUSES = ['pending', 'active', 'suspended'];
 
@@ -144,6 +145,8 @@ export async function handleHealth(request, env) {
     console.error('health db', e);
   }
 
+  const schema = dbOk ? await schemaDrift(env) : null;
+
   let scopes = null;
   let capabilities = null;
   const resend = wantEmail ? await checkResend(env) : null;
@@ -168,6 +171,10 @@ export async function handleHealth(request, env) {
       resend,
     },
     db: { ok: dbOk, users: userCount },
+    // Whether the database has had every migration applied. Migrations here
+    // are run by hand, so this is the one fact about the system that the
+    // repository cannot tell you.
+    schema,
     appUrl: env.APP_URL || null,
     // Which GHL areas this token can actually reach. Skipped unless asked for,
     // since it costs one API call per area.

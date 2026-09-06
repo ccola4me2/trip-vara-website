@@ -370,6 +370,22 @@ async function main() {
   // key four times leaves it sitting in `waiting`, which reads as patience
   // when it is really a broken automation nobody is being told about.
   const health = await call(admin, 'GET', '/api/admin/health');
+
+  // The database against the migrations. CI applies every migration before
+  // this runs, so a failure here means the generated schema and real SQLite
+  // disagree: the parser in scripts/lib/schema.mjs read something wrong. On a
+  // live deployment the same check answers a different question, and the one
+  // that actually bit us: whether the migrations were ever applied at all.
+  const schema = health.data?.schema;
+  const drift = [
+    ...(schema?.missingTables || []).map((t) => `table ${t}`),
+    ...(schema?.missingColumns || []).map((m) => `${m.table}.${m.columns.join('/')}`),
+  ];
+  check(schema?.ok === true, 'the database has every column the migrations describe',
+    drift.length ? `missing: ${drift.join(', ')}` : String(schema?.error || 'no schema report'));
+  check((schema?.checked || 0) >= 25, 'and the check covered the whole schema',
+    `${schema?.checked || 0} tables`);
+
   const mailConfigured = Boolean(health.data?.email?.resendKeyPresent);
   if (mailConfigured) {
     check(run && run.status === 'done',

@@ -27,6 +27,7 @@ import {
 } from './bookings.js';
 import { markReturnedTripsTravelled } from './db.js';
 import { handleReadConfirmation } from './confirm.js';
+import { migrationHint } from './schema-drift.js';
 import {
   handleAddComponent, handleUpdateComponent, handleDeleteComponent,
 } from './components.js';
@@ -182,7 +183,11 @@ export default {
       const path = new URL(request.url).pathname;
       const detail = String((e && e.message) || e).slice(0, 200);
       console.error('unhandled', path, e);
-      return json({ error: `${path} failed: ${detail}` }, 500);
+      // A correct query against a database that has not had every migration
+      // applied fails exactly like a bug in the code. Say which it is, and
+      // which file fixes it, rather than leaving that to be worked out.
+      const hint = migrationHint(detail);
+      return json({ error: `${path} failed: ${detail}`, ...(hint ? { hint } : {}) }, 500);
     }
   },
 

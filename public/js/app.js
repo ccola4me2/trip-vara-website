@@ -24,7 +24,10 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
     // The path is in the message on purpose. "Request failed (500)" on a page
     // that makes four calls tells you a quarter of what you need, and the
     // person reading it is usually the one who cannot open a console.
-    const err = new Error((data && data.error) || `${path} failed (${res.status})`);
+    // A hint, when the server has one, is the actionable half of the message:
+    // it names the fix rather than the fault.
+    const said = (data && data.error) || `${path} failed (${res.status})`;
+    const err = new Error(data && data.hint ? `${said}. ${data.hint}` : said);
     err.status = res.status;
     err.code = data && data.code;
     err.data = data;

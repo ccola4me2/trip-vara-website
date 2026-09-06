@@ -11,7 +11,13 @@ import { join } from 'node:path';
 
 const CONSTRAINT = /^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)\b/i;
 
-export function schemaFromMigrations(root) {
+/**
+ * @param root       repository root
+ * @param options    { origins } an optional Map filled with "table.column" ->
+ *                   the migration file that introduces it, so a missing column
+ *                   can name the file that would add it.
+ */
+export function schemaFromMigrations(root, { origins } = {}) {
   const dir = join(root, 'migrations');
   const tables = new Map();
 
@@ -40,7 +46,10 @@ export function schemaFromMigrations(root) {
         const line = part.trim();
         if (!line || CONSTRAINT.test(line)) continue;
         const name = line.match(/^([A-Za-z_][\w]*)/);
-        if (name) cols.add(name[1]);
+        if (name) {
+          cols.add(name[1]);
+          if (origins && !origins.has(`${table}.${name[1]}`)) origins.set(`${table}.${name[1]}`, file);
+        }
       }
       tables.set(table, cols);
     }
@@ -50,6 +59,7 @@ export function schemaFromMigrations(root) {
       const cols = tables.get(table) || new Set();
       cols.add(col);
       tables.set(table, cols);
+      if (origins && !origins.has(`${table}.${col}`)) origins.set(`${table}.${col}`, file);
     }
   }
 

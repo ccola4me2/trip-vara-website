@@ -28,6 +28,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { schemaFromMigrations } from './lib/schema.mjs';
+import { render, TARGET } from './gen-schema.mjs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -157,6 +158,19 @@ for (const list of lists) {
 }
 
 for (const note of skipped) console.log(`~     ${note}`);
+
+// The Worker ships a copy of the schema so it can check the live database
+// against it at runtime. Generated, so this only has to confirm nobody added a
+// migration and forgot to regenerate.
+let generated = '';
+try { generated = readFileSync(TARGET, 'utf8'); } catch { /* absent counts as stale */ }
+if (generated !== render(ROOT)) {
+  problems += 1;
+  console.log('FAIL  src/schema-expected.js is stale');
+  console.log('        run: node scripts/gen-schema.mjs');
+} else {
+  console.log('ok    src/schema-expected.js matches the migrations');
+}
 
 console.log('');
 if (problems) {
