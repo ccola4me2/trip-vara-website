@@ -261,6 +261,46 @@ document.getElementById('fields').innerHTML = [
 suggestClients(form.elements.clientName);
 
 /**
+ * Started from the cruise search: fill in the sailing that was chosen.
+ *
+ * The search answers "which sailing", and arriving here to type the line, the
+ * ship and the dates back in by hand would waste the answer. Only the fields
+ * the sailing actually decides are set; everything else is left alone, and all
+ * of it can be typed over.
+ */
+(async () => {
+  const sailingId = new URLSearchParams(location.search).get('sailing');
+  if (!sailingId) return;
+
+  let s;
+  try {
+    s = (await api(`/api/catalog/sailing?id=${encodeURIComponent(sailingId)}`)).sailing;
+  } catch { return; }
+  if (!s) return;
+
+  const set = (name, value) => {
+    const el = form.elements[name];
+    if (el && value) el.value = value;
+  };
+
+  set('productType', 'cruise');
+  form.elements.productType.dispatchEvent(new Event('change'));
+  set('supplier', s.cruise_line);
+  set('productName', s.ship);
+  set('itinerary', s.name);
+  set('destination', s.destination);
+  set('departDate', s.depart_date);
+  set('returnDate', s.return_date);
+
+  const err = document.getElementById('err');
+  if (err) {
+    err.innerHTML = `<div class="notice notice-ok">Filled in from the catalog: ${
+      esc(s.cruise_line || '')} ${esc(s.ship || '')}, ${esc(s.depart_date || '')}${
+      s.nights ? `, ${s.nights} nights` : ''}. Change anything that is not right.</div>`;
+  }
+})();
+
+/**
  * The vendors you already sell, offered on the form that starts a reservation.
  *
  * A vendor record holds the terms, the manager and how to book, and none of it

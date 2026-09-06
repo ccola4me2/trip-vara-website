@@ -5,7 +5,7 @@ import { knownCruiseLines } from './catalogmirror.js';
 // one that pays for the whole thing: filling in what a pasted book of business
 // could not carry.
 
-import { json, badRequest, clean, readJson } from './util.js';
+import { json, badRequest, notFound, clean, readJson } from './util.js';
 import { requireUser, requireAdmin } from './auth.js';
 import * as db from './db.js';
 import {
@@ -41,6 +41,23 @@ export async function handleCatalogSearch(request, env) {
   ]);
 
   return json({ ...result, ...facets, lines: await catalogLines(env), ready: await catalogReady(env) });
+}
+
+/** One sailing, so a reservation can be started from it. */
+export async function handleCatalogSailing(request, env) {
+  const { response } = await requireUser(request, env);
+  if (response) return response;
+
+  const id = clean(new URL(request.url).searchParams.get('id'), 80);
+  if (!id) return badRequest('Which sailing?');
+
+  const row = await env.DB.prepare(
+    `SELECT id, cruise_line, ship, name, depart_date, return_date, nights,
+            departure_port, disembark_port, destination
+       FROM sailings WHERE id = ?`
+  ).bind(id).first();
+  if (!row) return notFound('That sailing is not in the catalog.');
+  return json({ sailing: row });
 }
 
 export async function handleCatalogShips(request, env) {

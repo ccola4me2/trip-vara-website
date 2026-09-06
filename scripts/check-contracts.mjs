@@ -278,6 +278,7 @@ const KEYWORDS = new Set([
   'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function',
   'await', 'new', 'delete', 'void', 'yield', 'do', 'else', 'try', 'finally',
   'in', 'of', 'case', 'throw', 'async', 'super', 'this', 'instanceof',
+  'constructor', 'get', 'set', 'static',
 ]);
 
 /**
@@ -302,16 +303,29 @@ function checkCalls(root) {
     }
   })(join(root, 'public'));
 
+  // Page scripts only. Pointing this at src/ as well found one real bug and
+  // five false ones: SQL inside a template literal reads as a call to LOWER,
+  // and an object method written in shorthand is never seen as declared.
+  // Telling those apart needs a parser rather than regexes, and a check that
+  // cries wolf is one people turn off.
+
   let missing = 0;
-  for (const file of files.sort()) {
-    const html = readFileSync(file, 'utf8');
-    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-      const [, attrs, body] = m;
-      if (/\bsrc\s*=/i.test(attrs) || !body.trim()) continue;
+  const jobs = [
+    ...files.sort().flatMap((file) => {
+      const html = readFileSync(file, 'utf8');
+      return [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
+        .filter((m) => !/\bsrc\s*=/i.test(m[1]) && m[2].trim())
+        .map((m) => [file, m[2]]);
+    }),
+  ];
+
+  for (const [file, body] of jobs) {
+    {
 
       // Everything the script brings into scope by name.
       const declared = new Set();
       for (const d of body.matchAll(/(?:^|\s)(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) declared.add(d[1]);
+      for (const d of body.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) declared.add(d[1]);
       for (const d of body.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) declared.add(d[1]);
       for (const d of body.matchAll(/import\s*\{([^}]*)\}/g)) {
         for (const part of d[1].split(',')) {
@@ -346,6 +360,9 @@ function checkCalls(root) {
       const code = body
         .replace(/\/\*[\s\S]*?\*\//g, ' ')
         .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+        // Regular expression literals. "no such (column|table)" inside one
+        // reads as a call to something named such.
+        .replace(/(^|[=(,:[!&|?+{};]|\breturn\b)\s*\/(?![*/])(?:\\.|\[[^\]]*\]|[^/\n\\])+\/[gimsuy]*/g, '$1 //re ')
         .replace(/`(?:\\.|[^`\\])*`/g, '``')
         .replace(/'(?:\\.|[^'\\])*'/g, "''")
         .replace(/"(?:\\.|[^"\\])*"/g, '""');

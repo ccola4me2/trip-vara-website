@@ -84,7 +84,7 @@ import {
 import { handleClientRecord, handleListClients, handleUpdateClient } from './clients.js';
 import { handlePreviewImport, handleRunImport } from './importer.js';
 import {
-  handleCatalogLines, handleCatalogSearch, handleCatalogShips, handleCatalogDates, handleCatalogStatus,
+  handleCatalogLines, handleCatalogSearch, handleCatalogSailing, handleCatalogShips, handleCatalogDates, handleCatalogStatus,
   handleCatalogImport, handleCatalogSuggest, handleCatalogApply,
 } from './catalogapi.js';
 import { importCatalogStep } from './catalog.js';
@@ -525,6 +525,7 @@ async function routeApi(request, env, path, method) {
   if (vendorMatch && method === 'DELETE') return handleDeleteVendor(request, env, vendorMatch[1]);
 
   if (path === '/api/catalog/search' && method === 'GET') return handleCatalogSearch(request, env);
+  if (path === '/api/catalog/sailing' && method === 'GET') return handleCatalogSailing(request, env);
   if (path === '/api/catalog/lines' && method === 'GET') return handleCatalogLines(request, env);
   if (path === '/api/catalog/ships' && method === 'GET') return handleCatalogShips(request, env);
   if (path === '/api/catalog/dates' && method === 'GET') return handleCatalogDates(request, env);
