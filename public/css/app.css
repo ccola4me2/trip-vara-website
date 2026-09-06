@@ -773,3 +773,36 @@ table.grid input:focus { border-color: var(--navy-400); background: #fff; }
 .stage-row .bar { flex: 1; height: 6px; background: var(--navy-100); border-radius: 3px; overflow: hidden; }
 .stage-row .bar span { display: block; height: 100%; background: var(--coral-400); }
 .stage-row .n { font-variant-numeric: tabular-nums; color: var(--ink-500); font-size: .78rem; min-width: 3.5rem; text-align: right; }
+
+/* The section nav on a long record. Sticky, because the point of it is to be
+   there when you are halfway down the page and have forgotten what else is on
+   it. Scrolls sideways on a narrow screen rather than wrapping into three
+   lines that push the content down. */
+.section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: .3rem;
+  overflow-x: auto;
+  margin: 1.25rem 0 0;
+  padding: .45rem 0;
+  background: var(--shell);
+  border-bottom: 1px solid var(--navy-100);
+  scrollbar-width: none;
+}
+.section-nav::-webkit-scrollbar { display: none; }
+.section-nav a {
+  flex: 0 0 auto;
+  padding: .3rem .7rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--ink-500);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.section-nav a:hover { background: var(--navy-50); color: var(--navy-700); }
+
+/* Anchors sit under the sticky nav without it covering the heading. */
+.card-head[id] { scroll-margin-top: 3.5rem; }

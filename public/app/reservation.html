@@ -23,30 +23,11 @@
     <div class="content">
       <div id="err"></div>
       <section id="money" class="stat-grid"></section>
+      <nav class="section-nav" id="section-nav" aria-label="Sections"></nav>
       <div class="split" style="margin-top:1.5rem;">
         <div>
-          <section class="card" style="margin-bottom:1.5rem;">
-            <div class="card-head"><h2>Pricing</h2>
-              <span id="pricing-actions"></span></div>
-            <div id="pricing"></div>
-          </section>
-          <section class="card" style="margin-bottom:1.5rem;" id="options-card" hidden>
-            <div class="card-head"><h2>Choices offered</h2>
-              <span id="option-actions"></span></div>
-            <div id="options"></div>
-          </section>
-          <section class="card" style="margin-bottom:1.5rem;">
-            <div class="card-head"><h2>Travellers</h2>
-              <span id="traveller-actions"></span></div>
-            <div id="travellers"></div>
-          </section>
-          <section class="card">
-            <div class="card-head"><h2>Payment schedule</h2>
-              <span id="schedule-actions"></span></div>
-            <div id="payments"></div>
-          </section>
-          <section class="card" style="margin-top:1.5rem;" id="detail-card">
-            <div class="card-head"><h2>Reservation information</h2>
+          <section class="card" style="margin-bottom:1.5rem;" id="detail-card">
+            <div class="card-head" id="sec-detail"><h2>Reservation information</h2>
               <span id="detail-state" class="muted"></span></div>
             <form id="detail-form">
               <div class="card-pad">
@@ -60,10 +41,30 @@
               </div>
             </form>
           </section>
+          <section class="card" style="margin-bottom:1.5rem;">
+            <div class="card-head" id="sec-pricing"><h2>Pricing</h2>
+              <span id="pricing-actions"></span></div>
+            <div id="pricing"></div>
+          </section>
+          <section class="card" style="margin-bottom:1.5rem;" id="options-card" hidden>
+            <div class="card-head" id="sec-options"><h2>Choices offered</h2>
+              <span id="option-actions"></span></div>
+            <div id="options"></div>
+          </section>
+          <section class="card" style="margin-bottom:1.5rem;">
+            <div class="card-head" id="sec-travellers"><h2>Travellers</h2>
+              <span id="traveller-actions"></span></div>
+            <div id="travellers"></div>
+          </section>
+          <section class="card">
+            <div class="card-head" id="sec-payments"><h2>Payment schedule</h2>
+              <span id="schedule-actions"></span></div>
+            <div id="payments"></div>
+          </section>
         </div>
         <div>
           <section class="card">
-            <div class="card-head"><h2>To do</h2></div>
+            <div class="card-head" id="sec-tasks"><h2>To do</h2></div>
             <div class="card-pad">
               <form id="task-form" class="toolbar" style="margin:0 0 .7rem;">
                 <input name="title" maxlength="200" required placeholder="Add a task for this trip"
@@ -74,27 +75,27 @@
             </div>
           </section>
           <section class="card" style="margin-top:1.5rem;">
-            <div class="card-head"><h2>Credits applied</h2>
+            <div class="card-head" id="sec-credits"><h2>Credits applied</h2>
               <a class="btn btn-ghost btn-sm" href="/app/credits">All credits</a></div>
             <div id="credits"></div>
           </section>
           <section class="card" style="margin-top:1.5rem;">
-            <div class="card-head"><h2>Amenities</h2>
+            <div class="card-head" id="sec-amenities"><h2>Amenities</h2>
               <span id="amenity-actions"></span></div>
             <div id="amenities"></div>
           </section>
           <section class="card" style="margin-top:1.5rem;" id="docs-card">
-            <div class="card-head"><h2>Documents</h2>
+            <div class="card-head" id="sec-docs"><h2>Documents</h2>
               <span id="doc-actions"></span></div>
             <div id="docs"></div>
           </section>
           <section class="card" style="margin-top:1.5rem;" id="penalty-card">
-            <div class="card-head"><h2>If they cancel</h2>
+            <div class="card-head" id="sec-penalty"><h2>If they cancel</h2>
               <span id="penalty-actions"></span></div>
             <div id="penalty"></div>
           </section>
           <section class="card" style="margin-top:1.5rem;" id="group-card" hidden>
-            <div class="card-head"><h2>Sold from a group</h2></div>
+            <div class="card-head" id="sec-group"><h2>Sold from a group</h2></div>
             <div class="card-pad" id="group"></div>
           </section>
         </div>
@@ -983,6 +984,31 @@ function render() {
   document.querySelectorAll('[data-paid]').forEach((btn) => {
     btn.addEventListener('click', () => openPost(btn.dataset.paid));
   });
+
+  // A section nav, because this page is long and getting longer. CP Maxx puts
+  // one on its reservation for the same reason. Hidden sections are left out
+  // rather than linked to nothing: a quote with no options and a trip sold
+  // outside a group both have cards that are not there.
+  const sections = [
+    ['sec-detail', 'Reservation'],
+    ['sec-pricing', 'Pricing'],
+    ['sec-options', 'Choices'],
+    ['sec-travellers', 'Travellers'],
+    ['sec-payments', 'Payments'],
+    ['sec-docs', 'Documents'],
+    ['sec-penalty', 'If they cancel'],
+    ['sec-amenities', 'Amenities'],
+    ['sec-credits', 'Credits'],
+    ['sec-tasks', 'To do'],
+    ['sec-group', 'Group'],
+  ].filter(([anchorId]) => {
+    const head = document.getElementById(anchorId);
+    const card = head && head.closest('section');
+    return card && !card.hidden;
+  });
+
+  document.getElementById('section-nav').innerHTML = sections
+    .map(([anchorId, label]) => `<a href="#${anchorId}">${esc(label)}</a>`).join('');
 
   drawDetail();
 
