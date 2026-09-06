@@ -13,25 +13,46 @@ import * as db from './db.js';
 
 // Order is the order they appear on the screen. Whether each earns commission
 // by default is the industry norm, not a rule: any line can be flipped.
+// `credit` marks the lines that come off the total rather than adding to it,
+// so a discount is typed as a positive number and subtracted here. Asking
+// anybody to type a negative into a form is asking for the sign to be wrong
+// half the time.
 export const PRICE_KINDS = [
-  { kind: 'fare', label: 'Cruise or tour fare', commissionable: true },
-  { kind: 'air', label: 'Air', commissionable: false },
-  { kind: 'insurance', label: 'Travel insurance', commissionable: true },
-  { kind: 'gratuities', label: 'Gratuities', commissionable: false },
-  { kind: 'transfers', label: 'Transfers', commissionable: false },
-  { kind: 'extra', label: 'Package or extra', commissionable: false },
+  { kind: 'fare', label: 'Fare', commissionable: true },
   { kind: 'ncf', label: 'Non-commissionable fare', commissionable: false },
   { kind: 'taxes', label: 'Taxes and port fees', commissionable: false },
-  { kind: 'discount', label: 'Discount or credit', commissionable: false },
+  { kind: 'gratuities', label: 'Gratuities', commissionable: false },
+  { kind: 'beverage', label: 'Drinks package', commissionable: false },
+  { kind: 'dining', label: 'Speciality dining', commissionable: false },
+  { kind: 'spa', label: 'Spa', commissionable: false },
+  { kind: 'internet', label: 'Internet', commissionable: false },
+  { kind: 'extra', label: 'Package or amenity', commissionable: true },
+  { kind: 'air', label: 'Air', commissionable: false },
+  { kind: 'insurance', label: 'Travel insurance', commissionable: true },
+  { kind: 'transfers', label: 'Transfers', commissionable: false },
+  { kind: 'excursion', label: 'Excursions', commissionable: false },
+  { kind: 'lodging', label: 'Lodging', commissionable: true },
+  { kind: 'fuel', label: 'Fuel surcharge', commissionable: false },
+  { kind: 'admin_fee', label: 'Administrative fee', commissionable: false },
+  { kind: 'service_fee', label: 'Service fee', commissionable: false },
+  { kind: 'visa_fee', label: 'Visa fee', commissionable: false },
+  { kind: 'other', label: 'Other charges', commissionable: false },
+  { kind: 'markup', label: 'Mark up', commissionable: false },
+  { kind: 'coupon', label: 'Vendor coupon', commissionable: false, credit: true },
+  { kind: 'discount', label: 'Discount', commissionable: false, credit: true },
 ];
+
+// Which kinds come off the total. Read from the list above rather than named
+// twice, so adding a credit kind cannot leave it counting the wrong way.
+const CREDIT_KINDS = new Set(PRICE_KINDS.filter((k) => k.credit).map((k) => k.kind));
 
 const KINDS = PRICE_KINDS.map((k) => k.kind);
 
 export async function listPricing(env, bookingId, scope) {
   const scoped = db.scopeWhere(scope, 'user_id');
   const { results } = await env.DB.prepare(
-    `SELECT id, booking_id, user_id, kind, label, amount_cents, commissionable,
-            commission_cents, sort_order
+    `SELECT id, booking_id, user_id, traveller_id, kind, label, amount_cents,
+            commissionable, commission_cents, sort_order
        FROM booking_pricing WHERE booking_id = ? AND ${scoped.sql}
       ORDER BY sort_order ASC, rowid ASC`
   ).bind(bookingId, ...scoped.binds).all().catch(() => ({ results: [] }));
@@ -52,7 +73,7 @@ export function summarise(lines, vendorPct) {
 
   for (const l of lines) {
     const amount = l.amount_cents || 0;
-    if (l.kind === 'discount') { clientTotal -= amount; continue; }
+    if (CREDIT_KINDS.has(l.kind)) { clientTotal -= amount; continue; }
     clientTotal += amount;
     if (l.commissionable) commissionable += amount;
     commission += l.commission_cents || 0;
@@ -94,6 +115,92 @@ function parseLine(body) {
       sortOrder: Math.max(0, Math.min(Number(body.sortOrder) || 0, 999)),
     },
   };
+}
+
+/**
+ * Saves the whole pricing grid at once.
+ *
+ * The grid is rows of charges against a column per traveller, which is how
+ * anybody who has priced a cruise thinks about it: two people in one cabin do
+ * not pay the same thing, one takes the drinks package and the other does not.
+ * A single column for the whole reservation forces the advisor to average it,
+ * and every per person figure after that is wrong.
+ *
+ * Replaces rather than merges. The grid holds every kind there is, so a
+ * partial update would leave lines behind that the screen said were gone, and
+ * a total nobody could reconcile against what they were looking at.
+ *
+ * Commission is one figure per traveller and is carried on that person's fare
+ * line, because that is where a vendor pays it. A traveller with commission
+ * and no fare gets a fare line of zero to hang it on rather than losing it.
+ */
+export async function handleSavePricingGrid(request, env, bookingId) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const booking = await db.getBooking(env, bookingId, user.id);
+  if (!booking) return notFound('Reservation not found.');
+
+  const body = await readJson(request);
+  const cells = Array.isArray(body.cells) ? body.cells.slice(0, 400) : [];
+  const commissions = Array.isArray(body.commissions) ? body.commissions.slice(0, 50) : [];
+
+  // Whose columns these are, checked once. A traveller id from another
+  // reservation would price somebody who is not on this trip.
+  const { results: people } = await env.DB.prepare(
+    'SELECT id FROM travellers WHERE booking_id = ? AND user_id = ?'
+  ).bind(bookingId, user.id).all().catch(() => ({ results: [] }));
+  const mine = new Set((people || []).map((p) => p.id));
+  const column = (v) => {
+    const id = clean(v, 64);
+    return id && mine.has(id) ? id : null;
+  };
+
+  const order = new Map(PRICE_KINDS.map((k, i) => [k.kind, i]));
+  const rows = [];
+  for (const cell of cells) {
+    const kind = oneOf(cell.kind, KINDS);
+    const amountCents = toCents(cell.amount);
+    if (amountCents <= 0) continue;
+    rows.push({
+      travellerId: column(cell.travellerId),
+      kind,
+      commissionable: cell.commissionable ? 1 : 0,
+      amountCents,
+      commissionCents: 0,
+      sortOrder: order.get(kind) || 0,
+    });
+  }
+
+  for (const c of commissions) {
+    const cents = toCents(c.amount);
+    if (cents <= 0) continue;
+    const travellerId = column(c.travellerId);
+    const fare = rows.find((r) => r.kind === 'fare' && r.travellerId === travellerId);
+    if (fare) { fare.commissionCents = cents; continue; }
+    rows.push({
+      travellerId, kind: 'fare', commissionable: 1,
+      amountCents: 0, commissionCents: cents, sortOrder: 0,
+    });
+  }
+
+  await env.DB.prepare('DELETE FROM booking_pricing WHERE booking_id = ? AND user_id = ?')
+    .bind(bookingId, user.id).run();
+
+  const ts = now();
+  for (const r of rows) {
+    await env.DB.prepare(
+      `INSERT INTO booking_pricing (id, booking_id, user_id, traveller_id, kind, label,
+         amount_cents, commissionable, commission_cents, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+    ).bind(uid(), bookingId, user.id, r.travellerId, r.kind, r.amountCents,
+           r.commissionable, r.commissionCents, r.sortOrder, ts, ts).run();
+  }
+
+  await syncBookingTotals(env, bookingId, user.id);
+  await db.logActivity(env, user.id, 'pricing.grid',
+    `Priced ${booking.client_name}'s trip`, { bookingId });
+  return json({ ok: true, lines: rows.length });
 }
 
 export async function handleAddPriceLine(request, env, bookingId) {

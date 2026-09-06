@@ -650,65 +650,198 @@ function drawOptions() {
   });
 }
 
-function drawPricing() {
-  document.getElementById('pricing-actions').innerHTML = d.editable
-    ? '<button class="btn btn-ghost btn-sm" id="add-price">Add a line</button>' : '';
-  const add = document.getElementById('add-price');
-  if (add) add.addEventListener('click', () => openPrice(null));
+/**
+ * The pricing grid: charges down, travellers across.
+ *
+ * Two people in one cabin do not pay the same thing. One takes the drinks
+ * package, one does not; a third in the same cabin is on a different fare
+ * entirely. A single column for the whole reservation forces the advisor to
+ * average it, and every per person figure after that is wrong.
+ *
+ * Rows with nothing in them are hidden until asked for. There are twenty two
+ * kinds of charge and a typical cruise uses four, and a wall of zeroes is a
+ * grid nobody reads.
+ */
+let showAllRows = false;
 
-  const box = document.getElementById('pricing');
-  if (!d.pricing.length) {
-    box.innerHTML = `<div class="empty"><h3>No breakdown yet</h3>
-      <p>Without one, commission looks like a share of everything the client paid,
-      including taxes nobody pays commission on.</p></div>`;
-    return;
+function drawPricing() {
+  const kinds = d.priceKinds || [];
+  const people = (d.travellers || []).map((t) => ({ id: t.id, name: t.name }));
+  // The reservation itself is always a column: a transfer for the cabin or a
+  // discount on the booking belongs to nobody in particular.
+  const columns = [...people, { id: null, name: people.length ? 'Whole booking' : 'This trip' }];
+
+  const at = (kind, travellerId) => (d.pricing || [])
+    .find((l) => l.kind === kind && (l.traveller_id || null) === travellerId);
+  const commissionAt = (travellerId) => {
+    const line = (d.pricing || []).find((l) => (l.traveller_id || null) === travellerId && l.commission_cents);
+    return line ? line.commission_cents : 0;
+  };
+  const used = (k) => columns.some((c) => at(k.kind, c.id));
+
+  const rows = showAllRows ? kinds : kinds.filter((k) => used(k) || k.kind === 'fare');
+  const cash = (cents) => (cents ? (cents / 100).toFixed(2) : '');
+
+  document.getElementById('pricing-actions').innerHTML = d.editable
+    ? `<button class="btn btn-ghost btn-sm" id="toggle-rows">${
+        showAllRows ? 'Only what is used' : 'All charge types'}</button>
+       ${people.length > 1 ? '<button class="btn btn-ghost btn-sm" id="copy-across">Copy first column across</button>' : ''}`
+    : '';
+
+  document.getElementById('pricing').innerHTML = `
+    <div class="table-wrap"><table class="price-grid">
+      <thead><tr><th style="min-width:11rem;">Charge</th>
+        <th style="width:6rem;">Commission</th>
+        ${columns.map((c) => `<th class="num">${esc(c.name)}</th>`).join('')}
+        <th class="num">Row</th></tr></thead>
+      <tbody>
+        ${rows.map((k) => `<tr data-kind="${esc(k.kind)}">
+          <td><span class="name">${esc(k.label)}</span>${k.credit
+            ? '<div class="muted">comes off the total</div>' : ''}</td>
+          <td><label class="task-tick" style="gap:.35rem;">
+            <input type="checkbox" data-comm="${esc(k.kind)}"${
+              (at(k.kind, columns[0].id) ? at(k.kind, columns[0].id).commissionable : k.commissionable)
+                ? ' checked' : ''}${d.editable ? '' : ' disabled'}>
+            <span class="m">earns</span></label></td>
+          ${columns.map((c) => `<td class="num"><input class="cell" inputmode="decimal"
+            data-cell="${esc(k.kind)}" data-col="${esc(c.id || '')}"
+            value="${esc(cash(at(k.kind, c.id) ? at(k.kind, c.id).amount_cents : 0))}"
+            placeholder="0.00" ${d.editable ? '' : 'disabled'}></td>`).join('')}
+          <td class="num" data-rowtotal="${esc(k.kind)}"></td>
+        </tr>`).join('')}
+        <tr style="border-top:2px solid var(--navy-100);">
+          <td><span class="name">Commission</span>
+            <div class="muted">what the vendor pays you</div></td>
+          <td></td>
+          ${columns.map((c) => `<td class="num"><input class="cell" inputmode="decimal"
+            data-commission="${esc(c.id || '')}" value="${esc(cash(commissionAt(c.id)))}"
+            placeholder="0.00" ${d.editable ? '' : 'disabled'}></td>`).join('')}
+          <td class="num" data-commtotal></td>
+        </tr>
+      </tbody>
+      <tfoot><tr><th>Traveller total</th><th></th>
+        ${columns.map((c) => `<th class="num" data-coltotal="${esc(c.id || '')}"></th>`).join('')}
+        <th class="num" data-grand></th></tr></tfoot>
+    </table></div>
+    ${d.editable ? `<div class="card-foot">
+      <span class="muted" id="grid-note"></span>
+      <button class="btn btn-primary" id="save-pricing">Save pricing</button></div>` : ''}
+    <div class="card-pad" id="price-summary" style="border-top:1px solid var(--navy-100);"></div>`;
+
+  const cells = () => [...document.querySelectorAll('[data-cell]')];
+  const num = (el) => Math.round((Number(String(el.value).replace(/[^0-9.-]/g, '')) || 0) * 100);
+  const creditKinds = new Set(kinds.filter((k) => k.credit).map((k) => k.kind));
+
+  // Recomputed in the page as you type. A total that only appears after a save
+  // is a total you cannot check against the confirmation in front of you.
+  function retotal() {
+    let grand = 0;
+    for (const c of columns) {
+      let sum = 0;
+      for (const el of cells()) {
+        if ((el.dataset.col || '') !== (c.id || '')) continue;
+        sum += creditKinds.has(el.dataset.cell) ? -num(el) : num(el);
+      }
+      const cell = document.querySelector(`[data-coltotal="${c.id || ''}"]`);
+      if (cell) cell.textContent = money(sum);
+      grand += sum;
+    }
+    const g = document.querySelector('[data-grand]');
+    if (g) g.textContent = money(grand);
+
+    for (const k of rows) {
+      let sum = 0;
+      for (const el of cells()) {
+        if (el.dataset.cell !== k.kind) continue;
+        sum += creditKinds.has(k.kind) ? -num(el) : num(el);
+      }
+      const cell = document.querySelector(`[data-rowtotal="${k.kind}"]`);
+      if (cell) cell.textContent = sum ? money(sum) : '';
+    }
+
+    let comm = 0;
+    for (const el of document.querySelectorAll('[data-commission]')) comm += num(el);
+    const ct = document.querySelector('[data-commtotal]');
+    if (ct) ct.textContent = comm ? money(comm) : '';
   }
 
-  const s = d.priceSummary;
-  const variance = s.varianceCents;
-  box.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>What</th><th>Earns commission</th><th class="num">Amount</th>
-        <th class="num">Commission</th><th></th></tr></thead>
-      <tbody>${d.pricing.map((l) => `<tr>
-        <td><span class="name">${esc(l.label || KIND_LABEL[l.kind] || l.kind)}</span>
-          <div class="muted">${esc(KIND_LABEL[l.kind] || l.kind)}</div></td>
-        <td>${l.commissionable
-          ? '<span class="badge badge-green">yes</span>'
-          : '<span class="badge badge-navy">no</span>'}</td>
-        <td class="num">${l.kind === 'discount' ? '-' : ''}${money(l.amount_cents)}</td>
-        <td class="num">${l.commission_cents ? money(l.commission_cents) : '<span class="muted">-</span>'}</td>
-        <td class="num">${d.editable
-          ? `<button class="btn btn-ghost btn-sm" data-price="${esc(l.id)}">Edit</button>` : ''}</td>
-      </tr>`).join('')}</tbody></table></div>
-    <div class="card-pad" style="border-top:1px solid var(--navy-100);">
-      <dl class="pairs">
-        <dt>Client pays</dt><dd><strong>${money(s.clientTotalCents)}</strong></dd>
-        <dt>Commissionable</dt><dd>${money(s.commissionableCents)}
-          <span class="muted">the part a vendor pays on</span></dd>
-        <dt>Commission</dt><dd>${money(s.commissionCents)}</dd>
-        <dt>Rate</dt><dd>${s.truePct === null ? '-' : s.truePct + '%'}
-          <span class="muted">of the commissionable part${
-            s.effectivePct === null ? '' : `, ${s.effectivePct}% of everything`}</span></dd>
-        ${s.expectedCents === null ? '' : `<dt>Vendor's rate</dt><dd>${money(s.expectedCents)} expected at ${
-          esc(String(d.vendorRate))}%
-          ${variance === 0 ? '<span class="badge badge-green">matches</span>'
-            : variance > 0 ? `<span class="badge badge-green">${money(variance)} above</span>`
-            : `<span class="badge badge-red">${money(Math.abs(variance))} short</span>`}</dd>`}
-      </dl>
-    </div>`;
+  document.querySelectorAll('.cell').forEach((el) => el.addEventListener('input', retotal));
+  retotal();
+  drawPriceSummary();
 
-  document.querySelectorAll('[data-price]').forEach((btn) => {
-    btn.addEventListener('click', () => openPrice(d.pricing.find((l) => l.id === btn.dataset.price)));
+  const toggle = document.getElementById('toggle-rows');
+  if (toggle) toggle.addEventListener('click', () => { showAllRows = !showAllRows; drawPricing(); });
+
+  const copy = document.getElementById('copy-across');
+  if (copy) copy.addEventListener('click', () => {
+    const first = columns[0].id || '';
+    for (const el of cells()) {
+      const col = el.dataset.col || '';
+      if (col === first) continue;
+      // Travellers only. The whole booking column holds what belongs to the
+      // cabin rather than to a person, and copying one guest's fare into it
+      // charges the trip for a third passenger who does not exist.
+      if (!col) continue;
+      const from = document.querySelector(`[data-cell="${el.dataset.cell}"][data-col="${first}"]`);
+      if (from) el.value = from.value;
+    }
+    retotal();
+  });
+
+  const save = document.getElementById('save-pricing');
+  if (save) save.addEventListener('click', async () => {
+    save.disabled = true;
+    const body = { cells: [], commissions: [] };
+    for (const el of cells()) {
+      if (!el.value.trim()) continue;
+      const box = document.querySelector(`[data-comm="${el.dataset.cell}"]`);
+      body.cells.push({
+        kind: el.dataset.cell,
+        travellerId: el.dataset.col || null,
+        amount: el.value,
+        commissionable: box ? box.checked : false,
+      });
+    }
+    for (const el of document.querySelectorAll('[data-commission]')) {
+      if (!el.value.trim()) continue;
+      body.commissions.push({ travellerId: el.dataset.commission || null, amount: el.value });
+    }
+    try {
+      await api(`/api/bookings/${encodeURIComponent(id)}/pricing`, { method: 'PUT', body });
+      await load();
+      err.innerHTML = '<div class="notice notice-ok">Pricing saved.</div>';
+    } catch (e) { showError(err, e); save.disabled = false; }
   });
 }
 
-/**
- * The people on the trip.
- *
- * Documents are issued per person and a passport is checked against the return
- * date rather than today, because the six month rule is applied on arrival: a
- * passport that is valid now can still be refused at a desk months from now.
- */
+/** What the breakdown means once it is saved. */
+function drawPriceSummary() {
+  const s = d.priceSummary;
+  const box = document.getElementById('price-summary');
+  if (!box) return;
+  if (!s) {
+    box.innerHTML = `<p class="muted">Nothing saved yet. Without a breakdown, commission
+      looks like a share of everything the client paid, including taxes nobody pays
+      commission on.</p>`;
+    return;
+  }
+  const variance = s.varianceCents;
+  box.innerHTML = `<dl class="pairs">
+    <dt>Client pays</dt><dd><strong>${money(s.clientTotalCents)}</strong></dd>
+    <dt>Commissionable</dt><dd>${money(s.commissionableCents)}
+      <span class="muted">the part a vendor pays on</span></dd>
+    <dt>Commission</dt><dd>${money(s.commissionCents)}</dd>
+    <dt>Rate</dt><dd>${s.truePct === null ? '-' : s.truePct + '%'}
+      <span class="muted">of the commissionable part${
+        s.effectivePct === null ? '' : `, ${s.effectivePct}% of everything`}</span></dd>
+    ${s.expectedCents === null ? '' : `<dt>Vendor's rate</dt><dd>${money(s.expectedCents)} expected at ${
+      esc(String(d.vendorRate))}%
+      ${variance === 0 ? '<span class="badge badge-green">matches</span>'
+        : variance > 0 ? `<span class="badge badge-green">${money(variance)} above</span>`
+        : `<span class="badge badge-red">${money(Math.abs(variance))} short</span>`}</dd>`}
+  </dl>`;
+}
+
 function drawTravellers() {
   document.getElementById('traveller-actions').innerHTML = d.editable
     ? '<button class="btn btn-ghost btn-sm" id="add-traveller">Add a traveller</button>' : '';

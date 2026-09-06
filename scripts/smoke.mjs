@@ -1868,6 +1868,91 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // ---------------------------------------------------- pricing grid -------
+  {
+  step('Pricing a cabin per traveller');
+
+  const cabin = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Cabin ${stamp}`, supplier: 'Margaritaville at Sea', status: 'booked',
+    departDate: isoDay(180), travellers: 2,
+  });
+  const cabinId = cabin.data?.booking?.id;
+  if (cabinId) cleanup('the priced cabin', () => call(advisor, 'DELETE', `/api/bookings/${cabinId}`));
+
+  const one = await call(advisor, 'POST', `/api/bookings/${cabinId}/travellers`,
+    { name: `Manuel ${stamp}`, isLead: true });
+  const two = await call(advisor, 'POST', `/api/bookings/${cabinId}/travellers`,
+    { name: `Veronica ${stamp}` });
+
+  // Two people in one cabin, priced separately: she takes the drinks package
+  // and he does not, which a single column for the reservation cannot say.
+  const saved = await call(advisor, 'PUT', `/api/bookings/${cabinId}/pricing`, {
+    cells: [
+      { kind: 'fare', travellerId: one.data.id, amount: '229', commissionable: true },
+      { kind: 'fare', travellerId: two.data.id, amount: '229', commissionable: true },
+      { kind: 'taxes', travellerId: one.data.id, amount: '170' },
+      { kind: 'taxes', travellerId: two.data.id, amount: '170' },
+      { kind: 'beverage', travellerId: two.data.id, amount: '99' },
+      { kind: 'transfers', travellerId: null, amount: '60' },
+      { kind: 'discount', travellerId: null, amount: '50' },
+    ],
+    commissions: [
+      { travellerId: one.data.id, amount: '36.64' },
+      { travellerId: two.data.id, amount: '36.64' },
+    ],
+  });
+  check(saved.status === 200, 'the whole grid saves at once', `status ${saved.status}`);
+
+  const rec = await call(advisor, 'GET', `/api/bookings/${cabinId}/record`);
+  const lines = rec.data?.pricing || [];
+  const his = lines.filter((l) => l.traveller_id === one.data.id);
+  const hers = lines.filter((l) => l.traveller_id === two.data.id);
+  const cabinWide = lines.filter((l) => !l.traveller_id);
+
+  check(his.length === 2 && hers.length === 3,
+    'each traveller carries their own charges',
+    `${his.length} and ${hers.length}`);
+  check(hers.some((l) => l.kind === 'beverage') && !his.some((l) => l.kind === 'beverage'),
+    'so one of them can have the drinks package and the other not');
+  check(cabinWide.length === 2,
+    'and what belongs to the cabin rather than to a person is nobody\'s',
+    cabinWide.length);
+
+  // 229 + 170 + 229 + 170 + 99 + 60 - 50
+  check(rec.data?.booking?.gross_cents === 90700,
+    'the trip total adds the columns and subtracts the credits',
+    rec.data?.booking?.gross_cents);
+  check(rec.data?.booking?.commission_cents === 7328,
+    'and the commission is the sum of what each person earns',
+    rec.data?.booking?.commission_cents);
+
+  // Commission is carried on the fare line, which is where a vendor pays it.
+  const fare = his.find((l) => l.kind === 'fare');
+  check(fare?.commission_cents === 3664, 'commission rides on the fare line',
+    fare?.commission_cents);
+
+  // A traveller id from somebody else's reservation would price a person who
+  // is not on this trip.
+  const stranger = await call(advisor, 'PUT', `/api/bookings/${cabinId}/pricing`, {
+    cells: [{ kind: 'fare', travellerId: 'not-on-this-trip', amount: '500' }],
+  });
+  const afterStranger = await call(advisor, 'GET', `/api/bookings/${cabinId}/record`);
+  check(stranger.status === 200
+    && (afterStranger.data?.pricing || []).every((l) => l.traveller_id === null),
+    'a traveller from another reservation falls back to the booking rather than being priced',
+    JSON.stringify((afterStranger.data?.pricing || []).map((l) => l.traveller_id)));
+
+  // Saving replaces. A grid that merged would leave lines behind that the
+  // screen said were gone.
+  check((afterStranger.data?.pricing || []).length === 1,
+    'and saving the grid replaces what was there rather than adding to it',
+    afterStranger.data?.pricing?.length);
+
+  const notYours = await call(admin, 'PUT', `/api/bookings/${cabinId}/pricing`, { cells: [] });
+  check(notYours.status === 404, 'an owner cannot price an associate\'s trip',
+    `status ${notYours.status}`);
+  }
+
   // ------------------------------------------------------- documents -------
   {
   step('The paperwork a trip generates');

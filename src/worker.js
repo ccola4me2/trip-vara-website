@@ -86,7 +86,7 @@ import {
   handleDocumentWatch,
 } from './travellers.js';
 import {
-  handleAddPriceLine, handleUpdatePriceLine, handleDeletePriceLine,
+  handleAddPriceLine, handleUpdatePriceLine, handleDeletePriceLine, handleSavePricingGrid,
 } from './pricing.js';
 import {
   handleListAutomations, handleGetAutomation, handleSaveAutomation,
@@ -343,6 +343,8 @@ async function routeApi(request, env, path, method) {
 
   // What the client pays, in parts, and which parts earn commission.
   if (pricingMatch && method === 'POST') return handleAddPriceLine(request, env, pricingMatch[1]);
+  // The whole grid at once: rows of charges against a column per traveller.
+  if (pricingMatch && method === 'PUT') return handleSavePricingGrid(request, env, pricingMatch[1]);
   if (priceLineMatch && method === 'PUT') return handleUpdatePriceLine(request, env, priceLineMatch[1]);
   if (priceLineMatch && method === 'DELETE') return handleDeletePriceLine(request, env, priceLineMatch[1]);
   if (bookingMatch && method === 'GET') return handleGetBooking(request, env, bookingMatch[1]);
