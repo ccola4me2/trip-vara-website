@@ -21,10 +21,22 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
   try { data = await res.json(); } catch { data = null; }
 
   if (!res.ok) {
-    const err = new Error((data && data.error) || `Request failed (${res.status})`);
+    // The path is in the message on purpose. "Request failed (500)" on a page
+    // that makes four calls tells you a quarter of what you need, and the
+    // person reading it is usually the one who cannot open a console.
+    const err = new Error((data && data.error) || `${path} failed (${res.status})`);
     err.status = res.status;
     err.code = data && data.code;
     err.data = data;
+    throw err;
+  }
+
+  // A 200 that is not JSON is not a success. It is almost always an HTML page
+  // where an API response should be, and returning {} for it sends the caller
+  // off to fail somewhere further away with a worse message.
+  if (data === null && res.status !== 204) {
+    const err = new Error(`${path} did not return JSON (${res.status})`);
+    err.status = res.status;
     throw err;
   }
   return data || {};
@@ -657,7 +669,13 @@ export function showError(container, err) {
     </div>`;
     return;
   }
-  container.innerHTML = `<div class="notice notice-error">${esc((err && err.message) || 'Something went wrong.')}</div>`;
+  // Never just "something went wrong". An error with no text of its own still
+  // has a name and a status, and any of that is more use to whoever is looking
+  // at the screen than a shrug.
+  const said = (err && err.message) || '';
+  const detail = said || [err && err.name, err && err.status && `status ${err.status}`]
+    .filter(Boolean).join(', ') || String(err);
+  container.innerHTML = `<div class="notice notice-error">${esc(detail)}</div>`;
 }
 
 /** Small helper for forms: disable while submitting, surface errors. */
