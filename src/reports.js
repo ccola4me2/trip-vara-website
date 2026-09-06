@@ -173,17 +173,21 @@ export async function handleProduction(request, env) {
   const url = new URL(request.url);
   const months = Math.min(Math.max(Number(url.searchParams.get('months')) || 12, 1), 36);
   const since = isoDay(-months * 31);
+  // Off unless asked for. An advisor's own holiday earns real commission and
+  // is real production, and it is also not the client selling a target is
+  // usually about, so the report shows one view at a time and names which.
+  const includePersonal = url.searchParams.get('personal') === '1';
 
   const scope = db.scopeFor(env, user, request);
 
   const [byMonth, stats, cashflow, payStats, byAdvisor] = await Promise.all([
-    db.productionByMonth(env, scope, since),
+    db.productionByMonth(env, scope, since, { includePersonal }),
     db.bookingStats(env, scope),
     db.paymentsByMonth(env, scope, since),
     db.paymentStats(env, scope, { today: isoDay(0), soonThrough: isoDay(30), urgentThrough: isoDay(14) }),
     // An owner's combined report is only useful if it breaks down. An advisor
     // sees a one row version of this, which is their own line.
-    db.productionByAdvisor(env, scope, since),
+    db.productionByAdvisor(env, scope, since, { includePersonal }),
   ]);
 
   // Collection rate: of everything that has already fallen due, how much has
@@ -196,8 +200,8 @@ export async function handleProduction(request, env) {
 
   const today = isoDay(0);
   const [comparison, mix] = await Promise.all([
-    db.salesComparison(env, scope, today),
-    db.salesMix(env, scope, { from: `${today.slice(0, 4)}-01-01`, to: today }),
+    db.salesComparison(env, scope, today, { includePersonal }),
+    db.salesMix(env, scope, { from: `${today.slice(0, 4)}-01-01`, to: today, includePersonal }),
   ]);
 
   return json({

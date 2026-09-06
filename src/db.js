@@ -283,6 +283,21 @@ export async function advisorOptions(env, user) {
 }
 
 /** The scope as a WHERE fragment plus its binds. */
+/**
+ * Whether an advisor's own trips count towards the figures.
+ *
+ * Brent's answer to "does personal travel count towards production" was that
+ * it can, but not always: booking your own holiday through the agency does
+ * earn real commission, and it is also not the client production a target is
+ * usually about. So neither answer is hard-coded. The caller decides, the
+ * default leaves personal travel out, and the reports say which they are
+ * showing rather than leaving the reader to guess.
+ */
+export function personalFilter(includePersonal, alias = '') {
+  if (includePersonal) return '';
+  return ` AND ${alias ? `${alias}.` : ''}personal = 0`;
+}
+
 export function scopeWhere(scope, column = 'user_id') {
   if (!scope.all) return { sql: `${column} = ?`, binds: [scope.userId] };
   // Every advisor bound to this agency. Written as a subquery rather than a
@@ -466,7 +481,7 @@ export async function upcomingPayments(env, scope, through) {
 }
 
 /** Gross and commission grouped by departure month, for the reports chart. */
-export async function productionByMonth(env, scope, sinceDate) {
+export async function productionByMonth(env, scope, sinceDate, { includePersonal = false } = {}) {
   const scoped = scopeWhere(scope);
   const { results } = await env.DB.prepare(
     `SELECT substr(depart_date, 1, 7) AS month,
@@ -475,7 +490,7 @@ export async function productionByMonth(env, scope, sinceDate) {
             SUM(commission_cents) AS commission_cents
        FROM bookings
       WHERE ${scoped.sql} AND depart_date IS NOT NULL AND depart_date >= ?
-        AND status IN ('booked','travelled')
+        AND status IN ('booked','travelled')${personalFilter(includePersonal)}
       GROUP BY month ORDER BY month ASC LIMIT 36`
   ).bind(...scoped.binds, sinceDate).all();
   return results || [];
@@ -495,7 +510,7 @@ export async function productionByMonth(env, scope, sinceDate) {
  * Their past production is real and belongs in the total, but a row of zeros
  * for someone who no longer works here is noise, not information.
  */
-export async function productionByAdvisor(env, scope, sinceDate) {
+export async function productionByAdvisor(env, scope, sinceDate, { includePersonal = false } = {}) {
   const scoped = scopeWhere(scope, 'u.id');
   const { results } = await env.DB.prepare(
     `SELECT u.id AS user_id, ${ADVISOR_NAME}, u.role, u.status,
@@ -513,7 +528,7 @@ export async function productionByAdvisor(env, scope, sinceDate) {
        FROM users u
        LEFT JOIN bookings b
          ON b.user_id = u.id
-        AND b.status IN ('booked','travelled')
+        AND b.status IN ('booked','travelled')${personalFilter(includePersonal, 'b')}
         AND b.depart_date IS NOT NULL AND b.depart_date >= ?
       WHERE ${scoped.sql} AND u.status != 'pending'
       GROUP BY u.id
@@ -874,7 +889,7 @@ const BASIS_COLUMN = {
   purchase: "date(created_at, 'unixepoch')",
 };
 
-export async function periodTotals(env, scope, basis, from, to) {
+export async function periodTotals(env, scope, basis, from, to, { includePersonal = false } = {}) {
   const scoped = scopeWhere(scope);
   const col = BASIS_COLUMN[basis] || BASIS_COLUMN.departure;
   const row = await env.DB.prepare(
@@ -882,7 +897,7 @@ export async function periodTotals(env, scope, basis, from, to) {
             COALESCE(SUM(gross_cents), 0) AS gross_cents,
             COALESCE(SUM(commission_cents), 0) AS commission_cents
        FROM bookings
-      WHERE ${scoped.sql} AND status IN ('booked','travelled')
+      WHERE ${scoped.sql} AND status IN ('booked','travelled')${personalFilter(includePersonal)}
         AND ${col} IS NOT NULL AND ${col} BETWEEN ? AND ?`
   ).bind(...scoped.binds, from, to).first();
   return {
@@ -904,7 +919,7 @@ function change(now, prev) {
  * Deliberately the same days rather than the whole of last year: comparing
  * eight months against twelve makes every year look like a collapse.
  */
-export async function salesComparison(env, scope, today) {
+export async function salesComparison(env, scope, today, { includePersonal = false } = {}) {
   const [y, m, dd] = today.split('-').map(Number);
   const ranges = {
     mtd: [`${today.slice(0, 7)}-01`, today],
@@ -921,8 +936,8 @@ export async function salesComparison(env, scope, today) {
     for (const [key, range] of Object.entries(ranges)) {
       const prevRange = lastYear(range);
       const [now, prev] = await Promise.all([
-        periodTotals(env, scope, basis, range[0], range[1]),
-        periodTotals(env, scope, basis, prevRange[0], prevRange[1]),
+        periodTotals(env, scope, basis, range[0], range[1], { includePersonal }),
+        periodTotals(env, scope, basis, prevRange[0], prevRange[1], { includePersonal }),
       ]);
       out[basis][key] = {
         from: range[0], to: range[1], prevFrom: prevRange[0], prevTo: prevRange[1],
@@ -943,7 +958,7 @@ export async function salesComparison(env, scope, today) {
  * merely busy. Each is defined here rather than left to the reader, because a
  * rate nobody can define is a rate nobody should act on.
  */
-export async function salesMix(env, scope, { from, to }) {
+export async function salesMix(env, scope, { from, to, includePersonal = false }) {
   const scoped = scopeWhere(scope);
   const row = await env.DB.prepare(
     `SELECT COUNT(DISTINCT client_name) AS clients,
@@ -955,14 +970,14 @@ export async function salesMix(env, scope, { from, to }) {
             COUNT(DISTINCT CASE WHEN product_type = 'insurance' THEN client_name END) AS insured,
             COUNT(DISTINCT CASE WHEN product_type != 'insurance' THEN client_name END) AS travellers
        FROM bookings
-      WHERE ${scoped.sql} AND status IN ('booked','travelled')
+      WHERE ${scoped.sql} AND status IN ('booked','travelled')${personalFilter(includePersonal)}
         AND depart_date IS NOT NULL AND depart_date BETWEEN ? AND ?`
   ).bind(...scoped.binds, from, to).first();
 
   const repeat = await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM (
        SELECT client_name FROM bookings
-        WHERE ${scoped.sql} AND status IN ('booked','travelled')
+        WHERE ${scoped.sql} AND status IN ('booked','travelled')${personalFilter(includePersonal)}
         GROUP BY client_name HAVING COUNT(*) > 1)`
   ).bind(...scoped.binds).first();
 

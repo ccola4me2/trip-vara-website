@@ -21,6 +21,10 @@
         <option value="24">Last 24 months</option>
         <option value="36">Last 36 months</option>
       </select>
+      <select id="personal" aria-label="Whose travel" style="width:auto;">
+        <option value="">Client trips only</option>
+        <option value="1">Include my own travel</option>
+      </select>
       </div>
     </header>
     <div class="content">
@@ -61,6 +65,7 @@ const chart = document.getElementById('chart');
 const table = document.getElementById('table');
 const statsEl = document.getElementById('stats');
 const range = document.getElementById('range');
+const personal = document.getElementById('personal');
 
 function monthLabel(ym) {
   const [y, m] = String(ym).split('-');
@@ -234,13 +239,15 @@ function drawMix(data) {
 async function load() {
   chart.innerHTML = '<p class="spinner">Loading...</p>';
   try {
-    const d = await api(`/api/reports/production?months=${range.value}${advisorParam() ? '&' + advisorParam() : ''}`);
+    const d = await api(`/api/reports/production?months=${range.value}${
+      personal.value ? '&personal=1' : ''}${advisorParam() ? '&' + advisorParam() : ''}`);
     mountScopePicker(document.getElementById('scope'), d, load);
     render(d);
   }
   catch (err) { showError(chart, err); }
 }
 range.addEventListener('change', load);
+personal.addEventListener('change', load);
 await load();
 </script>
 </body></html>

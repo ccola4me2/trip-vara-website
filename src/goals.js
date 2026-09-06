@@ -58,16 +58,20 @@ async function readGoal(env, userId, year) {
 export async function goalProgress(env, user, scope, year, today) {
   const row = await readGoal(env, user.id, year);
   const basis = oneOf(row?.basis, BASES);
+  // Whether the advisor's own trips count towards this target. Stored with the
+  // goal, because it is a decision about what the target means.
+  const includePersonal = Boolean(row?.count_personal);
   // Progress is measured against this advisor's own production even for an
   // owner looking at the agency: a personal target is personal.
   const totals = await db.periodTotals(env, scope, basis, `${year}-01-01`,
-    year === Number(today.slice(0, 4)) ? today : `${year}-12-31`);
+    year === Number(today.slice(0, 4)) ? today : `${year}-12-31`, { includePersonal });
 
   const elapsed = yearProgress(today, year);
   return {
     year,
     basis,
     set: Boolean(row),
+    countPersonal: includePersonal,
     aim: row?.aim || '',
     edge: row?.edge || '',
     elapsed: Math.round(elapsed * 1000) / 10,
@@ -105,8 +109,8 @@ export async function handleSaveGoals(request, env) {
 
   await env.DB.prepare(
     `INSERT INTO goals (user_id, year, sales_goal_cents, commission_goal_cents,
-       bookings_goal, basis, aim, edge, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       bookings_goal, basis, aim, edge, count_personal, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (user_id, year) DO UPDATE SET
        sales_goal_cents = excluded.sales_goal_cents,
        commission_goal_cents = excluded.commission_goal_cents,
@@ -114,10 +118,12 @@ export async function handleSaveGoals(request, env) {
        basis = excluded.basis,
        aim = excluded.aim,
        edge = excluded.edge,
+       count_personal = excluded.count_personal,
        updated_at = excluded.updated_at`
   ).bind(user.id, year, toCents(body.salesGoal), toCents(body.commissionGoal),
          Math.max(0, Math.min(Number(body.bookingsGoal) || 0, 100000)),
-         oneOf(body.basis, BASES), clean(body.aim, 500), clean(body.edge, 500), now()).run();
+         oneOf(body.basis, BASES), clean(body.aim, 500), clean(body.edge, 500),
+         body.countPersonal ? 1 : 0, now()).run();
 
   await db.logActivity(env, user.id, 'goal.save', `Set targets for ${year}`, { year });
   return json({ ok: true, goals: await goalProgress(env, user, db.selfScope(user), year, today) });

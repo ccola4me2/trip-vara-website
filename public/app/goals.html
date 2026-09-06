@@ -34,6 +34,16 @@
               reservations were taken measures what you sold; counting by travel measures when the
               commission arrives. They can differ by a whole quarter.</p>
           </div>
+          <div class="field">
+            <label for="countPersonal">Your own travel</label>
+            <select id="countPersonal" name="countPersonal">
+              <option value="">Does not count towards this target</option>
+              <option value="1">Counts towards this target</option>
+            </select>
+            <p class="field-hint">Booking your own holiday through the agency earns real commission,
+              so it can count. It is also not the client selling a target is usually about, so it
+              does not have to. Set it per year.</p>
+          </div>
           <div class="field-row">
             <div class="field"><label for="salesGoal">Trips booked (USD)</label>
               <input id="salesGoal" name="salesGoal" inputmode="decimal" placeholder="200000"></div>
@@ -108,7 +118,8 @@ function render(d) {
     <div class="card">
       <div class="card-head"><h2>${g.year}</h2>
         <span class="muted" style="font-size:.8rem;">${g.elapsed}% of the year gone &middot; counted by ${
-          g.basis === 'purchase' ? 'when reservations were taken' : 'when people travel'}</span></div>
+          g.basis === 'purchase' ? 'when reservations were taken' : 'when people travel'}${
+          g.countPersonal ? ', your own travel included' : ''}</span></div>
       <div class="card-pad">
         ${g.set ? '' : '<p class="field-hint" style="margin:0 0 1rem;">Nothing set for this year yet. Fill in the form below.</p>'}
         ${bar('Trips booked', g.sales, money)}
@@ -118,6 +129,7 @@ function render(d) {
     </div>`;
 
   form.elements.basis.value = g.basis;
+  form.elements.countPersonal.value = g.countPersonal ? '1' : '';
   form.elements.salesGoal.value = g.sales.goal ? (g.sales.goal / 100).toFixed(2) : '';
   form.elements.commissionGoal.value = g.commission.goal ? (g.commission.goal / 100).toFixed(2) : '';
   form.elements.bookingsGoal.value = g.bookings.goal || '';

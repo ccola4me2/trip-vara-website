@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Commission owed</h1><p class="sub">What vendors owe the agency, and how long they have owed it.</p></div>
+      <div><h1>Commission owed</h1><p class="sub">What vendors owe the agency, what they have actually paid, and how long they have owed it.</p></div>
       <span id="scope"></span>
     </header>
     <div class="content">
@@ -27,11 +27,12 @@
         <div>
           <section class="card">
             <div class="card-head"><h2>Waiting to be paid</h2>
-              <select id="status-filter" aria-label="Status" style="width:auto;">
-                <option value="">Pending and invoiced</option>
-                <option value="pending">Pending</option>
-                <option value="invoiced">Invoiced</option>
-                <option value="paid">Paid</option>
+              <select id="status-filter" aria-label="Settlement" style="width:auto;">
+                <option value="">Anything still owed</option>
+                <option value="short">Paid short</option>
+                <option value="unpaid">Nothing received</option>
+                <option value="settled">Settled</option>
+                <option value="all">Everything</option>
               </select></div>
             <div class="toolbar" style="padding:0 1.25rem;" id="bulk" hidden>
               <span id="selected-count" class="muted"></span>
@@ -51,6 +52,27 @@
             <div class="card-head"><h2>By vendor</h2></div>
             <div id="vendors"></div>
           </section>
+          <section class="card" style="margin-top:1.5rem;">
+            <div class="card-head"><h2>Vendor statements</h2>
+              <button class="btn btn-ghost btn-sm" id="add-statement">Add</button></div>
+            <form id="statement-form" class="card-pad" hidden>
+              <div class="field"><label for="stmt-vendor">Vendor</label>
+                <input id="stmt-vendor" name="vendorName" required maxlength="120"></div>
+              <div class="field-row">
+                <div class="field"><label for="stmt-ref">Reference</label>
+                  <input id="stmt-ref" name="reference" maxlength="80" placeholder="Their statement number"></div>
+                <div class="field"><label for="stmt-date">Statement date</label>
+                  <input id="stmt-date" name="statementDate" type="date"></div>
+              </div>
+              <div class="field"><label for="stmt-total">Total paid</label>
+                <input id="stmt-total" name="total" inputmode="decimal" placeholder="0.00"></div>
+              <div class="toolbar" style="padding:0;">
+                <button class="btn btn-secondary btn-sm" type="submit">Save statement</button>
+                <button class="btn btn-ghost btn-sm" type="button" id="stmt-cancel">Cancel</button>
+              </div>
+            </form>
+            <div id="statements"></div>
+          </section>
         </div>
       </div>
     </div>
@@ -65,10 +87,21 @@ const err = document.getElementById('err');
 const statusFilter = document.getElementById('status-filter');
 const bulk = document.getElementById('bulk');
 let d = null;
+let statements = [];
 const chosen = new Set();
+// Which row has its "record what arrived" line open. One at a time: this is
+// entering a figure off a remittance, not filling in a table.
+let recording = null;
 
 const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
 const TONE = { pending: 'badge-navy', invoiced: 'badge-amber', paid: 'badge-green' };
+// Settlement is about money and reads separately from the paperwork status.
+const SETTLE = {
+  unpaid: { tone: 'badge-navy', label: 'Nothing in' },
+  short: { tone: 'badge-red', label: 'Paid short' },
+  settled: { tone: 'badge-green', label: 'Settled' },
+  over: { tone: 'badge-amber', label: 'Overpaid' },
+};
 
 function ageLabel(r) {
   if (r.daysSince === null) return 'no dates';
@@ -88,7 +121,11 @@ function render() {
     <div class="stat"><p class="label">Owed in total</p><p class="value">${money(t.owedCents)}</p>
       <p class="meta">${t.owedCount} reservation${t.owedCount === 1 ? '' : 's'}, travelled or not</p></div>
     <div class="stat"><p class="label">Received</p><p class="value">${money(t.paidCents)}</p>
-      <p class="meta">Marked paid</p></div>
+      <p class="meta">Actually arrived from vendors</p></div>
+    ${t.shortCount ? `
+    <div class="stat"><p class="label">Paid short</p>
+      <p class="value" style="color:var(--red-600);">${money(t.shortCents)}</p>
+      <p class="meta">${t.shortCount} reservation${t.shortCount === 1 ? '' : 's'} the vendor underpaid</p></div>` : ''}
     ${d.anySplit ? `
     <div class="stat"><p class="label">Advisors' share</p>
       <p class="value">${money(t.owedAdvisorCents)}</p>
@@ -116,15 +153,19 @@ function render() {
         <strong>${money(v.cents)}</strong></div></li>`).join('')}</ul>`
     : '<p class="wempty">Nothing outstanding.</p>';
 
-  const rows = d.rows.filter((r) => (statusFilter.value
-    ? r.commission_status === statusFilter.value
-    : r.commission_status !== 'paid'));
+  // Filtered on settlement rather than status, because the question this page
+  // answers is whether the money is in, not whether somebody ticked a box.
+  const pick = statusFilter.value;
+  const rows = d.rows.filter((r) => (pick === 'all' ? true
+    : pick ? r.settlement === pick
+    : r.outstanding_cents > 0));
 
   document.getElementById('rows').innerHTML = rows.length
     ? `<div class="table-wrap"><table>
         <thead><tr><th style="width:2rem;"></th><th>Client</th><th>Vendor</th><th>Home</th>
-          <th>Status</th><th class="num">Commission</th>${
-            d.anySplit ? '<th class="num">Advisor keeps</th>' : ''}</tr></thead>
+          <th>Settlement</th><th class="num">Expected</th><th class="num">Received</th>
+          <th class="num">Difference</th>${
+            d.anySplit ? '<th class="num">Advisor keeps</th>' : ''}<th></th></tr></thead>
         <tbody>${rows.map((r) => `<tr>
           <td>${r.user_id === ME
             ? `<input type="checkbox" data-pick="${esc(r.id)}"${chosen.has(r.id) ? ' checked' : ''}
@@ -134,11 +175,46 @@ function render() {
             <div class="muted">${esc(r.confirmation_number || '')}</div></td>
           <td>${esc(r.supplier || '-')}</td>
           <td>${esc(short(r.back))}<div class="muted" style="font-size:.72rem;">${esc(ageLabel(r))}</div></td>
-          <td><span class="badge ${TONE[r.commission_status]}">${esc(r.commission_status)}</span></td>
+          <td><span class="badge ${SETTLE[r.settlement].tone}">${esc(SETTLE[r.settlement].label)}</span>
+            <div class="muted" style="font-size:.72rem;">${esc(r.commission_status)}</div></td>
           <td class="num">${money(r.commission_cents)}</td>
+          <td class="num">${r.received_cents ? money(r.received_cents) : '<span class="muted">-</span>'}
+            ${r.last_received_on
+              ? `<div class="muted" style="font-size:.72rem;">${esc(short(r.last_received_on))}</div>` : ''}</td>
+          <td class="num">${r.variance_cents
+            ? `<strong style="color:var(--${r.variance_cents < 0 ? 'red' : 'amber'}-600);">${
+                money(r.variance_cents)}</strong>`
+            : '<span class="muted">-</span>'}</td>
           ${d.anySplit ? `<td class="num">${money(r.advisor_cents)}
             <div class="muted" style="font-size:.72rem;">${esc(String(r.split_pct))}%</div></td>` : ''}
-        </tr>`).join('')}</tbody></table></div>`
+          <td class="num">${r.user_id === ME
+            ? `<button class="btn btn-ghost btn-sm" data-record="${esc(r.id)}">Record</button>` : ''}</td>
+        </tr>
+        ${recording === r.id ? `<tr class="record-row"><td></td>
+          <td colspan="${d.anySplit ? 8 : 7}">
+            <form data-receipt="${esc(r.id)}" class="row-between" style="gap:.6rem;flex-wrap:wrap;">
+              <div class="field" style="margin:0;"><label>Amount arrived</label>
+                <input name="amount" inputmode="decimal" required
+                  value="${((r.outstanding_cents || 0) / 100).toFixed(2)}" style="width:8rem;"></div>
+              <div class="field" style="margin:0;"><label>On</label>
+                <input name="receivedOn" type="date" value="${esc(d.today)}"></div>
+              <div class="field" style="margin:0;"><label>Reference</label>
+                <input name="reference" maxlength="80" style="width:9rem;"></div>
+              <div class="field" style="margin:0;"><label>Statement</label>
+                <select name="statementId" style="width:12rem;">
+                  <option value="">Not on a statement</option>
+                  ${statements.map((x) => `<option value="${esc(x.id)}">${
+                    esc(x.vendor_name)}${x.reference ? ` ${esc(x.reference)}` : ''}</option>`).join('')}
+                </select></div>
+              <div class="toolbar" style="padding:0;">
+                <button class="btn btn-secondary btn-sm" type="submit">Save</button>
+                <button class="btn btn-ghost btn-sm" type="button" data-cancel>Cancel</button>
+              </div>
+            </form>
+            <p class="muted" style="font-size:.75rem;margin:.4rem 0 0;">
+              Enter what the vendor sent, not what was expected. Less than the full amount leaves the
+              rest showing as owed, which is the point.</p>
+          </td></tr>` : ''}`).join('')}</tbody></table></div>`
     : '<div class="empty"><h3>Nothing here</h3><p>No commission in this state.</p></div>';
 
   document.querySelectorAll('[data-pick]').forEach((box) => {
@@ -147,7 +223,57 @@ function render() {
       updateBulk();
     });
   });
+
+  document.querySelectorAll('[data-record]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      recording = recording === btn.dataset.record ? null : btn.dataset.record;
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-cancel]').forEach((btn) => {
+    btn.addEventListener('click', () => { recording = null; render(); });
+  });
+
+  document.querySelectorAll('[data-receipt]').forEach((form) => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = form.elements;
+      try {
+        await api('/api/commissions/receipts', {
+          method: 'POST',
+          body: {
+            bookingId: form.dataset.receipt,
+            amount: f.amount.value,
+            receivedOn: f.receivedOn.value,
+            reference: f.reference.value,
+            statementId: f.statementId.value || null,
+          },
+        });
+        err.innerHTML = '';
+        recording = null;
+        await load();
+      } catch (e2) { showError(err, e2); }
+    });
+  });
+
+  drawStatements();
   updateBulk();
+}
+
+function drawStatements() {
+  document.getElementById('statements').innerHTML = statements.length
+    ? `<ul class="rows">${statements.map((x) => `<li><div class="row-between">
+        <span><span class="t">${esc(x.vendor_name)}</span>
+          <span class="m">${x.reference ? `${esc(x.reference)} · ` : ''}${
+            x.statement_date ? esc(short(x.statement_date)) : 'no date'} · ${
+            x.lines} line${x.lines === 1 ? '' : 's'}</span></span>
+        <span style="text-align:right;">
+          <strong>${money(x.total_cents)}</strong>
+          <div class="muted" style="font-size:.72rem;${x.reconciled ? '' : 'color:var(--amber-600);'}">${
+            x.reconciled ? 'reconciled' : `${money(x.unmatched_cents)} unmatched`}</div></span>
+      </div></li>`).join('')}</ul>`
+    : '<p class="wempty">No statements filed. Add one when a vendor pays.</p>';
 }
 
 function updateBulk() {
@@ -177,9 +303,47 @@ document.querySelectorAll('[data-mark]').forEach((btn) => {
 
 statusFilter.addEventListener('change', () => { chosen.clear(); render(); });
 
+const statementForm = document.getElementById('statement-form');
+document.getElementById('add-statement').addEventListener('click', () => {
+  statementForm.hidden = !statementForm.hidden;
+  if (!statementForm.hidden) statementForm.elements.vendorName.focus();
+});
+document.getElementById('stmt-cancel').addEventListener('click', () => {
+  statementForm.hidden = true;
+  statementForm.reset();
+});
+
+statementForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = statementForm.elements;
+  try {
+    await api('/api/commissions/statements', {
+      method: 'POST',
+      body: {
+        vendorName: f.vendorName.value,
+        reference: f.reference.value,
+        statementDate: f.statementDate.value,
+        total: f.total.value,
+      },
+    });
+    err.innerHTML = '';
+    statementForm.reset();
+    statementForm.hidden = true;
+    await load();
+  } catch (e2) { showError(err, e2); }
+});
+
 async function load() {
   try {
-    d = await api(`/api/commissions${advisorParam() ? '?' + advisorParam() : ''}`);
+    const q = advisorParam() ? '?' + advisorParam() : '';
+    // Both together: the statements list feeds the picker on every receipt
+    // line, so a row cannot offer a statement the page has not loaded.
+    const [commissions, stmts] = await Promise.all([
+      api(`/api/commissions${q}`),
+      api('/api/commissions/statements'),
+    ]);
+    d = commissions;
+    statements = stmts.statements || [];
     mountScopePicker(document.getElementById('scope'), d, load);
     render();
   } catch (e) { showError(err, e); }
