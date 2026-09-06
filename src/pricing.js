@@ -44,6 +44,25 @@ export const PRICE_KINDS = [
 
 // Which kinds come off the total. Read from the list above rather than named
 // twice, so adding a credit kind cannot leave it counting the wrong way.
+/**
+ * The three parts a vendor pays commission in.
+ *
+ * Base is the normal rate on the fare. Package is an override on an amenity or
+ * a promotion, settled with the base or just after. Bonus is what a vendor
+ * pays for hitting a target, and it lands a quarter later if it lands at all,
+ * which is exactly why it cannot be one number with the rest.
+ *
+ * base leads because oneOf falls back to the first entry, and a commission
+ * figure entered without saying which part it is has always meant the base.
+ */
+export const COMMISSION_KINDS = [
+  { kind: 'base', label: 'Base' },
+  { kind: 'package', label: 'Package or override' },
+  { kind: 'bonus', label: 'Bonus' },
+];
+
+export const COMMISSION_KIND_KEYS = COMMISSION_KINDS.map((k) => k.kind);
+
 const CREDIT_KINDS = new Set(PRICE_KINDS.filter((k) => k.credit).map((k) => k.kind));
 
 const KINDS = PRICE_KINDS.map((k) => k.kind);
@@ -52,7 +71,7 @@ export async function listPricing(env, bookingId, scope) {
   const scoped = db.scopeWhere(scope, 'user_id');
   const { results } = await env.DB.prepare(
     `SELECT id, booking_id, user_id, traveller_id, component_id, kind, label,
-            amount_cents, commissionable, commission_cents, sort_order
+            amount_cents, commissionable, commission_cents, commission_kind, sort_order
        FROM booking_pricing WHERE booking_id = ? AND ${scoped.sql}
       ORDER BY sort_order ASC, rowid ASC`
   ).bind(bookingId, ...scoped.binds).all().catch(() => ({ results: [] }));
@@ -79,11 +98,21 @@ export function summarise(lines, vendorPct) {
     commission += l.commission_cents || 0;
   }
 
+  // The same total, broken into the parts a vendor pays it in, so a
+  // reservation whose base has arrived and whose bonus has not can say so.
+  const byKind = { base: 0, package: 0, bonus: 0 };
+  for (const l of lines) {
+    if (!l.commission_cents) continue;
+    const k = byKind[l.commission_kind] === undefined ? 'base' : l.commission_kind;
+    byKind[k] += l.commission_cents;
+  }
+
   const expected = vendorPct ? Math.round(commissionable * (vendorPct / 100)) : null;
   return {
     clientTotalCents: clientTotal,
     commissionableCents: commissionable,
     commissionCents: commission,
+    commissionByKind: byKind,
     expectedCents: expected,
     // The gap worth looking at. A vendor paying less than their own rate on
     // the commissionable part is the thing an agency never notices.
@@ -182,6 +211,7 @@ export async function handleSavePricingGrid(request, env, bookingId) {
       amountCents,
       commissionCents: 0,
       sortOrder: order.get(kind) || 0,
+      commissionKind: 'base',
     });
   }
 
@@ -190,12 +220,19 @@ export async function handleSavePricingGrid(request, env, bookingId) {
     if (cents <= 0) continue;
     const travellerId = column(c.travellerId);
     const componentId = component(c.componentId);
-    const fare = rows.find((r) => r.kind === 'fare'
-      && r.travellerId === travellerId && r.componentId === componentId);
+    const commissionKind = oneOf(c.kind, COMMISSION_KIND_KEYS);
+
+    // The base rides on the fare row it was earned from, which is where it has
+    // always lived. A package override or a bonus gets its own row: they are
+    // paid separately and have to be settled separately.
+    const fare = commissionKind === 'base' && rows.find((r) => r.kind === 'fare'
+      && r.travellerId === travellerId && r.componentId === componentId
+      && r.commissionKind === 'base');
     if (fare) { fare.commissionCents = cents; continue; }
     rows.push({
       travellerId, componentId, kind: 'fare', commissionable: 1,
       amountCents: 0, commissionCents: cents, sortOrder: 0,
+      commissionKind,
     });
   }
 
@@ -217,11 +254,12 @@ export async function handleSavePricingGrid(request, env, bookingId) {
   for (const r of rows) {
     await env.DB.prepare(
       `INSERT INTO booking_pricing (id, booking_id, user_id, traveller_id, component_id,
-         kind, label, amount_cents, commissionable, commission_cents, sort_order,
-         created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+         kind, label, amount_cents, commissionable, commission_cents, commission_kind,
+         sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(uid(), bookingId, user.id, r.travellerId, r.componentId, r.kind, r.amountCents,
-           r.commissionable, r.commissionCents, r.sortOrder, ts, ts).run();
+           r.commissionable, r.commissionCents, r.commissionKind || 'base',
+           r.sortOrder, ts, ts).run();
   }
 
   await syncBookingTotals(env, bookingId, user.id);

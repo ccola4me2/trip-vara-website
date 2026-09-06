@@ -18,7 +18,8 @@
 // When they do not, the gap is either a line nobody has matched yet or money
 // the vendor has not actually sent, and both are worth knowing.
 
-import { json, badRequest, notFound, clean, cleanDate, toCents, uid, now, readJson } from './util.js';
+import { json, badRequest, notFound, clean, cleanDate, toCents, oneOf, uid, now, readJson } from './util.js';
+import { COMMISSION_KINDS, COMMISSION_KIND_KEYS } from './pricing.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 
@@ -29,7 +30,7 @@ const STATEMENT_COLUMNS = `
 
 const RECEIPT_COLUMNS = `
   r.id, r.user_id, r.booking_id, r.statement_id, r.amount_cents, r.received_on,
-  r.reference, r.notes, r.created_at, r.updated_at
+  r.reference, r.notes, r.kind, r.created_at, r.updated_at
 `;
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,8 @@ export function settlement(expectedCents, receivedCents) {
   if (variance < 0) return { state: 'short', variance };
   return { state: 'over', variance };
 }
+
+export { COMMISSION_KINDS };
 
 export const SETTLEMENT_STATES = [
   { key: 'unpaid', label: 'Nothing received', hint: 'Expected, not yet arrived' },
@@ -106,6 +109,9 @@ function parseReceipt(body) {
     fields: {
       bookingId,
       statementId: clean(body.statementId, 64) || null,
+      // Which part of the commission this money is. A vendor settling the base
+      // and holding the bonus is the normal case, not an exception.
+      kind: oneOf(body.kind, COMMISSION_KIND_KEYS),
       amountCents,
       receivedOn: cleanDate(body.receivedOn),
       reference: clean(body.reference, 80),
@@ -174,11 +180,11 @@ export async function handleAddReceipt(request, env) {
   await env.DB.prepare(
     `INSERT INTO commission_receipts
        (id, user_id, booking_id, statement_id, amount_cents, received_on,
-        reference, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        reference, notes, kind, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, user.id, fields.bookingId, fields.statementId, fields.amountCents,
-    fields.receivedOn, fields.reference, fields.notes, ts, ts
+    fields.receivedOn, fields.reference, fields.notes, fields.kind, ts, ts
   ).run();
 
   await syncCommissionStatus(env, user.id, fields.bookingId);

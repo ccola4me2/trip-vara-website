@@ -14,7 +14,7 @@ import { json, badRequest, oneOf, uid, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { SPLIT_PCT_SQL, ADVISOR_SHARE_SQL } from './split.js';
-import { settlement, SETTLEMENT_STATES } from './reconcile.js';
+import { settlement, SETTLEMENT_STATES, COMMISSION_KINDS } from './reconcile.js';
 
 const STATUSES = ['pending', 'invoiced', 'paid'];
 
@@ -65,6 +65,18 @@ export async function handleListCommissions(request, env) {
             b.user_id, ${pct} AS split_pct,
             COALESCE((SELECT SUM(r.amount_cents) FROM commission_receipts r
                        WHERE r.booking_id = b.id), 0) AS received_cents,
+            COALESCE((SELECT SUM(r.amount_cents) FROM commission_receipts r
+                       WHERE r.booking_id = b.id AND r.kind = 'base'), 0) AS received_base_cents,
+            COALESCE((SELECT SUM(r.amount_cents) FROM commission_receipts r
+                       WHERE r.booking_id = b.id AND r.kind = 'package'), 0) AS received_package_cents,
+            COALESCE((SELECT SUM(r.amount_cents) FROM commission_receipts r
+                       WHERE r.booking_id = b.id AND r.kind = 'bonus'), 0) AS received_bonus_cents,
+            COALESCE((SELECT SUM(p.commission_cents) FROM booking_pricing p
+                       WHERE p.booking_id = b.id AND p.commission_kind = 'base'), 0) AS expected_base_cents,
+            COALESCE((SELECT SUM(p.commission_cents) FROM booking_pricing p
+                       WHERE p.booking_id = b.id AND p.commission_kind = 'package'), 0) AS expected_package_cents,
+            COALESCE((SELECT SUM(p.commission_cents) FROM booking_pricing p
+                       WHERE p.booking_id = b.id AND p.commission_kind = 'bonus'), 0) AS expected_bonus_cents,
             (SELECT MAX(r.received_on) FROM commission_receipts r
               WHERE r.booking_id = b.id) AS last_received_on,
             ${ADVISOR_SHARE_SQL('b.commission_cents', pct)} AS advisor_cents,
@@ -86,8 +98,18 @@ export async function handleListCommissions(request, env) {
     // Expected against received, rather than a status somebody ticked. A
     // vendor paying short used to leave the reservation looking settled.
     const { state, variance } = settlement(r.commission_cents, r.received_cents);
+    // Which parts are still out. A reservation whose base has arrived and
+    // whose bonus has not used to read as simply part-paid, with nothing to
+    // say which part to chase or who to chase it from.
+    const outstandingByKind = {};
+    for (const k of ['base', 'package', 'bonus']) {
+      const owed = (r[`expected_${k}_cents`] || 0) - (r[`received_${k}_cents`] || 0);
+      if (owed > 0) outstandingByKind[k] = owed;
+    }
+
     return {
       ...r, back, daysSince, bucket: bucketFor(daysSince),
+      outstanding_by_kind: outstandingByKind,
       agency_cents: (r.commission_cents || 0) - (r.advisor_cents || 0),
       settlement: state,
       variance_cents: variance,
@@ -122,6 +144,7 @@ export async function handleListCommissions(request, env) {
     rows,
     buckets: BUCKETS,
     settlementStates: SETTLEMENT_STATES,
+    commissionKinds: COMMISSION_KINDS,
     ageing,
     byVendor: Object.values(byVendor).sort((a, b) => b.cents - a.cents),
     totals: {
@@ -150,6 +173,11 @@ export async function handleListCommissions(request, env) {
         .reduce((n, r) => n + Math.abs(r.variance_cents || 0), 0),
       shortCount: rows.filter((r) => r.settlement === 'short').length,
       overCount: rows.filter((r) => r.settlement === 'over').length,
+      // What is still owed, by the part a vendor pays it in. A bonus nobody
+      // has chased is invisible in a single total.
+      owedBaseCents: rows.reduce((n, r) => n + (r.outstanding_by_kind.base || 0), 0),
+      owedPackageCents: rows.reduce((n, r) => n + (r.outstanding_by_kind.package || 0), 0),
+      owedBonusCents: rows.reduce((n, r) => n + (r.outstanding_by_kind.bonus || 0), 0),
     },
     today,
     // Whether any of this is actually split. A sole advisor keeping all of it

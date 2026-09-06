@@ -1618,6 +1618,63 @@ async function main() {
   const dates = travel.map((e) => e.date);
   check(dates.join() === [...dates].sort().join(), 'in date order');
 
+  // ------------------------------------------- commission in three parts --
+  step('Base, package and bonus');
+
+  const splitBooking = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Split ${stamp}`, supplier: 'Test Cruise Line', productName: 'Seven nights',
+    status: 'travelled', departDate: isoDay(-60), returnDate: isoDay(-50), gross: '4000',
+  });
+  const splitId = splitBooking.data?.booking?.id;
+  const splitTraveller = await call(advisor, 'POST', `/api/bookings/${splitId}/travellers`,
+    { name: `Split ${stamp}`, isLead: true });
+  const stId = splitTraveller.data?.id || splitTraveller.data?.traveller?.id;
+
+  const priced = await call(advisor, 'PUT', `/api/bookings/${splitId}/pricing`, {
+    cells: [{ kind: 'fare', travellerId: stId, amount: '4000', commissionable: true }],
+    commissions: [
+      { travellerId: stId, kind: 'base', amount: '600' },
+      { travellerId: stId, kind: 'bonus', amount: '150' },
+    ],
+  });
+  check(priced.status === 200, 'commission can be entered as base and bonus',
+    `status ${priced.status}`);
+
+  const splitView = await call(advisor, 'GET', '/api/commissions');
+  const sr = (splitView.data?.rows || []).find((r) => r.id === splitId);
+  check(sr?.commission_cents === 75000, 'the parts add up to the whole',
+    `${sr?.commission_cents}`);
+  check(sr?.expected_base_cents === 60000 && sr?.expected_bonus_cents === 15000,
+    'and each part is kept separately',
+    `base ${sr?.expected_base_cents} bonus ${sr?.expected_bonus_cents}`);
+
+  // The case this exists for: a vendor settles the base on its normal
+  // turnaround and holds the bonus for a quarter.
+  await call(advisor, 'POST', '/api/commissions/receipts', {
+    bookingId: splitId, kind: 'base', amount: '600', receivedOn: isoDay(-2),
+  });
+  const afterBase = await call(advisor, 'GET', '/api/commissions');
+  const sr2 = (afterBase.data?.rows || []).find((r) => r.id === splitId);
+  check(sr2?.settlement === 'short', 'paying the base alone leaves it short',
+    sr2?.settlement);
+  check(!sr2?.outstanding_by_kind?.base && sr2?.outstanding_by_kind?.bonus === 15000,
+    'and it says which part is still out, not merely that something is',
+    JSON.stringify(sr2?.outstanding_by_kind));
+  check(afterBase.data?.totals?.owedBonusCents === 15000,
+    'a bonus nobody has chased is its own figure',
+    `${afterBase.data?.totals?.owedBonusCents}`);
+
+  // Commission entered without saying which part has always meant the base.
+  await call(advisor, 'POST', '/api/commissions/receipts', {
+    bookingId: splitId, kind: 'bonus', amount: '150', receivedOn: isoDay(-1),
+  });
+  const afterBonus = await call(advisor, 'GET', '/api/commissions');
+  const sr3 = (afterBonus.data?.rows || []).find((r) => r.id === splitId);
+  check(sr3?.settlement === 'settled', 'the bonus arriving settles it', sr3?.settlement);
+
+  cleanup('the split reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${splitId}`));
+
   // ------------------------------------------------- commission reconciled --
   step('What the vendor actually paid');
 

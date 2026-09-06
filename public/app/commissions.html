@@ -122,6 +122,10 @@ function render() {
       <p class="meta">${t.owedCount} reservation${t.owedCount === 1 ? '' : 's'}, travelled or not</p></div>
     <div class="stat"><p class="label">Received</p><p class="value">${money(t.paidCents)}</p>
       <p class="meta">Actually arrived from vendors</p></div>
+    ${t.owedBonusCents || t.owedPackageCents ? `
+    <div class="stat"><p class="label">Bonus and overrides owed</p>
+      <p class="value">${money(t.owedBonusCents + t.owedPackageCents)}</p>
+      <p class="meta">Paid separately, and later</p></div>` : ''}
     ${t.shortCount ? `
     <div class="stat"><p class="label">Paid short</p>
       <p class="value" style="color:var(--red-600);">${money(t.shortCents)}</p>
@@ -164,7 +168,7 @@ function render() {
     ? `<div class="table-wrap"><table>
         <thead><tr><th style="width:2rem;"></th><th>Client</th><th>Vendor</th><th>Home</th>
           <th>Settlement</th><th class="num">Expected</th><th class="num">Received</th>
-          <th class="num">Difference</th>${
+          <th class="num">Still out</th><th class="num">Difference</th>${
             d.anySplit ? '<th class="num">Advisor keeps</th>' : ''}<th></th></tr></thead>
         <tbody>${rows.map((r) => `<tr>
           <td>${r.user_id === ME
@@ -181,6 +185,11 @@ function render() {
           <td class="num">${r.received_cents ? money(r.received_cents) : '<span class="muted">-</span>'}
             ${r.last_received_on
               ? `<div class="muted" style="font-size:.72rem;">${esc(short(r.last_received_on))}</div>` : ''}</td>
+          <td class="num">${Object.keys(r.outstanding_by_kind || {}).length
+            ? `<div class="muted" style="font-size:.72rem;">${
+                Object.entries(r.outstanding_by_kind)
+                  .map(([k, v]) => `${k} ${money(v)}`).join('<br>')}</div>`
+            : ''}</td>
           <td class="num">${r.variance_cents
             ? `<strong style="color:var(--${r.variance_cents < 0 ? 'red' : 'amber'}-600);">${
                 money(r.variance_cents)}</strong>`
@@ -198,6 +207,11 @@ function render() {
                   value="${((r.outstanding_cents || 0) / 100).toFixed(2)}" style="width:8rem;"></div>
               <div class="field" style="margin:0;"><label>On</label>
                 <input name="receivedOn" type="date" value="${esc(d.today)}"></div>
+              <div class="field" style="margin:0;"><label>Which part</label>
+                <select name="kind" style="width:10rem;">
+                  ${(d.commissionKinds || []).map((k) => `<option value="${esc(k.kind)}">${
+                    esc(k.label)}</option>`).join('')}
+                </select></div>
               <div class="field" style="margin:0;"><label>Reference</label>
                 <input name="reference" maxlength="80" style="width:9rem;"></div>
               <div class="field" style="margin:0;"><label>Statement</label>
@@ -244,6 +258,7 @@ function render() {
           method: 'POST',
           body: {
             bookingId: form.dataset.receipt,
+            kind: f.kind.value,
             amount: f.amount.value,
             receivedOn: f.receivedOn.value,
             reference: f.reference.value,
