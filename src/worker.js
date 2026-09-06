@@ -88,7 +88,7 @@ import {
 import { importCatalogStep } from './catalog.js';
 import {
   handleListVendors, handleUpdateVendor, handleMergeVendors, handleSuggestDates,
-  handleFavouriteVendor,
+  handleFavouriteVendor, handleCreateVendor, handleDeleteVendor,
 } from './vendors.js';
 import {
   handleAddTraveller, handleUpdateTraveller, handleDeleteTraveller,
@@ -496,11 +496,13 @@ async function routeApi(request, env, path, method) {
   // whatever was typed.
   // Vendors: spelling, and the terms they trade on.
   if (path === '/api/vendors' && method === 'GET') return handleListVendors(request, env);
+  if (path === '/api/vendors' && method === 'POST') return handleCreateVendor(request, env);
   if (path === '/api/vendors/merge' && method === 'POST') return handleMergeVendors(request, env);
   if (path === '/api/vendors/suggest-dates' && method === 'GET') return handleSuggestDates(request, env);
   // Before the bare vendor match, so the longer path is not swallowed by it.
   if (vendorStarMatch && method === 'POST') return handleFavouriteVendor(request, env, vendorStarMatch[1]);
   if (vendorMatch && method === 'PUT') return handleUpdateVendor(request, env, vendorMatch[1]);
+  if (vendorMatch && method === 'DELETE') return handleDeleteVendor(request, env, vendorMatch[1]);
 
   if (path === '/api/catalog/lines' && method === 'GET') return handleCatalogLines(request, env);
   if (path === '/api/catalog/ships' && method === 'GET') return handleCatalogShips(request, env);

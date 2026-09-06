@@ -901,6 +901,51 @@ async function main() {
   check(notMineStar.status === 404, 'and one advisor cannot star another advisor\'s vendor',
     `status ${notMineStar.status}`);
 
+  // A vendor typed in by hand, with everything the directory holds.
+  const made = await call(advisor, 'POST', '/api/vendors', {
+    name: `Windstar ${stamp}`, category: 'Cruise Lines',
+    phones: [{ label: 'Reservations', number: '800-258-7245' },
+             { label: 'Groups', number: '800-258-7245 x2' }],
+    portalUrl: 'https://advisor.example.com', website: 'https://client.example.com',
+    bdmName: 'Alex Chen', bdmEmail: 'alex@example.com', bdmPhone: '206-555-0134',
+    accountNumber: 'CTT-9931',
+    commissionStructure: '16% on cruise fare, 10% on air. Bonus paid quarterly.',
+    registrationInstructions: 'Register at the advisor site, then email your CLIA number.',
+  });
+  check(made.status === 200 && made.data?.id,
+    'a vendor can be added by hand, without booking one first', `status ${made.status}`);
+
+  const withNew = await call(advisor, 'GET', '/api/vendors');
+  const fresh = (withNew.data?.vendors || []).find((v) => v.id === made.data.id);
+  check(Boolean(fresh), 'and appears in the list straight away');
+  check(fresh?.commission_structure?.startsWith('16%')
+    && fresh?.registration_instructions?.includes('CLIA'),
+    'commission structure and registration instructions are kept as written');
+  const phones = JSON.parse(fresh?.phones_json || '[]');
+  check(phones.length === 2 && phones[0].number === '800-258-7245',
+    'several phone numbers survive the round trip', `${phones.length} number(s)`);
+  check(fresh?.portal_url && fresh?.website,
+    'the advisor site and the client site are two separate links');
+
+  const dupe = await call(advisor, 'POST', '/api/vendors', { name: `windstar ${stamp}` });
+  check(dupe.status === 400, 'the same name twice is refused, whatever the casing',
+    `status ${dupe.status}`);
+
+  // Deleting the directory entry must not take the trips with it.
+  await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Delete Check ${stamp}`, supplier: `Windstar ${stamp}`,
+    productName: 'Test', status: 'booked', departDate: isoDay(300),
+    gross: '2000', commission: '300',
+  });
+  const gone = await call(advisor, 'DELETE', `/api/vendors/${made.data.id}`);
+  check(gone.status === 200, 'a vendor can be deleted', `status ${gone.status}`);
+  const kept = await call(advisor, 'GET', '/api/bookings');
+  const survivor = (kept.data?.bookings || []).find((b) => b.client_name === `Delete Check ${stamp}`);
+  check(Boolean(survivor), 'and its reservations are kept, not deleted with it');
+  check(survivor?.supplier === `Windstar ${stamp}` && !survivor?.vendor_id,
+    'still naming the supplier they were sold under, with only the link cut',
+    `${survivor?.supplier} / ${survivor?.vendor_id}`);
+
   // Terms turn a departure into a deadline, which is the only reason an
   // imported reservation is any use.
   await call(advisor, 'PUT', `/api/vendors/${keep.id}`, { name: keep.name, finalDays: 90 });

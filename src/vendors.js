@@ -14,13 +14,18 @@ const COLUMNS = `
   v.id, v.user_id, v.name, v.final_days, v.deposit_days, v.commission_pct,
   v.phone, v.email, v.portal_url, v.notes, v.created_at, v.updated_at,
   v.category, v.favourite, v.bdm_name, v.bdm_email, v.bdm_phone,
-  v.signup_url, v.website, v.account_number
+  v.signup_url, v.website, v.account_number,
+  v.phones_json, v.commission_structure, v.registration_instructions
 `;
 
 // The shelves a directory of suppliers falls into. Fixed, because a free text
 // category becomes "Cruise", "Cruises" and "Cruise Line" within a fortnight,
 // which is the same mess vendors were created to end. Anything unrecognised
 // lands in Other rather than being refused.
+// High enough that no real book reaches it, low enough to stay one quick
+// query. Reported rather than silently applied when it does bite.
+const LIST_CAP = 2000;
+
 export const CATEGORIES = [
   'Cruise Lines',
   'All-Inclusive Resorts',
@@ -78,13 +83,20 @@ export async function handleListVendors(request, env) {
               AND b.status IN ('quoted','booked') AND b.final_payment_due IS NULL) AS undated
        FROM vendors v
       WHERE ${scoped.sql}
-      ORDER BY gross_cents DESC, v.name ASC LIMIT 500`
-  ).bind(...scoped.binds).all();
+      ORDER BY gross_cents DESC, v.name ASC LIMIT ?`
+    // One over the cap, so a truncated list can be reported as truncated. This
+    // page is a directory: it is supposed to list everything, and a silent cut
+    // meant a vendor could be added and simply not appear. Found by adding one.
+  ).bind(...scoped.binds, LIST_CAP + 1).all();
 
-  const vendors = results || [];
+  const all = results || [];
+  const truncated = all.length > LIST_CAP;
+  const vendors = truncated ? all.slice(0, LIST_CAP) : all;
+
   return json({
     vendors,
     categories: CATEGORIES,
+    truncated,
     stats: {
       total: vendors.length,
       favourites: vendors.filter((v) => v.favourite).length,
@@ -136,13 +148,15 @@ function findDuplicates(vendors) {
   return groups;
 }
 
-export async function handleUpdateVendor(request, env, id) {
-  const { user, response } = await requireUser(request, env);
-  if (response) return response;
-
-  const body = await readJson(request);
+/**
+ * The editable fields, read once so create and update cannot disagree.
+ *
+ * Two parsers for one form is how a field ends up saving on edit and silently
+ * dropping on create, which is the same class of bug as two column lists.
+ */
+function parseVendor(body) {
   const name = clean(body.name, 120);
-  if (!name) return badRequest('A vendor needs a name.');
+  if (!name) return { error: 'A vendor needs a name.' };
 
   const num = (v, max) => {
     if (v === '' || v === null || v === undefined) return null;
@@ -150,29 +164,128 @@ export async function handleUpdateVendor(request, env, id) {
     return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
   };
 
-  // Only http and https, and only when it parses. A link typed into a
-  // directory is clicked without being read, so a javascript: URL saved here
-  // would be a script the advisor runs on themselves.
+  // Only http and https, and only when it parses. A link in a directory is
+  // clicked without being read, so a javascript: URL saved here would be a
+  // script the advisor runs on themselves.
   const link = (v) => (/^https?:\/\//i.test(String(v || '')) ? clean(v, 300) : null);
+
+  // Suppliers have several numbers: reservations, groups, after hours. Kept as
+  // a list so each one stays dialable, capped so a runaway form cannot store a
+  // thousand of them.
+  const phones = (Array.isArray(body.phones) ? body.phones : [])
+    .map((x) => ({ label: clean(x?.label, 40) || '', number: clean(x?.number, 40) || '' }))
+    .filter((x) => x.number)
+    .slice(0, 12);
+
+  return {
+    fields: {
+      name,
+      finalDays: num(body.finalDays, 730),
+      depositDays: num(body.depositDays, 365),
+      commissionPct: num(body.commissionPct, 100),
+      phone: clean(body.phone, 40) || null,
+      email: clean(body.email, 160) || null,
+      portalUrl: link(body.portalUrl),
+      website: link(body.website),
+      signupUrl: link(body.signupUrl),
+      notes: clean(body.notes, 2000) || null,
+      category: CATEGORIES.includes(String(body.category)) ? String(body.category) : null,
+      bdmName: clean(body.bdmName, 120) || null,
+      bdmEmail: clean(body.bdmEmail, 160) || null,
+      bdmPhone: clean(body.bdmPhone, 40) || null,
+      accountNumber: clean(body.accountNumber, 60) || null,
+      phonesJson: phones.length ? JSON.stringify(phones) : null,
+      commissionStructure: clean(body.commissionStructure, 4000) || null,
+      registrationInstructions: clean(body.registrationInstructions, 4000) || null,
+    },
+  };
+}
+
+/** Add a vendor by hand, rather than waiting to book one. */
+export async function handleCreateVendor(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const { fields, error } = parseVendor(body);
+  if (error) return badRequest(error);
+
+  // Names are unique per advisor, and a vendor typed twice is the duplicate
+  // this table exists to prevent. Answered as a message rather than a
+  // constraint violation.
+  const clash = await env.DB.prepare(
+    'SELECT id FROM vendors WHERE user_id = ? AND LOWER(name) = LOWER(?)'
+  ).bind(user.id, fields.name).first();
+  if (clash) return badRequest(`You already have a vendor called ${fields.name}.`);
+
+  const id = uid();
+  const ts = now();
+  await env.DB.prepare(
+    `INSERT INTO vendors
+       (id, user_id, name, final_days, deposit_days, commission_pct, phone, email,
+        portal_url, notes, category, bdm_name, bdm_email, bdm_phone, signup_url,
+        website, account_number, phones_json, commission_structure,
+        registration_instructions, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id, user.id, fields.name, fields.finalDays, fields.depositDays,
+         fields.commissionPct, fields.phone, fields.email, fields.portalUrl,
+         fields.notes, fields.category, fields.bdmName, fields.bdmEmail,
+         fields.bdmPhone, fields.signupUrl, fields.website, fields.accountNumber,
+         fields.phonesJson, fields.commissionStructure,
+         fields.registrationInstructions, ts, ts).run();
+
+  return json({ ok: true, id });
+}
+
+/**
+ * Remove a vendor, leaving its reservations alone.
+ *
+ * The trips keep the supplier name they were sold under, because that is what
+ * the client's confirmation says and what every report groups by. Only the
+ * link is cut. Deleting the reservations along with the directory entry would
+ * destroy real bookings to tidy up a list.
+ */
+export async function handleDeleteVendor(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  await env.DB.prepare(
+    'UPDATE bookings SET vendor_id = NULL WHERE vendor_id = ? AND user_id = ?'
+  ).bind(id, user.id).run();
+
+  const res = await env.DB.prepare(
+    'DELETE FROM vendors WHERE id = ? AND user_id = ?'
+  ).bind(id, user.id).run();
+
+  if (!res.meta || res.meta.changes === 0) return notFound('Vendor not found.');
+  return json({ ok: true });
+}
+
+export async function handleUpdateVendor(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const { fields, error } = parseVendor(body);
+  if (error) return badRequest(error);
+  const name = fields.name;
 
   const res = await env.DB.prepare(
     `UPDATE vendors SET name = ?, final_days = ?, deposit_days = ?, commission_pct = ?,
        phone = ?, email = ?, portal_url = ?, notes = ?, category = ?,
        bdm_name = ?, bdm_email = ?, bdm_phone = ?, signup_url = ?, website = ?,
-       account_number = ?, updated_at = ?
+       account_number = ?, phones_json = ?, commission_structure = ?,
+       registration_instructions = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
-  ).bind(name, num(body.finalDays, 730), num(body.depositDays, 365), num(body.commissionPct, 100),
-         clean(body.phone, 40) || null, clean(body.email, 160) || null,
-         link(body.portalUrl),
-         clean(body.notes, 2000) || null,
-         CATEGORIES.includes(String(body.category)) ? String(body.category) : null,
-         // favourite is deliberately absent. It has its own endpoint, and
-         // writing it here from a form that has no star field cleared the star
-         // every time a vendor was edited.
-         clean(body.bdmName, 120) || null, clean(body.bdmEmail, 160) || null,
-         clean(body.bdmPhone, 40) || null,
-         link(body.signupUrl), link(body.website),
-         clean(body.accountNumber, 60) || null,
+    // favourite is deliberately absent. It has its own endpoint, and writing
+    // it here from a form that has no star field cleared the star every time
+    // a vendor was edited.
+  ).bind(name, fields.finalDays, fields.depositDays, fields.commissionPct,
+         fields.phone, fields.email, fields.portalUrl, fields.notes,
+         fields.category, fields.bdmName, fields.bdmEmail, fields.bdmPhone,
+         fields.signupUrl, fields.website, fields.accountNumber,
+         fields.phonesJson, fields.commissionStructure,
+         fields.registrationInstructions,
          now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Vendor not found.');
 

@@ -43,7 +43,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Vendors</h1><p class="sub">Suppliers, their people, and how to sign up, in one place.</p></div>
+      <div><h1>Vendors</h1><p class="sub">Supplier contacts, BDMs, and sign-up info in one place.</p></div>
       <span id="scope"></span>
     </header>
     <div class="content">
@@ -64,8 +64,8 @@
       <section class="card" style="margin-top:1.25rem;">
         <div class="card-head">
           <div class="hub-tabs">
-            <button class="btn btn-secondary btn-sm" id="tab-all" aria-pressed="true">All vendors</button>
-            <button class="btn btn-ghost btn-sm" id="tab-fav" aria-pressed="false">My favourites</button>
+            <button class="btn btn-secondary btn-sm" id="tab-all" aria-pressed="true">All Vendors</button>
+            <button class="btn btn-ghost btn-sm" id="tab-fav" aria-pressed="false">My Favorites</button>
           </div>
           <div class="toolbar" style="margin:0;padding:0;">
             <input id="search" type="search" placeholder="Search vendors" aria-label="Search vendors"
@@ -74,6 +74,7 @@
               <option value="hub">By category</option>
               <option value="table">As a table</option>
             </select>
+            <button class="btn btn-primary btn-sm" id="add-vendor">+ Add Vendor</button>
           </div>
         </div>
         <div id="panel"><p class="spinner">Loading...</p></div>
@@ -81,6 +82,20 @@
     </div>
   </div>
 </div>
+
+<dialog id="detail">
+  <div class="card-head"><h2 id="d-name">Vendor</h2>
+    <span>
+      <button class="btn btn-ghost btn-sm" type="button" id="d-edit">Edit</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="d-close">Close</button>
+    </span></div>
+  <div class="hub-tabs" style="padding:0 1.25rem;">
+    <button class="btn btn-secondary btn-sm" data-dtab="overview">Overview</button>
+    <button class="btn btn-ghost btn-sm" data-dtab="commission">Commission Structure</button>
+    <button class="btn btn-ghost btn-sm" data-dtab="registration">Registration Instructions</button>
+  </div>
+  <div class="card-pad" id="d-body"></div>
+</dialog>
 
 <dialog id="dlg">
   <form id="vendor-form" method="dialog">
@@ -100,6 +115,13 @@
       </div>
       <div class="field"><label for="commissionPct">Usual commission (%)</label>
         <input id="commissionPct" name="commissionPct" type="number" min="0" max="100" step="0.1" placeholder="16"></div>
+      <div class="field">
+        <label>Phone numbers</label>
+        <div id="phones"></div>
+        <button class="btn btn-ghost btn-sm" type="button" id="add-phone">+ Add phone number</button>
+        <p class="field-hint">Reservations, groups, after hours. Kept separately so each one
+          stays dialable.</p>
+      </div>
       <div class="field-row">
         <div class="field"><label for="phone">Agent phone</label>
           <input id="phone" name="phone" type="tel" maxlength="40"></div>
@@ -111,9 +133,9 @@
         <p class="field-hint">Which group they appear under here. Uncategorised vendors gather
           under Other rather than disappearing.</p></div>
       <div class="field-row">
-        <div class="field"><label for="portalUrl">Booking portal</label>
+        <div class="field"><label for="portalUrl">Advisor website</label>
           <input id="portalUrl" name="portalUrl" type="url" placeholder="https://..."></div>
-        <div class="field"><label for="website">Website</label>
+        <div class="field"><label for="website">Client website</label>
           <input id="website" name="website" type="url" placeholder="https://..."></div>
       </div>
       <div class="field-row">
@@ -134,6 +156,14 @@
         <div class="field"><label for="bdmPhone">Phone</label>
           <input id="bdmPhone" name="bdmPhone" type="tel" maxlength="40"></div>
       </div>
+      <div class="field"><label for="commissionStructure">Commission structure</label>
+        <textarea id="commissionStructure" name="commissionStructure" maxlength="4000"
+          placeholder="16% on cruise fare, 10% on air, bonus paid quarterly"></textarea>
+        <p class="field-hint">Prose, because a real commission deal rarely reduces to one
+          percentage. The number above is only used for the arithmetic.</p></div>
+      <div class="field"><label for="registrationInstructions">Registration instructions</label>
+        <textarea id="registrationInstructions" name="registrationInstructions" maxlength="4000"
+          placeholder="How to sign the agency up, who to ask, what they need"></textarea></div>
       <div class="field"><label for="notes">Notes</label>
         <textarea id="notes" name="notes" maxlength="2000"></textarea></div>
 
@@ -155,7 +185,13 @@
       </div>
       <div class="notice notice-error" id="tier-error" hidden></div>
     </div>
-    <div class="card-foot"><button class="btn btn-primary" type="submit">Save vendor</button></div>
+    <div class="card-foot" style="display:flex;justify-content:space-between;align-items:center;">
+      <button class="btn btn-ghost btn-sm" type="button" id="delete-vendor">Delete Vendor</button>
+      <span>
+        <button class="btn btn-ghost" type="button" id="cancel">Cancel</button>
+        <button class="btn btn-primary" type="submit" id="save-vendor">Save Changes</button>
+      </span>
+    </div>
   </form>
 </dialog>
 
@@ -309,9 +345,7 @@ function hubView(rows) {
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((v) => `<li>
           <span class="who">
-            <a class="nm name" href="${v.portal_url ? esc(v.portal_url) : '#'}"${
-              v.portal_url ? ' target="_blank" rel="noopener noreferrer"' : ''}
-              data-open="${esc(v.id)}">${esc(v.name)}</a>
+            <a class="nm name" href="#" data-open="${esc(v.id)}">${esc(v.name)}</a>
             ${contactLine(v) ? `<span class="sub">${contactLine(v)}</span>` : ''}
           </span>
           ${starButton(v)}
@@ -328,9 +362,9 @@ function tableView(rows) {
       <th class="num">Commission</th><th></th></tr></thead>
     <tbody>${rows.map((v) => `<tr>
       <td>${starButton(v)}</td>
-      <td><span class="name">${esc(v.name)}</span>
+      <td><a class="name" href="#" data-open="${esc(v.id)}">${esc(v.name)}</a>
         ${v.portal_url ? `<div><a class="muted" href="${esc(v.portal_url)}"
-          target="_blank" rel="noopener noreferrer">booking portal</a></div>` : ''}</td>
+          target="_blank" rel="noopener noreferrer">advisor website</a></div>` : ''}</td>
       <td>${esc(v.category || '')}</td>
       <td>${esc(v.bdm_name || '')}${v.bdm_email
         ? `<div><a class="muted" href="mailto:${esc(v.bdm_email)}">${esc(v.bdm_email)}</a></div>` : ''}</td>
@@ -352,13 +386,13 @@ function wireRows() {
     btn.addEventListener('click', () => openEdit(cache.find((v) => v.id === btn.dataset.edit)));
   });
 
-  // A vendor with no portal link has nothing to open, so the name opens the
-  // record instead of following a dead href.
+  // The name opens the record. Reading a vendor is what this page is for, and
+  // an owner looking at an associate's supplier can read it without being
+  // offered an edit form they cannot save.
   panel.querySelectorAll('[data-open]').forEach((a) => {
     a.addEventListener('click', (e) => {
-      if (a.getAttribute('href') !== '#') return;
       e.preventDefault();
-      openEdit(cache.find((v) => v.id === a.dataset.open));
+      openDetail(cache.find((v) => v.id === a.dataset.open));
     });
   });
 
@@ -386,9 +420,166 @@ function wireRows() {
   });
 }
 
+// Phone rows are held in the DOM rather than in a variable, so what is on
+// screen is what gets saved. One list, not two.
+function phoneRow(label = '', number = '') {
+  const row = document.createElement('div');
+  row.className = 'field-row phone-row';
+  row.style.alignItems = 'flex-end';
+  row.innerHTML = `
+    <div class="field" style="margin:0;flex:1;"><label>What it is</label>
+      <input class="p-label" maxlength="40" placeholder="Reservations"></div>
+    <div class="field" style="margin:0;flex:1;"><label>Number</label>
+      <input class="p-number" type="tel" maxlength="40"></div>
+    <button class="btn btn-ghost btn-sm" type="button" data-drop-phone>Remove</button>`;
+  row.querySelector('.p-label').value = label;
+  row.querySelector('.p-number').value = number;
+  row.querySelector('[data-drop-phone]').addEventListener('click', () => row.remove());
+  return row;
+}
+
+function drawPhones(list) {
+  const box = document.getElementById('phones');
+  box.innerHTML = '';
+  for (const p of list || []) box.appendChild(phoneRow(p.label, p.number));
+}
+
+function readPhones() {
+  return [...document.querySelectorAll('#phones .phone-row')]
+    .map((r) => ({
+      label: r.querySelector('.p-label').value.trim(),
+      number: r.querySelector('.p-number').value.trim(),
+    }))
+    .filter((p) => p.number);
+}
+
+function parsePhones(v) {
+  try { const a = JSON.parse(v.phones_json || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+
+document.getElementById('add-phone').addEventListener('click', () => {
+  document.getElementById('phones').appendChild(phoneRow());
+});
+
+/** A blank form, for a vendor that has not been booked yet. */
+document.getElementById('add-vendor').addEventListener('click', () => {
+  form.reset();
+  delete form.dataset.id;
+  document.getElementById('dlg-title').textContent = 'Add a Vendor';
+  document.getElementById('save-vendor').textContent = 'Save Vendor';
+  document.getElementById('delete-vendor').hidden = true;
+  form.querySelector('.notice-error').hidden = true;
+  const catSel = form.elements.category;
+  catSel.innerHTML = `<option value="">Uncategorised</option>${
+    categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}`;
+  drawPhones([]);
+  document.getElementById('tiers').innerHTML =
+    '<p class="muted">Cancellation terms can be added once the vendor is saved.</p>';
+  dlg.showModal();
+  form.elements.name.focus();
+});
+
+document.getElementById('delete-vendor').addEventListener('click', async () => {
+  const id = form.dataset.id;
+  const v = cache.find((x) => x.id === id);
+  if (!v) return;
+  // Says what will happen to the trips, because "delete" on a vendor with
+  // reservations under it reads like it might take them too.
+  const warn = v.trips
+    ? `Delete ${v.name}? Its ${v.trips} reservation${v.trips === 1 ? '' : 's'} will be kept, `
+      + 'still showing this supplier name.'
+    : `Delete ${v.name}?`;
+  if (!confirm(warn)) return;
+  try {
+    await api(`/api/vendors/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    dlg.close();
+    await load();
+  } catch (e) { showError(err, e); }
+});
+
+const detail = document.getElementById('detail');
+let detailId = null;
+let detailTab = 'overview';
+
+const para = (t) => `<p style="white-space:pre-wrap;margin:0;">${esc(t)}</p>`;
+
+function detailBody(v) {
+  if (detailTab === 'commission') {
+    return v.commission_structure
+      ? para(v.commission_structure)
+      : `<p class="muted">No commission structure recorded.${
+          v.commission_pct ? ` The rate on file is ${v.commission_pct}%.` : ''}</p>`;
+  }
+  if (detailTab === 'registration') {
+    return v.registration_instructions
+      ? para(v.registration_instructions)
+        + (v.signup_url ? `<p style="margin:.8rem 0 0;"><a href="${esc(v.signup_url)}"
+            target="_blank" rel="noopener noreferrer">Registration page</a></p>` : '')
+      : v.signup_url
+        ? `<p><a href="${esc(v.signup_url)}" target="_blank" rel="noopener noreferrer">Registration page</a></p>`
+        : '<p class="muted">No registration instructions recorded.</p>';
+  }
+
+  const phones = parsePhones(v);
+  const line = (label, value) => (value
+    ? `<div class="row-between" style="padding:.4rem 0;border-bottom:1px solid var(--navy-50,#eef1f5);">
+        <span class="muted">${esc(label)}</span><span>${value}</span></div>`
+    : '');
+  const mail = (a) => `<a href="mailto:${esc(a)}">${esc(a)}</a>`;
+  const web = (u, text) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
+  const tel = (n) => `<a href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">${esc(n)}</a>`;
+
+  return `
+    ${line('Category', v.category ? esc(v.category) : '')}
+    ${phones.map((p) => line(p.label || 'Phone', tel(p.number))).join('')}
+    ${line('Agent phone', v.phone ? tel(v.phone) : '')}
+    ${line('Agent email', v.email ? mail(v.email) : '')}
+    ${line('Advisor website', v.portal_url ? web(v.portal_url, 'Open') : '')}
+    ${line('Client website', v.website ? web(v.website, 'Open') : '')}
+    ${line('BDM name', v.bdm_name ? esc(v.bdm_name) : '')}
+    ${line('BDM phone', v.bdm_phone ? tel(v.bdm_phone) : '')}
+    ${line('BDM email', v.bdm_email ? mail(v.bdm_email) : '')}
+    ${line('Agency account number', v.account_number ? esc(v.account_number) : '')}
+    ${line('Balance due', v.final_days ? `${v.final_days} days before departure` : '')}
+    ${line('Reservations', v.trips ? String(v.trips) : '')}
+    ${v.notes ? `<p class="label" style="margin:1rem 0 .3rem;">Notes</p>${para(v.notes)}` : ''}`;
+}
+
+function drawDetail() {
+  const v = cache.find((x) => x.id === detailId);
+  if (!v) return;
+  document.getElementById('d-name').textContent = v.name;
+  document.getElementById('d-edit').hidden = v.user_id !== ME;
+  document.querySelectorAll('[data-dtab]').forEach((b) => {
+    const on = b.dataset.dtab === detailTab;
+    b.className = `btn btn-sm ${on ? 'btn-secondary' : 'btn-ghost'}`;
+  });
+  document.getElementById('d-body').innerHTML = detailBody(v);
+}
+
+function openDetail(v) {
+  if (!v) return;
+  detailId = v.id;
+  detailTab = 'overview';
+  drawDetail();
+  detail.showModal();
+}
+
+document.querySelectorAll('[data-dtab]').forEach((b) => {
+  b.addEventListener('click', () => { detailTab = b.dataset.dtab; drawDetail(); });
+});
+document.getElementById('d-close').addEventListener('click', () => detail.close());
+document.getElementById('d-edit').addEventListener('click', () => {
+  detail.close();
+  openEdit(cache.find((x) => x.id === detailId));
+});
+
 function openEdit(v) {
   if (!v) return;
   form.dataset.id = v.id;
+  document.getElementById('save-vendor').textContent = 'Save Changes';
+  document.getElementById('delete-vendor').hidden = false;
   document.getElementById('dlg-title').textContent = v.name;
   form.querySelector('.notice-error').hidden = true;
   const set = (n, val) => { const el = form.elements[n]; if (el) el.value = val ?? ''; };
@@ -402,6 +593,9 @@ function openEdit(v) {
   set('website', v.website); set('signupUrl', v.signup_url);
   set('accountNumber', v.account_number);
   set('bdmName', v.bdm_name); set('bdmEmail', v.bdm_email); set('bdmPhone', v.bdm_phone);
+  set('commissionStructure', v.commission_structure);
+  set('registrationInstructions', v.registration_instructions);
+  drawPhones(parsePhones(v));
   drawTiers(v.id);
   dlg.showModal();
 }
@@ -511,8 +705,15 @@ async function load() {
 }
 
 document.getElementById('close').addEventListener('click', () => dlg.close());
+document.getElementById('cancel').addEventListener('click', () => dlg.close());
+
 onSubmit(form, async (values) => {
-  await api(`/api/vendors/${encodeURIComponent(form.dataset.id)}`, { method: 'PUT', body: values });
+  const body = { ...values, phones: readPhones() };
+  if (form.dataset.id) {
+    await api(`/api/vendors/${encodeURIComponent(form.dataset.id)}`, { method: 'PUT', body });
+  } else {
+    await api('/api/vendors', { method: 'POST', body });
+  }
   dlg.close();
   await load();
 });

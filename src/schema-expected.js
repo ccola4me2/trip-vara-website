@@ -37,7 +37,7 @@ export const EXPECTED_SCHEMA = {
   travellers: ['booking_id', 'created_at', 'dob', 'email', 'id', 'is_lead', 'name', 'notes', 'passport_country', 'passport_expiry', 'passport_number', 'phone', 'updated_at', 'user_id'],
   user_prefs: ['dashboard_json', 'updated_at', 'user_id'],
   users: ['agency_address', 'agency_name', 'approved_at', 'approved_by', 'created_at', 'default_split_pct', 'email', 'first_name', 'ghl_location_id', 'ghl_user_id', 'id', 'last_login_at', 'last_name', 'password_hash', 'phone', 'role', 'seller_of_travel', 'status', 'updated_at'],
-  vendors: ['account_number', 'bdm_email', 'bdm_name', 'bdm_phone', 'category', 'commission_pct', 'created_at', 'deposit_days', 'email', 'favourite', 'final_days', 'id', 'name', 'notes', 'phone', 'portal_url', 'signup_url', 'updated_at', 'user_id', 'website'],
+  vendors: ['account_number', 'bdm_email', 'bdm_name', 'bdm_phone', 'category', 'commission_pct', 'commission_structure', 'created_at', 'deposit_days', 'email', 'favourite', 'final_days', 'id', 'name', 'notes', 'phone', 'phones_json', 'portal_url', 'registration_instructions', 'signup_url', 'updated_at', 'user_id', 'website'],
 };
 
 /** "table.column" -> the migration file that adds it. */
@@ -435,6 +435,7 @@ export const COLUMN_ORIGIN = {
   'vendors.bdm_phone': '0033_vendor_hub.sql',
   'vendors.category': '0033_vendor_hub.sql',
   'vendors.commission_pct': '0018_vendors.sql',
+  'vendors.commission_structure': '0034_vendor_detail.sql',
   'vendors.created_at': '0018_vendors.sql',
   'vendors.deposit_days': '0018_vendors.sql',
   'vendors.email': '0018_vendors.sql',
@@ -444,7 +445,9 @@ export const COLUMN_ORIGIN = {
   'vendors.name': '0018_vendors.sql',
   'vendors.notes': '0018_vendors.sql',
   'vendors.phone': '0018_vendors.sql',
+  'vendors.phones_json': '0034_vendor_detail.sql',
   'vendors.portal_url': '0018_vendors.sql',
+  'vendors.registration_instructions': '0034_vendor_detail.sql',
   'vendors.signup_url': '0033_vendor_hub.sql',
   'vendors.updated_at': '0018_vendors.sql',
   'vendors.user_id': '0018_vendors.sql',
