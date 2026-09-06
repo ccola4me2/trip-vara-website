@@ -96,6 +96,10 @@ const groups = await api('/api/groups?status=open')
  * it works with the keyboard for free, and it does not stop anybody typing a
  * name that is genuinely new.
  */
+// The CRM people currently on offer, by name, so choosing one can carry their
+// contact id and details onto the reservation instead of just their name.
+let crmByName = new Map();
+
 function suggestClients(input, listId) {
   const list = document.createElement('datalist');
   list.id = listId;
@@ -117,10 +121,19 @@ function suggestClients(input, listId) {
       try {
         found = await api(`/api/clients?q=${encodeURIComponent(q)}&limit=8`);
       } catch { return; }
-      list.innerHTML = (found.clients || []).map((c) => {
+      // People already booked here first, then people the CRM knows who have
+      // never been booked. Without the second group the first booking for an
+      // existing contact means typing a name the system already holds, and
+      // creating a second version of them.
+      const rows = [...(found.clients || []), ...(found.fromCrm || [])];
+      crmByName = new Map((found.fromCrm || []).map((c) => [c.name, c]));
+      list.innerHTML = rows.map((c) => {
         // What is shown beside the name is what tells two Smiths apart.
-        const hint = [c.email, c.trips ? `${c.trips} trip${c.trips === 1 ? '' : 's'}` : '']
-          .filter(Boolean).join(' · ');
+        const hint = [
+          c.email,
+          c.trips ? `${c.trips} trip${c.trips === 1 ? '' : 's'}` : '',
+          c.source === 'crm' ? 'in the CRM, not yet booked' : '',
+        ].filter(Boolean).join(' · ');
         return `<option value="${esc(c.name)}"${hint ? ` label="${esc(hint)}"` : ''}></option>`;
       }).join('');
     }, 250);
@@ -324,6 +337,12 @@ onSubmit(form, async (values) => {
   // Nobody named means the client is the one travelling, which is true of most
   // reservations and is a better guess than a trip with no passengers.
   if (!names.length && values.clientName) names.push(values.clientName.trim());
+
+  // Picked somebody the CRM already knows: carry their contact id through, so
+  // the reservation is joined to the person the agency has been talking to
+  // rather than to a new record with the same name on it.
+  const known = crmByName.get(values.clientName?.trim());
+  if (known?.contactId) values.ghlContactId = known.contactId;
 
   const res = await api('/api/bookings', { method: 'POST', body: values });
   const id = res.booking.id;

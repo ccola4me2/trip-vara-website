@@ -1618,6 +1618,36 @@ async function main() {
   const dates = travel.map((e) => e.date);
   check(dates.join() === [...dates].sort().join(), 'in date order');
 
+  // ------------------------------------------- suggesting who to book for --
+  step('The CRM knows them already');
+
+  const suggest = await call(advisor, 'GET', '/api/clients?q=zz');
+  check(Array.isArray(suggest.data?.fromCrm),
+    'client search offers CRM contacts alongside the local ones',
+    JSON.stringify(suggest.data?.fromCrm));
+
+  // One letter matches most of a book, and suggesting all of it is the same
+  // as suggesting nothing.
+  const oneLetter = await call(advisor, 'GET', '/api/clients?q=a');
+  check((oneLetter.data?.fromCrm || []).length === 0,
+    'and does not reach for the CRM on a single letter');
+
+  // A CRM contact carried onto a reservation makes a client record that is
+  // already joined to the person the agency has been talking to, rather than
+  // a second version of them with the same name.
+  const linked = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `CRM Person ${stamp}`, ghlContactId: `crm-${stamp}`,
+    supplier: 'Test Line', productName: 'Test', status: 'quoted',
+    departDate: isoDay(200),
+  });
+  check(linked.data?.booking?.ghl_contact_id === `crm-${stamp}`,
+    'a reservation keeps the contact it was made from',
+    linked.data?.booking?.ghl_contact_id);
+  check(Boolean(linked.data?.booking?.client_id),
+    'and the client record it creates is linked to that contact');
+  cleanup('the CRM-linked reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${linked.data.booking.id}`));
+
   // ------------------------------------------------ nothing fails quietly --
   step('A broken panel says so');
 

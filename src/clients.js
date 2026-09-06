@@ -14,6 +14,7 @@
 import { json, badRequest, notFound, clean, oneOf, uid, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
+import * as ghl from './ghl.js';
 
 export async function handleListClients(request, env) {
   const { user, response } = await requireUser(request, env);
@@ -21,13 +22,40 @@ export async function handleListClients(request, env) {
 
   const url = new URL(request.url);
   const scope = db.scopeFor(env, user, request);
+  const query = clean(url.searchParams.get('q'), 80);
   const clients = await db.listClients(env, scope, {
-    query: clean(url.searchParams.get('q'), 80),
+    query,
     pinnedOnly: url.searchParams.get('pinned') === '1',
   });
 
+  // People who are in the CRM but have never been booked here.
+  //
+  // A client record only exists once somebody has made a reservation, so the
+  // first time an advisor books an existing contact they type a name the
+  // portal already knows and creates a second version of a person the CRM has
+  // held for a year. These are offered alongside the local ones, marked as
+  // coming from the CRM, and become client records the moment one is used.
+  //
+  // Read from the synced copy rather than GoHighLevel itself: a typeahead
+  // fires on every keystroke, and that is not a thing to do to an API.
+  let fromCrm = [];
+  if (query && query.length >= 2) {
+    const known = new Set(clients.map((c) => c.name.trim().toLowerCase()));
+    const { contacts } = await db.localContacts(env, ghl.locationFor(env, user), {
+      query, limit: 8,
+    });
+    fromCrm = (contacts || [])
+      .filter((c) => c.name && !known.has(c.name.trim().toLowerCase()))
+      .slice(0, 8)
+      .map((c) => ({
+        id: null, contactId: c.id, name: c.name, email: c.email || '',
+        phone: c.phone || '', source: 'crm', trips: 0,
+      }));
+  }
+
   return json({
     clients,
+    fromCrm,
     stats: {
       total: clients.length,
       pinned: clients.filter((c) => c.pinned_at).length,
