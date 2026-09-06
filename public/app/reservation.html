@@ -626,32 +626,11 @@ function drawDetail() {
         date('returnDate', 'Returning', b.return_date)),
     row(text('destination', 'Destination', b.destination),
         text('itinerary', 'Itinerary', b.itinerary)),
+    // No traveller count. The names in the Travellers card are the count, and
+    // syncTravellerCount keeps the stored figure following them, so a box
+    // saying 2 beside a list of three people is a box that can only be wrong.
     row(text('cabinCategory', 'Category', b.cabin_category),
-        text('cabin', 'Cabin or room', b.cabin),
-        text('travellers', 'Travellers', b.travellers || 1, 'inputmode="numeric"')),
-
-    group('Money'),
-    // Once the grid has lines in it, the trip total and the commission are its
-    // arithmetic and not somebody's opinion, and syncBookingTotals overwrites
-    // whatever is typed here the next time it is saved. Readonly rather than
-    // disabled on purpose: a disabled field submits nothing, parseBooking would
-    // read that as zero, and saving the reservation would wipe both figures.
-    row(text('gross', 'Trip total',
-          b.gross_cents ? (b.gross_cents / 100).toFixed(2) : '',
-          priced ? 'readonly class="derived"' : 'inputmode="decimal"'),
-        text('deposit', 'Deposit', b.deposit_cents ? (b.deposit_cents / 100).toFixed(2) : '', 'inputmode="decimal"'),
-        text('commission', 'Commission',
-          b.commission_cents ? (b.commission_cents / 100).toFixed(2) : '',
-          priced ? 'readonly class="derived"' : 'inputmode="decimal"')),
-    priced
-      ? `<p class="field-hint" style="margin:-.4rem 0 0;">The trip total and the commission are
-          added up from the <a href="#sec-pricing">pricing grid</a>. The deposit is what the vendor
-          asked for to hold it, which is not a charge, so it is typed here.</p>`
-      : `<p class="field-hint" style="margin:-.4rem 0 0;">Typed here for now. Price the trip in the
-          <a href="#sec-pricing">grid above</a> and these follow it instead.</p>`,
-    row(date('depositDue', 'Deposit due', b.deposit_due),
-        date('finalPaymentDue', 'Final payment due', b.final_payment_due),
-        select('commissionStatus', 'Commission status', o.commissionStatuses, b.commission_status)),
+        text('cabin', 'Cabin or room', b.cabin)),
 
     group('Notes'),
     `<div class="field"><textarea id="f-notes" name="notes" maxlength="2000" ${ro ? 'disabled' : ''
@@ -874,7 +853,8 @@ function drawPricing() {
     ${d.editable ? `<div class="card-foot">
       <span class="muted" id="grid-note"></span>
       <button class="btn btn-primary" id="save-pricing">Save pricing</button></div>` : ''}
-    <div class="card-pad" id="price-summary" style="border-top:1px solid var(--navy-100);"></div>`;
+    <div class="card-pad" id="price-summary" style="border-top:1px solid var(--navy-100);"></div>
+    <div class="card-pad" id="money-block" style="border-top:1px solid var(--navy-100);"></div>`;
 
   const cells = () => [...document.querySelectorAll('[data-cell]')];
   const num = (el) => Math.round((Number(String(el.value).replace(/[^0-9.-]/g, '')) || 0) * 100);
@@ -916,6 +896,7 @@ function drawPricing() {
   document.querySelectorAll('.cell').forEach((el) => el.addEventListener('input', retotal));
   retotal();
   drawPriceSummary();
+  drawMoney();
 
   const toggle = document.getElementById('toggle-rows');
   if (toggle) toggle.addEventListener('click', () => { showAllRows = !showAllRows; drawPricing(); });
@@ -965,6 +946,77 @@ function drawPricing() {
       await load();
       err.innerHTML = '<div class="notice notice-ok">Pricing saved.</div>';
     } catch (e) { showError(err, e); save.disabled = false; }
+  });
+}
+
+/**
+ * The deposit and the dates the vendor set, under the grid rather than on the
+ * reservation form.
+ *
+ * They were up with the client's name and the cabin number, which put three
+ * money fields on a form about who is going where. Money belongs in one place,
+ * and this is it: what the trip costs is the grid's arithmetic, and what the
+ * vendor wants and by when sits underneath it.
+ */
+function drawMoney() {
+  const b = d.booking;
+  const box = document.getElementById('money-block');
+  if (!box) return;
+  const ro = !d.editable;
+  const priced = Boolean(d.priceSummary);
+  const cash = (c) => (c ? (c / 100).toFixed(2) : '');
+
+  box.innerHTML = `
+    <p class="label" style="margin:0 0 .5rem;">Deposit and deadlines</p>
+    <div class="notice notice-error" id="money-error" hidden></div>
+    <div class="field-row">
+      <div class="field"><label for="m-deposit">Deposit the vendor wants</label>
+        <input id="m-deposit" value="${esc(cash(b.deposit_cents))}" inputmode="decimal" ${ro ? 'disabled' : ''}>
+        <p class="field-hint">What holds the cabin, which is not a charge on it.</p></div>
+      <div class="field"><label for="m-deposit-due">Deposit due</label>
+        <input id="m-deposit-due" type="date" value="${esc(b.deposit_due || '')}" ${ro ? 'disabled' : ''}></div>
+      <div class="field"><label for="m-final-due">Final payment due</label>
+        <input id="m-final-due" type="date" value="${esc(b.final_payment_due || '')}" ${ro ? 'disabled' : ''}>
+        <p class="field-hint">The vendor's own date. Miss it and they cancel.</p></div>
+    </div>
+    ${priced ? '' : `<div class="field-row">
+      <div class="field"><label for="m-gross">Trip total</label>
+        <input id="m-gross" value="${esc(cash(b.gross_cents))}" inputmode="decimal" ${ro ? 'disabled' : ''}>
+        <p class="field-hint">Until the grid has figures in it, this is the only total there is.</p></div>
+      <div class="field"><label for="m-commission">Commission</label>
+        <input id="m-commission" value="${esc(cash(b.commission_cents))}" inputmode="decimal" ${ro ? 'disabled' : ''}></div>
+    </div>`}
+    <div class="field"><label for="m-commission-status">Commission status</label>
+      <select id="m-commission-status" style="max-width:16rem;" ${ro ? 'disabled' : ''}>
+        ${selectOptions((d.fieldOptions || {}).commissionStatuses, b.commission_status)}</select></div>
+    ${ro ? '' : '<button class="btn btn-secondary btn-sm" id="save-money">Save these</button>'}`;
+
+  const save = document.getElementById('save-money');
+  if (!save) return;
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    // Only the fields on screen. A trip with a priced grid has no total field
+    // here, and sending an empty one would set it to nothing.
+    const body = {
+      deposit: document.getElementById('m-deposit').value,
+      depositDue: document.getElementById('m-deposit-due').value,
+      finalPaymentDue: document.getElementById('m-final-due').value,
+      commissionStatus: document.getElementById('m-commission-status').value,
+    };
+    const gross = document.getElementById('m-gross');
+    const commission = document.getElementById('m-commission');
+    if (gross) body.gross = gross.value;
+    if (commission) body.commission = commission.value;
+
+    try {
+      await api(`/api/bookings/${encodeURIComponent(id)}/quick`, { method: 'POST', body });
+      await load();
+    } catch (e) {
+      const box2 = document.getElementById('money-error');
+      box2.textContent = e.message;
+      box2.hidden = false;
+      save.disabled = false;
+    }
   });
 }
 

@@ -16,7 +16,7 @@
       <div>
         <a class="back-link" href="/app/reservations">&larr; All reservations</a>
         <h1>New reservation</h1>
-        <p class="sub">Everything on one page. Nothing here has to be filled in now except a client.</p>
+        <p class="sub">Who is going and who it is booked with. The money comes next, on the reservation itself.</p>
       </div>
     </header>
     <div class="content">
@@ -48,7 +48,7 @@
           </div>
           <div class="card-foot">
             <a class="btn btn-ghost" href="/app/reservations">Cancel</a>
-            <button class="btn btn-primary" type="submit">Create reservation</button>
+            <button class="btn btn-primary" type="submit">Next: pricing</button>
           </div>
         </form>
       </section>
@@ -168,16 +168,6 @@ document.getElementById('fields').innerHTML = [
     one blank and the client is assumed to be travelling.</p>
    <div id="traveller-rows"></div>
    <button class="btn btn-ghost btn-sm" type="button" id="add-traveller">Add another traveller</button>`,
-
-  group('Money'),
-  `<p class="field-hint" style="margin:-.2rem 0 .6rem;">Rough figures are fine. Once you price the
-    trip on the reservation, the total and the commission are added up from the charge rows and
-    these stop being typed at all.</p>`,
-  row(text('gross', 'Trip total', 'inputmode="decimal"'),
-      text('deposit', 'Deposit', 'inputmode="decimal"'),
-      text('commission', 'Commission', 'inputmode="decimal"')),
-  row(date('depositDue', 'Deposit due'), date('finalPaymentDue', 'Final payment due'),
-      select('commissionStatus', 'Commission status', o.commissionStatuses, 'pending')),
 
   group('Notes'),
   '<div class="field"><textarea id="f-notes" name="notes" maxlength="2000"></textarea></div>',
