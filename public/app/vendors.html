@@ -317,8 +317,14 @@ function drawList() {
           <p>Star a vendor and it will be waiting here.</p></div>`
       : cache.length
         ? `<div class="empty"><h3>Nothing matches</h3><p>No vendor by that name.</p></div>`
+        // Said "a vendor record appears the first time you book one", which
+        // stopped being the whole truth the moment Add Vendor existed and left
+        // an empty directory telling you to go and book something.
         : `<div class="empty"><h3>No vendors yet</h3>
-            <p>A vendor record appears the first time you book one.</p></div>`;
+            <p>Add the suppliers you sell, or book one and it will appear here on its own.</p>
+            <button class="btn btn-primary" type="button" id="empty-add">+ Add Vendor</button></div>`;
+    const emptyAdd = document.getElementById('empty-add');
+    if (emptyAdd) emptyAdd.addEventListener('click', () => document.getElementById('add-vendor').click());
     return;
   }
 
