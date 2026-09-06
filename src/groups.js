@@ -15,9 +15,15 @@ import * as db from './db.js';
 
 const STATUSES = ['open', 'closed', 'cancelled'];
 
+// A cruise group, a package and a block of rooms are held and sold
+// differently, and a list that cannot tell them apart leaves the advisor
+// remembering which is which.
+export const GROUP_TYPES = ['cruise', 'package', 'lodging', 'tour', 'other'];
+
 const COLUMNS = `
   g.id, g.user_id, g.name, g.vendor, g.product_name, g.destination, g.group_code,
   g.depart_date, g.return_date, g.option_date, g.cabins_held, g.status, g.notes,
+  g.group_type, g.registration_open, g.registration_blurb,
   g.created_at, g.updated_at
 `;
 
@@ -54,6 +60,9 @@ function parse(body) {
       optionDate,
       cabinsHeld: Math.max(0, Math.min(Number(body.cabinsHeld) || 0, 9999)),
       status: oneOf(body.status, STATUSES),
+      groupType: oneOf(body.groupType, GROUP_TYPES),
+      registrationOpen: body.registrationOpen ? 1 : 0,
+      registrationBlurb: clean(body.registrationBlurb, 1500),
       notes: clean(body.notes, 4000),
     },
   };
@@ -137,7 +146,107 @@ export async function handleGetGroup(request, env, id) {
       ORDER BY b.created_at ASC`
   ).bind(id, ...bScoped.binds).all();
 
-  return json({ group, bookings: results || [] });
+  // Who has put their name down and not yet been turned into a reservation.
+  // The whole point of a public page is that this list exists somewhere other
+  // than the advisor's inbox.
+  const rScoped = db.scopeWhere(scope, 'r.user_id');
+  const { results: registrations } = await env.DB.prepare(
+    `SELECT r.id, r.name, r.email, r.phone, r.party_size, r.notes, r.booking_id, r.created_at
+       FROM group_registrations r WHERE r.group_id = ? AND ${rScoped.sql}
+      ORDER BY r.created_at DESC LIMIT 300`
+  ).bind(id, ...rScoped.binds).all();
+
+  return json({
+    group,
+    bookings: results || [],
+    registrations: registrations || [],
+    groupTypes: GROUP_TYPES,
+  });
+}
+
+/**
+ * Turn somebody who put their name down into a reservation.
+ *
+ * The same step the lead report does, and for the same reason: the details are
+ * already here, and retyping them is how a name sits on a list for a fortnight.
+ * Quoted, because putting your name down is not agreeing to anything.
+ */
+export async function handleBookRegistration(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const reg = await env.DB.prepare(
+    `SELECT r.*, g.name AS group_name, g.vendor, g.product_name, g.destination,
+            g.depart_date, g.return_date, g.group_type
+       FROM group_registrations r JOIN travel_groups g ON g.id = r.group_id
+      WHERE r.id = ? AND r.user_id = ?`
+  ).bind(id, user.id).first();
+  if (!reg) return notFound('No such registration.');
+  if (reg.booking_id) return badRequest('That one is already on a reservation.');
+
+  const clientId = await db.resolveClient(env, user.id, reg.name, {});
+  if (clientId && (reg.email || reg.phone)) {
+    await env.DB.prepare(
+      `UPDATE clients SET email = COALESCE(NULLIF(email, ''), ?),
+         phone = COALESCE(NULLIF(phone, ''), ?), updated_at = ?
+       WHERE id = ? AND user_id = ?`
+    ).bind(reg.email || null, reg.phone || null, now(), clientId, user.id).run();
+  }
+
+  const booking = await db.createBooking(env, user.id, {
+    clientName: reg.name,
+    clientId: clientId || null,
+    supplier: reg.vendor || null,
+    productType: ['cruise', 'package', 'lodging', 'tour'].includes(reg.group_type)
+      ? (reg.group_type === 'lodging' ? 'hotel' : reg.group_type) : 'cruise',
+    productName: reg.product_name || null,
+    destination: reg.destination || null,
+    departDate: reg.depart_date || null,
+    returnDate: reg.return_date || null,
+    depositDue: null,
+    finalPaymentDue: null,
+    travellers: Math.max(1, Math.min(Number(reg.party_size) || 1, 99)),
+    grossCents: 0,
+    commissionCents: 0,
+    commissionStatus: 'pending',
+    status: 'quoted',
+    groupId: reg.group_id,
+    notes: [`From the ${reg.group_name} sign-up page.`,
+            reg.notes ? `They said: ${reg.notes}` : ''].filter(Boolean).join('\n'),
+    insuranceStatus: 'unknown',
+  });
+
+  await env.DB.prepare(
+    'UPDATE group_registrations SET booking_id = ? WHERE id = ? AND user_id = ?'
+  ).bind(booking.id, id, user.id).run();
+
+  await env.DB.prepare(
+    `INSERT INTO travellers (id, booking_id, user_id, name, email, phone, is_lead,
+       created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+  ).bind(uid(), booking.id, user.id, reg.name, reg.email || null, reg.phone || null,
+         now(), now()).run();
+
+  await db.logActivity(env, user.id, 'group.book',
+    `Booked ${reg.name} onto ${reg.group_name}`, { groupId: reg.group_id, bookingId: booking.id });
+
+  return json({ ok: true, bookingId: booking.id });
+}
+
+/**
+ * Is this code already somebody's public address?
+ *
+ * The group code became a URL the moment a group could take names at
+ * /g/<code>, and a URL that resolves to two groups resolves to whichever the
+ * database returns first. Checked across every advisor, not just this one:
+ * the address is global even though the group is not.
+ */
+async function codeTaken(env, code, exceptId = null) {
+  if (!code) return false;
+  const row = await env.DB.prepare(
+    'SELECT id FROM travel_groups WHERE group_code = ? AND id != ?'
+  ).bind(code, exceptId || '').first();
+  return Boolean(row);
 }
 
 export async function handleCreateGroup(request, env) {
@@ -146,17 +255,21 @@ export async function handleCreateGroup(request, env) {
 
   const { fields, error } = parse(await readJson(request));
   if (error) return badRequest(error);
+  if (await codeTaken(env, fields.groupCode)) {
+    return badRequest(`The code ${fields.groupCode} is already in use. Pick another.`);
+  }
 
   const id = uid();
   const ts = now();
   await env.DB.prepare(
     `INSERT INTO travel_groups (id, user_id, name, vendor, product_name, destination,
        group_code, depart_date, return_date, option_date, cabins_held, status, notes,
-       created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       group_type, registration_open, registration_blurb, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, user.id, fields.name, fields.vendor, fields.productName, fields.destination,
          fields.groupCode, fields.departDate, fields.returnDate, fields.optionDate,
-         fields.cabinsHeld, fields.status, fields.notes, ts, ts).run();
+         fields.cabinsHeld, fields.status, fields.notes,
+         fields.groupType, fields.registrationOpen, fields.registrationBlurb, ts, ts).run();
 
   await db.logActivity(env, user.id, 'group.create', `Opened group ${fields.name}`, { id });
   return json({ ok: true, group: await getGroup(env, id, user.id) }, 201);
@@ -168,15 +281,20 @@ export async function handleUpdateGroup(request, env, id) {
 
   const { fields, error } = parse(await readJson(request));
   if (error) return badRequest(error);
+  if (await codeTaken(env, fields.groupCode, id)) {
+    return badRequest(`The code ${fields.groupCode} is already in use. Pick another.`);
+  }
 
   const res = await env.DB.prepare(
     `UPDATE travel_groups SET name = ?, vendor = ?, product_name = ?, destination = ?,
        group_code = ?, depart_date = ?, return_date = ?, option_date = ?,
-       cabins_held = ?, status = ?, notes = ?, updated_at = ?
+       cabins_held = ?, status = ?, notes = ?, group_type = ?, registration_open = ?,
+       registration_blurb = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(fields.name, fields.vendor, fields.productName, fields.destination, fields.groupCode,
          fields.departDate, fields.returnDate, fields.optionDate, fields.cabinsHeld,
-         fields.status, fields.notes, now(), id, user.id).run();
+         fields.status, fields.notes, fields.groupType, fields.registrationOpen,
+         fields.registrationBlurb, now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Group not found.');
 
   return json({ ok: true, group: await getGroup(env, id, user.id) });

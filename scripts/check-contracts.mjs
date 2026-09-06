@@ -273,6 +273,16 @@ const BROWSER_GLOBALS = new Set([
   'getComputedStyle', 'matchMedia', 'print', 'scrollTo', 'open', 'close',
 ]);
 
+// Things this reads as a call that are not one, each checked by hand. SQL
+// inside a template literal, and object methods written in shorthand, which a
+// regex cannot tell from an undeclared function. Listed rather than guessed
+// at, so a real one appearing here has to be added deliberately.
+const NOT_REALLY_CALLS = new Set([
+  'LOWER', 'COUNT', 'SUM', 'MAX', 'MIN', 'COALESCE', 'NULLIF', 'LENGTH',
+  'substr', 'strftime', 'json_extract',   // SQL in template literals
+  'run', 'scheduled', 'fetch',            // object methods in shorthand
+]);
+
 // Words that can sit in front of a bracket without being a function call.
 const KEYWORDS = new Set([
   'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function',
@@ -303,11 +313,13 @@ function checkCalls(root) {
     }
   })(join(root, 'public'));
 
-  // Page scripts only. Pointing this at src/ as well found one real bug and
-  // five false ones: SQL inside a template literal reads as a call to LOWER,
-  // and an object method written in shorthand is never seen as declared.
-  // Telling those apart needs a parser rather than regexes, and a check that
-  // cries wolf is one people turn off.
+  // The Worker's own modules too. Three separate times in one day a handler
+  // called notFound, or readJson, in a file that never imported it: a 500 the
+  // first time that path runs, invisible to every other check. That is worth
+  // more than the handful of false positives below.
+  const modules = readdirSync(join(root, 'src'))
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => join(root, 'src', f));
 
   let missing = 0;
   const jobs = [
@@ -317,6 +329,7 @@ function checkCalls(root) {
         .filter((m) => !/\bsrc\s*=/i.test(m[1]) && m[2].trim())
         .map((m) => [file, m[2]]);
     }),
+    ...modules.sort().map((file) => [file, readFileSync(file, 'utf8')]),
   ];
 
   for (const [file, body] of jobs) {
@@ -371,6 +384,7 @@ function checkCalls(root) {
       for (const c of code.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
         const name = c[2];
         if (declared.has(name) || BROWSER_GLOBALS.has(name) || KEYWORDS.has(name)) continue;
+        if (NOT_REALLY_CALLS.has(name)) continue;
         unknown.add(name);
       }
 

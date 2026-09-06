@@ -40,6 +40,7 @@ const OWNED = new Set([
   'bookings', 'booking_payments', 'booking_pricing', 'quote_options', 'penalty_tiers', 'documents', 'components', 'travellers',
   'amenities', 'tasks', 'client_credits', 'clients', 'travel_groups', 'vendors',
   'goals', 'user_prefs', 'commission_statements', 'commission_receipts',
+  'group_registrations',
 ]);
 
 // Shared by a whole agency through a GoHighLevel sub-account, so location_id
@@ -58,6 +59,12 @@ const EXEMPT = new Map([
 // claim that somebody checked, which is the point of writing it down instead
 // of widening the rule until nothing fails.
 const ALLOWED = [
+  ['SELECT id FROM travel_groups WHERE group_code = ?',
+    'deliberately every advisor: the code is a public web address, so it has to be '
+    + 'unique across all of them, not just within one book'],
+  ['COUNT(*) AS n FROM group_registrations',
+    'a rate limit on a public page, counted for the group being signed up to; there is '
+    + 'no session on that request and the owner comes from the group'],
   ['UPDATE travellers SET is_lead = 0', 'follows an ownership check on the traveller being promoted'],
   ['UPDATE bookings SET travellers =', 'called only after the booking was fetched for this user'],
   ['UPDATE bookings SET gross_cents', 'called only after the booking was fetched for this user'],

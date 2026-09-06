@@ -68,6 +68,30 @@
         <div class="field"><label for="cabinsHeld">Cabins held</label>
           <input id="cabinsHeld" name="cabinsHeld" type="number" min="0" max="9999" value="0"></div>
       </div>
+      <div class="field"><label for="groupType">Kind of group</label>
+        <select id="groupType" name="groupType">
+          <option value="cruise">Cruise</option>
+          <option value="package">Package</option>
+          <option value="lodging">Rooms</option>
+          <option value="tour">Tour</option>
+          <option value="other">Something else</option>
+        </select>
+        <p class="field-hint">A block of cabins, a package and a room block are held and sold
+          differently.</p></div>
+
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;">
+          <input type="checkbox" id="registrationOpen" name="registrationOpen">
+          Take names on a page of its own
+        </label>
+        <p class="field-hint" id="reg-link-hint">Gives the group a public link people can sign up
+          on, so who is interested is a list rather than a pile of replies. Needs a group code,
+          which becomes the address.</p>
+      </div>
+      <div class="field"><label for="registrationBlurb">What that page should say</label>
+        <textarea id="registrationBlurb" name="registrationBlurb" maxlength="1500"
+          placeholder="Seven nights out of Miami in March. Put your name down and we will send the cabin options."></textarea></div>
+
       <div class="field"><label for="status">Status</label>
         <select id="status" name="status">
           <option value="open">Open</option>
@@ -175,6 +199,18 @@ function openEdit(g) {
   set('departDate', g.depart_date); set('returnDate', g.return_date);
   set('optionDate', g.option_date); set('cabinsHeld', g.cabins_held || 0);
   set('status', g.status); set('notes', g.notes);
+  set('groupType', g.group_type || 'cruise');
+  set('registrationBlurb', g.registration_blurb);
+  form.elements.registrationOpen.checked = Boolean(g.registration_open);
+
+  // The link only exists once the group has a code, since the code is the
+  // address. Said here rather than left to be discovered.
+  const hint = document.getElementById('reg-link-hint');
+  hint.innerHTML = g.group_code
+    ? `People sign up at <code>/g/${esc(g.group_code)}</code>. Share that link and who is `
+      + 'interested becomes a list rather than a pile of replies.'
+    : 'Give the group a code first: the code is the web address people sign up on.';
+
   dlg.showModal();
 }
 

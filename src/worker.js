@@ -59,7 +59,9 @@ import {
   handleListForms as handleListOwnForms, handleGetForm, handleSaveForm, handleDeleteForm,
   handleFormsReport, handleReservationFromLead,
 } from './formbuilder.js';
-import { renderPublicForm, handlePublicSubmit } from './publicform.js';
+import {
+  renderPublicForm, handlePublicSubmit, renderGroupPage, handleGroupRegistration,
+} from './publicform.js';
 import { handleSearch } from './search.js';
 import { handleGetLayout, handleSaveLayout, handleResetLayout } from './prefs.js';
 // Aliased: leads.js already exports handleCreateTask for the CRM's own
@@ -71,7 +73,7 @@ import {
   handleDeleteTask as handleDeleteMyTask,
 } from './tasks.js';
 import {
-  handleListGroups, handleGetGroup, handleCreateGroup, handleUpdateGroup, handleDeleteGroup,
+  handleListGroups, handleGetGroup, handleBookRegistration, handleCreateGroup, handleUpdateGroup, handleDeleteGroup,
 } from './groups.js';
 import {
   handleListCredits, handleCreateCredit, handleUpdateCredit, handleDeleteCredit,
@@ -300,6 +302,7 @@ async function routeApi(request, env, path, method) {
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl|split)$/);
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
+  const groupBookMatch = path.match(/^\/api\/groups\/registrations\/([^/]+)\/book$/);
   const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
   const receiptMatch = path.match(/^\/api\/commissions\/receipts\/([^/]+)$/);
   const vendorStatementMatch = path.match(/^\/api\/commissions\/statements\/([^/]+)$/);
@@ -491,6 +494,7 @@ async function routeApi(request, env, path, method) {
   // Group space: cabins held by a vendor before anybody has booked them.
   if (path === '/api/groups' && method === 'GET') return handleListGroups(request, env);
   if (path === '/api/groups' && method === 'POST') return handleCreateGroup(request, env);
+  if (groupBookMatch && method === 'POST') return handleBookRegistration(request, env, groupBookMatch[1]);
   if (groupMatch && method === 'GET') return handleGetGroup(request, env, groupMatch[1]);
   if (groupMatch && method === 'PUT') return handleUpdateGroup(request, env, groupMatch[1]);
   if (groupMatch && method === 'DELETE') return handleDeleteGroup(request, env, groupMatch[1]);
@@ -582,6 +586,16 @@ async function routePage(request, env, path) {
   // Hosted forms are public: no session, no gate. They are how leads arrive.
   const hosted = path.match(/^\/f\/([^/]+)\/?$/);
   if (hosted) return renderPublicForm(request, env, decodeURIComponent(hosted[1]));
+
+  // A group's own page, on the same terms: public, because it is how names
+  // arrive for a trip nobody has been told about yet.
+  const groupPage = path.match(/^\/g\/([^/]+)\/?$/);
+  if (groupPage) {
+    const code = decodeURIComponent(groupPage[1]);
+    return request.method === 'POST'
+      ? handleGroupRegistration(request, env, code)
+      : renderGroupPage(request, env, code);
+  }
 
   const needsAuth = path.startsWith('/app');
   const needsAdmin = path.startsWith('/admin');

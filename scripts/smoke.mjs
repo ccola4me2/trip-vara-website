@@ -1657,6 +1657,70 @@ async function main() {
     'and the guest printed at the top with no label at all is the client', cf.clientName);
   check(cf.travellers === 2, 'with the guest count read from a total', `${cf.travellers}`);
 
+  // -------------------------------------------- a group that takes names --
+  step('Putting your name down for a group trip');
+
+  const signupGroup = await call(advisor, 'POST', '/api/groups', {
+    name: `Parrothead ${stamp}`, groupCode: `ph-${stamp}`, vendor: 'Test Cruise Line',
+    productName: 'Allure', destination: 'Caribbean', departDate: isoDay(200),
+    returnDate: isoDay(207), cabinsHeld: 20, groupType: 'cruise',
+    registrationOpen: true, registrationBlurb: 'Seven nights. Put your name down.',
+  });
+  const signupGroupId = signupGroup.data?.group?.id;
+  check(Boolean(signupGroupId), 'a group can take names on a page of its own');
+  cleanup('the group', () => call(advisor, 'DELETE', `/api/groups/${signupGroupId}`));
+
+  // The code is a public web address now, so it has to mean one group across
+  // every advisor, not one per book.
+  const codeClash = await call(advisor, 'POST', '/api/groups', {
+    name: 'Clashing', groupCode: `ph-${stamp}`,
+  });
+  check(codeClash.status === 400, 'and its code cannot be taken by another group',
+    `status ${codeClash.status}`);
+
+  const publicPage = await call(null, 'GET', `/g/ph-${stamp}`);
+  check(publicPage.status === 200, 'the page is public, with no session at all',
+    `status ${publicPage.status}`);
+
+  const signUp = await call(null, 'POST', `/g/ph-${stamp}`, {
+    name: `Jimmy ${stamp}`, email: `jimmy-${stamp}@test.dev`, phone: '555-0180',
+    party_size: '4', notes: 'Would like a balcony',
+  });
+  check(signUp.status === 200, 'somebody can put their name down', `status ${signUp.status}`);
+
+  const noEmail = await call(null, 'POST', `/g/ph-${stamp}`, { name: 'No Email' });
+  check(noEmail.status === 400, 'without an email there is no way to answer them',
+    `status ${noEmail.status}`);
+
+  // Answered as if it worked, so a bot learns nothing.
+  const bot = await call(null, 'POST', `/g/ph-${stamp}`, {
+    name: 'Bot', email: 'bot@spam.test', company_website: 'spam.example',
+  });
+  check(bot.status === 200, 'and a bot is thanked rather than told');
+
+  const withNames = await call(advisor, 'GET', `/api/groups/${signupGroupId}`);
+  const signups = withNames.data?.registrations || [];
+  check(signups.length === 1, 'one name on the list, not the bot', `${signups.length}`);
+  check(signups[0]?.party_size === 4 && signups[0]?.notes === 'Would like a balcony',
+    'with what they said about it');
+
+  // The point of the list: it turns into a reservation without retyping.
+  const regBooked = await call(advisor, 'POST',
+    `/api/groups/registrations/${signups[0].id}/book`);
+  check(regBooked.status === 200 && regBooked.data?.bookingId,
+    'and one click makes it a reservation in the group', `status ${regBooked.status}`);
+
+  const afterBooking = await call(advisor, 'GET', `/api/groups/${signupGroupId}`);
+  check(Boolean(afterBooking.data?.registrations?.[0]?.booking_id),
+    'the name is marked as acted on rather than sitting there twice');
+  check(afterBooking.data?.group?.cabins_sold === 1, 'and the group counts a cabin sold',
+    `${afterBooking.data?.group?.cabins_sold}`);
+
+  const bookedTwice = await call(advisor, 'POST',
+    `/api/groups/registrations/${signups[0].id}/book`);
+  check(bookedTwice.status === 400, 'booking the same name twice is refused',
+    `status ${bookedTwice.status}`);
+
   // ------------------------------------------------ the mirrored catalog --
   step('Sailings borrowed from CruiseShoppers');
 

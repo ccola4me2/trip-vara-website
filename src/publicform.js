@@ -8,7 +8,7 @@
 // These pages are unauthenticated by design. Everything below assumes hostile
 // input.
 
-import { json, badRequest, notFound, uid, now, clean, isValidEmail, normalizeEmail, sha256Hex } from './util.js';
+import { json, badRequest, notFound, uid, now, clean, isValidEmail, normalizeEmail, sha256Hex, readJson } from './util.js';
 import * as ghl from './ghl.js';
 import { upsertContact } from './sync.js';
 import { hydrateForm } from './formbuilder.js';
@@ -102,6 +102,121 @@ export async function renderPublicForm(request, env, slug) {
   return new Response(page(f.name, body), {
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });
+}
+
+/**
+ * A group's own page, where people put their name down for the trip.
+ *
+ * A group cruise is sold by telling people about it and collecting names, and
+ * that was happening in an inbox: the advisor posts about a sailing, replies
+ * arrive as email, and who is interested lives in their head. This is a link
+ * they can put anywhere, and every name lands attached to the group.
+ *
+ * Public by design, so it asks for as little as it can: who you are, how to
+ * reach you, how many of you. Nothing about payment, nothing about passports.
+ */
+// Kept as its own constant so the closing script tag is never written inside
+// another template literal, which is how a page silently ends early.
+const GROUP_SCRIPT = ['<scr', 'ipt>',
+  "const f=document.getElementById('f');",
+  "f.addEventListener('submit', async (e) => {",
+  '  e.preventDefault();',
+  "  const err = document.getElementById('err');",
+  '  err.hidden = true;',
+  '  const body = Object.fromEntries(new FormData(f).entries());',
+  "  const res = await fetch(location.pathname, { method: 'POST',",
+  "    headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });",
+  '  const data = await res.json().catch(() => ({}));',
+  '  if (!res.ok) {',
+  "    err.textContent = data.error || 'Something went wrong.';",
+  '    err.hidden = false;',
+  '    return;',
+  '  }',
+  '  f.outerHTML = \'<h2>Thanks, you are on the list</h2><p>\' +',
+  "    (data.message || 'We will be in touch shortly.') + '</p>';",
+  '});',
+  '</scr', 'ipt>'].join('\n');
+
+async function loadGroup(env, code) {
+  const row = await env.DB.prepare(
+    `SELECT id, user_id, name, vendor, product_name, destination, depart_date,
+            return_date, registration_open, registration_blurb, status
+       FROM travel_groups WHERE group_code = ? AND registration_open = 1`
+  ).bind(code).first();
+  return row || null;
+}
+
+export async function renderGroupPage(request, env, code) {
+  const g = await loadGroup(env, code);
+  if (!g || g.status === 'cancelled') {
+    return new Response(page('Not available',
+      '<h1>This trip is not taking names</h1><p>The link may be out of date. Get in touch and '
+      + 'we will tell you what is going out next.</p>'),
+      { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+
+  const facts = [g.vendor, g.product_name, g.destination].filter(Boolean);
+  const when = g.depart_date
+    ? `<p>${esc(g.depart_date)}${g.return_date ? ` to ${esc(g.return_date)}` : ''}</p>` : '';
+
+  const body = [
+    `<h1>${esc(g.name)}</h1>`,
+    facts.length ? `<p>${esc(facts.join(' \u00b7 '))}</p>` : '',
+    when,
+    g.registration_blurb ? `<p>${esc(g.registration_blurb)}</p>` : '',
+    '<form id="f" novalidate>',
+    '<label for="name">Your name</label><input id="name" name="name" required maxlength="120">',
+    '<label for="email">Email</label><input id="email" name="email" type="email" required maxlength="254">',
+    '<label for="phone">Mobile</label><input id="phone" name="phone" type="tel" maxlength="40">',
+    '<label for="party_size">How many of you</label><input id="party_size" name="party_size" type="number" min="1" max="99">',
+    '<label for="notes">Anything you want us to know</label><textarea id="notes" name="notes" maxlength="1000"></textarea>',
+    '<div class="hp"><label>Company website<input name="company_website" tabindex="-1" autocomplete="off"></label></div>',
+    '<button type="submit">Put me down</button>',
+    '<p class="err" id="err" hidden></p>',
+    '</form>',
+    GROUP_SCRIPT,
+  ].join('\n');
+
+  return new Response(page(g.name, body),
+    { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+export async function handleGroupRegistration(request, env, code) {
+  const g = await loadGroup(env, code);
+  if (!g || g.status === 'cancelled') return notFound('This trip is not taking names.');
+
+  const body = await readJson(request);
+
+  // The same honeypot and rate limit as a hosted form, for the same reason:
+  // this page is open to the internet.
+  if (clean(body.company_website, 200)) return json({ ok: true, message: 'Thanks.' });
+
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  const ipHash = ip ? (await sha256Hex(`group:${code}:${ip}`)).slice(0, 32) : null;
+  if (ipHash) {
+    const seen = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM group_registrations
+        WHERE group_id = ? AND ip_hash = ? AND created_at > ?`
+    ).bind(g.id, ipHash, now() - 3600).first();
+    if ((seen?.n || 0) >= 5) {
+      return json({ error: 'Too many from here. Please try again later.' }, 429);
+    }
+  }
+
+  const name = clean(body.name, 120);
+  const email = normalizeEmail(clean(body.email, 254));
+  if (!name) return badRequest('Your name is required.');
+  if (!email || !isValidEmail(email)) return badRequest('A working email address is required.');
+
+  await env.DB.prepare(
+    `INSERT INTO group_registrations
+       (id, group_id, user_id, name, email, phone, party_size, notes, ip_hash, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(uid(), g.id, g.user_id, name, email, clean(body.phone, 40) || null,
+         Math.max(0, Math.min(Number(body.party_size) || 0, 99)) || null,
+         clean(body.notes, 1000) || null, ipHash, now()).run();
+
+  return json({ ok: true, message: 'We will be in touch with the details shortly.' });
 }
 
 export async function handlePublicSubmit(request, env, slug) {
