@@ -26,22 +26,32 @@ const COLUMNS = `
 // query. Reported rather than silently applied when it does bite.
 const LIST_CAP = 2000;
 
+// Named the way the Cruise Planners partner hub names them, so a list pasted
+// out of that page lands on the right shelf instead of arriving as Other.
 export const CATEGORIES = [
   'Cruise Lines',
+  'River Cruises',
+  'Expedition Experiences & Yacht',
+  'Package Providers',
   'All-Inclusive Resorts',
-  'Hotels and Resorts',
+  'All-Inclusive Brands',
   'Escorted Tours',
-  'River Cruise',
-  'Expedition and Yacht',
-  'Excursions and Attractions',
-  'Villas and Rentals',
-  'Rail',
-  'Car and Transfers',
-  'Air Consolidators',
-  'Insurance',
-  'Destination Management',
+  'FIT',
+  'Hotels & Resorts',
+  'Rentals & Villas',
+  'Air Consolidator',
+  'Car & Transfer Services',
+  'Rail Vacations',
+  'Attractions',
+  'Excursions',
+  'Value Add & Other',
+  'Tourism Boards',
   'Other',
 ];
+
+// The heading a supplier list uses for the ones already starred, rather than
+// for a kind of supplier. Treated as the star it is, not as a shelf.
+const FAVOURITES_HEADING = 'favorite suppliers';
 
 /** The vendor record for a name, made if it is new. */
 export async function resolveVendor(env, userId, name) {
@@ -199,6 +209,192 @@ function parseVendor(body) {
       registrationInstructions: clean(body.registrationInstructions, 4000) || null,
     },
   };
+}
+
+/**
+ * Read a supplier list pasted out of a partner directory.
+ *
+ * The shape those pages come in is a category heading followed by the names
+ * under it, which is what you get by selecting the page and copying. So that
+ * is the format this reads, rather than asking somebody to reformat 370 lines
+ * into a spreadsheet first. A "Name, Category" line works too.
+ *
+ * Suppliers appear under several headings on those pages: Abercrombie & Kent
+ * sells escorted tours and independent travel both. A vendor here has one
+ * category, so the first heading wins and the repeat is reported rather than
+ * silently dropped or made into a second row.
+ */
+export function parseVendorList(text) {
+  const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const byLower = new Map(CATEGORIES.map((c) => [c.toLowerCase(), c]));
+
+  // Only an exact category name is a heading. The first version of this
+  // guessed, on the theory that a short line without punctuation was probably
+  // a section title, and read "Azamara" and "Collette" as headings: most
+  // supplier names look exactly like that. A supplier list whose headings we
+  // do not recognise puts its names under the previous heading, which is
+  // visible and fixable, where a guess is neither.
+  const found = [];
+  const seen = new Map();
+  const duplicates = [];
+  const unknownHeadings = [];
+  let category = null;
+  let starring = false;
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+
+    if (lower === FAVOURITES_HEADING) { starring = true; category = null; continue; }
+    if (byLower.has(lower)) { category = byLower.get(lower); starring = false; continue; }
+
+    // "Name, Category" for a hand-made list.
+    let name = line;
+    let rowCategory = category;
+    const comma = line.lastIndexOf(',');
+    if (comma > 0) {
+      const tail = line.slice(comma + 1).trim().toLowerCase();
+      if (byLower.has(tail)) {
+        name = line.slice(0, comma).trim();
+        rowCategory = byLower.get(tail);
+      }
+    }
+
+    name = clean(name, 120);
+    if (!name) continue;
+
+    const key = name.toLowerCase();
+    if (seen.has(key)) {
+      const first = seen.get(key);
+      // The favourites list comes first on these pages and carries no
+      // category, so the real shelf arrives on the second sighting. Taking
+      // only the first left every starred supplier uncategorised.
+      if (starring) first.favourite = true;
+      if (!first.category && rowCategory) { first.category = rowCategory; continue; }
+      if (rowCategory) duplicates.push({ name, keptUnder: first.category });
+      continue;
+    }
+
+    const row = { name, category: rowCategory, favourite: starring };
+    seen.set(key, row);
+    found.push(row);
+  }
+
+  return { vendors: found, duplicates, unknownHeadings: [...new Set(unknownHeadings)] };
+}
+
+export async function handleImportVendors(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const parsed = parseVendorList(body.text);
+  if (!parsed.vendors.length) return badRequest('Nothing in that looks like a supplier list.');
+
+  // What is already on the books, so a second paste tops up rather than
+  // failing on every line.
+  const { results: existing } = await env.DB.prepare(
+    'SELECT id, name, category, favourite FROM vendors WHERE user_id = ?'
+  ).bind(user.id).all();
+  const have = new Map((existing || []).map((v) => [v.name.toLowerCase(), v]));
+
+  const toAdd = parsed.vendors.filter((v) => !have.has(v.name.toLowerCase()));
+  const toUpdate = parsed.vendors.filter((v) => {
+    const cur = have.get(v.name.toLowerCase());
+    if (!cur) return false;
+    // Only fills gaps. A category or star already set here is a decision
+    // somebody made, and an import should not overrule it.
+    return (v.category && !cur.category) || (v.favourite && !cur.favourite);
+  });
+
+  if (!body.commit) {
+    return json({
+      preview: true,
+      add: toAdd.length,
+      update: toUpdate.length,
+      unchanged: parsed.vendors.length - toAdd.length - toUpdate.length,
+      duplicates: parsed.duplicates.slice(0, 40),
+      duplicateCount: parsed.duplicates.length,
+      unknownHeadings: parsed.unknownHeadings,
+      byCategory: countByCategory(parsed.vendors),
+      sample: toAdd.slice(0, 12),
+    });
+  }
+
+  const ts = now();
+  const writes = [];
+  for (const v of toAdd) {
+    writes.push(env.DB.prepare(
+      `INSERT INTO vendors (id, user_id, name, category, favourite, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(uid(), user.id, v.name, v.category, v.favourite ? 1 : 0, ts, ts));
+  }
+  for (const v of toUpdate) {
+    const cur = have.get(v.name.toLowerCase());
+    writes.push(env.DB.prepare(
+      'UPDATE vendors SET category = ?, favourite = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+    ).bind(cur.category || v.category, (cur.favourite || v.favourite) ? 1 : 0, ts, cur.id, user.id));
+  }
+
+  // In batches, because a partner directory is several hundred rows and one
+  // statement per round trip would take longer than the request is allowed.
+  for (let i = 0; i < writes.length; i += 50) {
+    await env.DB.batch(writes.slice(i, i + 50));
+  }
+
+  await db.logActivity(env, user.id, 'vendor.import',
+    `Imported ${toAdd.length} vendor${toAdd.length === 1 ? '' : 's'}`,
+    { added: toAdd.length, updated: toUpdate.length });
+
+  return json({ ok: true, added: toAdd.length, updated: toUpdate.length });
+}
+
+function countByCategory(rows) {
+  const out = {};
+  for (const r of rows) {
+    const k = r.category || 'Other';
+    out[k] = (out[k] || 0) + 1;
+  }
+  return out;
+}
+
+/** One vendor, with the trips sold under it. */
+export async function handleGetVendor(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const scope = db.scopeFor(env, user, request);
+  const scoped = db.scopeWhere(scope, 'v.user_id');
+
+  const vendor = await env.DB.prepare(
+    `SELECT ${COLUMNS} FROM vendors v WHERE ${scoped.sql} AND v.id = ?`
+  ).bind(...scoped.binds, id).first();
+  if (!vendor) return notFound('Vendor not found.');
+
+  // The reservations are the reason the record is worth opening: what has
+  // actually been sold through this supplier, and what is still to come.
+  const { results: bookings } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.product_name, b.depart_date, b.return_date,
+            b.status, b.gross_cents, b.commission_cents, b.confirmation_number
+       FROM bookings b
+      WHERE b.user_id = ? AND b.vendor_id = ?
+      ORDER BY COALESCE(b.depart_date, '9999-12-31') DESC
+      LIMIT 100`
+  ).bind(vendor.user_id, id).all();
+
+  const trips = bookings || [];
+  const counted = trips.filter((b) => b.status === 'booked' || b.status === 'travelled');
+
+  return json({
+    vendor,
+    categories: CATEGORIES,
+    bookings: trips,
+    canEdit: vendor.user_id === user.id,
+    totals: {
+      trips: counted.length,
+      grossCents: counted.reduce((n, b) => n + (b.gross_cents || 0), 0),
+      commissionCents: counted.reduce((n, b) => n + (b.commission_cents || 0), 0),
+    },
+  });
 }
 
 /** Add a vendor by hand, rather than waiting to book one. */

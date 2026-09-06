@@ -901,6 +901,47 @@ async function main() {
   check(notMineStar.status === 404, 'and one advisor cannot star another advisor\'s vendor',
     `status ${notMineStar.status}`);
 
+  // A supplier list pasted straight out of a partner directory: headings and
+  // the names under them, in the order they come off the page.
+  const pasted = [
+    'Favorite Suppliers', `Azamara ${stamp}`, `Collette ${stamp}`,
+    'Cruise Lines', `Azamara ${stamp}`, `Seabourn ${stamp}`,
+    'Escorted Tours', `Collette ${stamp}`, `Tauck ${stamp}`,
+    'FIT', `Collette ${stamp}`,
+  ].join('\n');
+
+  const dry = await call(advisor, 'POST', '/api/vendors/import', { text: pasted });
+  check(dry.data?.add === 4, 'a pasted supplier list is read into vendors',
+    `${dry.data?.add} to add`);
+  check(dry.data?.preview === true && dry.status === 200,
+    'and nothing is written until it is asked for');
+
+  const ran = await call(advisor, 'POST', '/api/vendors/import', { text: pasted, commit: true });
+  check(ran.data?.added === 4, 'then the import adds them', `${ran.data?.added} added`);
+
+  const listed = await call(advisor, 'GET', '/api/vendors');
+  const byName = new Map((listed.data?.vendors || []).map((v) => [v.name, v]));
+  check(byName.get(`Seabourn ${stamp}`)?.category === 'Cruise Lines',
+    'each filed under the heading it sat beneath');
+  // The favourites block comes first on those pages and carries no category,
+  // so the real one arrives on a second sighting. Taking only the first left
+  // every starred supplier uncategorised.
+  check(byName.get(`Azamara ${stamp}`)?.favourite
+    && byName.get(`Azamara ${stamp}`)?.category === 'Cruise Lines',
+    'a starred supplier keeps its star and still gets its category',
+    `${byName.get(`Azamara ${stamp}`)?.favourite} / ${byName.get(`Azamara ${stamp}`)?.category}`);
+  check(byName.get(`Collette ${stamp}`)?.category === 'Escorted Tours',
+    'a supplier under several headings is filed under the first');
+
+  // Pasting the same page twice is what somebody does when they are not sure
+  // it worked the first time.
+  const again = await call(advisor, 'POST', '/api/vendors/import', { text: pasted, commit: true });
+  check(again.data?.added === 0, 'importing the same list twice adds nothing',
+    `${again.data?.added} added`);
+
+  const junk = await call(advisor, 'POST', '/api/vendors/import', { text: '   ' });
+  check(junk.status === 400, 'an empty paste is refused', `status ${junk.status}`);
+
   // A vendor typed in by hand, with everything the directory holds.
   const made = await call(advisor, 'POST', '/api/vendors', {
     name: `Windstar ${stamp}`, category: 'Cruise Lines',

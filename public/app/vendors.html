@@ -8,26 +8,46 @@
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/app.css">
 <style>
-  /* The directory: shelves of suppliers, read by eye rather than by row. */
-  .hub-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 1.25rem;
-    align-items: start;
+  /* A directory read down one column, with the categories as a rail you filter
+     by rather than boxes you scan across. Suppliers get looked up one at a
+     time, so the layout puts one name per line and gives search the top. */
+  .dir { display: grid; grid-template-columns: 220px 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 820px) { .dir { grid-template-columns: 1fr; } }
+
+  .rail { position: sticky; top: 1rem; }
+  .rail ul { list-style: none; margin: 0; padding: 0; }
+  .rail button {
+    width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
+    padding: .42rem .6rem; border-radius: 5px; font: inherit; font-size: .86rem;
+    color: var(--navy-700, #23405f); display: flex; justify-content: space-between; gap: .5rem;
   }
-  .shelf { border: 1px solid var(--navy-100); border-radius: 6px; overflow: hidden; background: #fff; }
-  .shelf > h3 {
-    margin: 0; padding: .7rem .9rem; font-size: .92rem;
-    background: var(--navy-50, #f4f6f9); border-bottom: 1px solid var(--navy-100);
+  .rail button:hover { background: var(--navy-50, #eef1f5); }
+  .rail button[aria-pressed="true"] { background: var(--navy-600, #1b3a5f); color: #fff; }
+  .rail button[aria-pressed="true"] .n { color: rgba(255,255,255,.7); }
+  .rail button:focus-visible { outline: 2px solid var(--navy-600); outline-offset: 1px; }
+  .rail .n { color: var(--navy-400, #7b8798); font-variant-numeric: tabular-nums; }
+  .rail h3 {
+    font-size: .68rem; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--navy-400, #7b8798); margin: 0 0 .45rem .6rem;
   }
-  .shelf > h3 .count { float: right; font-weight: 400; color: var(--navy-400, #7b8798); }
-  .shelf ul { list-style: none; margin: 0; padding: 0; }
-  .shelf li { display: flex; align-items: center; gap: .5rem; padding: .5rem .9rem; border-bottom: 1px solid var(--navy-50, #eef1f5); }
-  .shelf li:last-child { border-bottom: 0; }
-  .shelf li .who { flex: 1; min-width: 0; }
-  .shelf li .who .nm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .shelf li .who .sub { font-size: .72rem; color: var(--navy-400, #7b8798); }
-  /* The star is a control, so it reads as one: a real button with a focus ring. */
+
+  .v-list { list-style: none; margin: 0; padding: 0; }
+  .v-row {
+    display: flex; align-items: center; gap: .8rem;
+    padding: .62rem .9rem; border-bottom: 1px solid var(--navy-50, #eef1f5);
+  }
+  .v-row:last-child { border-bottom: 0; }
+  .v-row:hover { background: var(--navy-50, #eef1f5); }
+  .v-mark {
+    width: 32px; height: 32px; flex: none; border-radius: 7px;
+    background: var(--navy-100, #dbe3ec); color: var(--navy-700, #23405f);
+    display: grid; place-items: center; font-size: .72rem; font-weight: 600;
+  }
+  .v-row .who { flex: 1; min-width: 0; }
+  .v-row .who a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v-row .who .sub { font-size: .72rem; color: var(--navy-400, #7b8798); }
+  .v-row .cat { font-size: .72rem; color: var(--navy-400, #7b8798); white-space: nowrap; }
+
   .star {
     background: none; border: 0; cursor: pointer; font-size: 1.05rem; line-height: 1;
     padding: .15rem .25rem; border-radius: 4px; color: var(--navy-200, #c3ccd8);
@@ -35,7 +55,6 @@
   .star[aria-pressed="true"] { color: var(--amber-600, #b7791f); }
   .star:hover { color: var(--amber-600, #b7791f); }
   .star:focus-visible { outline: 2px solid var(--navy-600); outline-offset: 1px; }
-  .hub-tabs { display: flex; gap: .35rem; }
 </style>
 </head>
 <body>
@@ -43,7 +62,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Vendors</h1><p class="sub">Supplier contacts, BDMs, and sign-up info in one place.</p></div>
+      <div><h1>Vendors</h1><p class="sub">Who you sell, who to ring there, and how to sign up.</p></div>
       <span id="scope"></span>
     </header>
     <div class="content">
@@ -61,668 +80,360 @@
         <div id="suggested"></div>
       </section>
 
+      <section class="card" id="import-card" hidden style="margin-top:1.25rem;">
+        <div class="card-head"><h2>Paste a supplier list</h2>
+          <button class="btn btn-ghost btn-sm" id="import-close">Close</button></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin-top:0;">Select a supplier directory page, copy it,
+            and paste it here. Category headings and the names under them are read as they come,
+            so nothing needs reformatting first. Anything already on your list is left alone.</p>
+          <div class="field">
+            <label for="paste">Supplier list</label>
+            <textarea id="paste" rows="10"></textarea>
+          </div>
+          <div class="toolbar" style="padding:0;">
+            <button class="btn btn-secondary btn-sm" id="import-preview">Check it</button>
+            <button class="btn btn-primary btn-sm" id="import-run" hidden>Import them</button>
+          </div>
+          <div id="import-result"></div>
+        </div>
+      </section>
+
       <section class="card" style="margin-top:1.25rem;">
         <div class="card-head">
-          <div class="hub-tabs">
-            <button class="btn btn-secondary btn-sm" id="tab-all" aria-pressed="true">All Vendors</button>
-            <button class="btn btn-ghost btn-sm" id="tab-fav" aria-pressed="false">My Favorites</button>
-          </div>
+          <input id="search" type="search" placeholder="Search suppliers or managers"
+            aria-label="Search vendors" style="width:20rem;max-width:100%;">
           <div class="toolbar" style="margin:0;padding:0;">
-            <input id="search" type="search" placeholder="Search vendors" aria-label="Search vendors"
-              style="width:16rem;">
-            <select id="view" aria-label="Layout" style="width:auto;">
-              <option value="hub">By category</option>
-              <option value="table">As a table</option>
-            </select>
-            <button class="btn btn-primary btn-sm" id="add-vendor">+ Add Vendor</button>
+            <button class="btn btn-ghost btn-sm" id="import-open">Import a list</button>
+            <button class="btn btn-primary btn-sm" id="add-vendor">Add a vendor</button>
           </div>
         </div>
-        <div id="panel"><p class="spinner">Loading...</p></div>
+        <div class="card-pad">
+          <div class="dir">
+            <nav class="rail" id="rail" aria-label="Categories"></nav>
+            <div id="panel"><p class="spinner">Loading...</p></div>
+          </div>
+        </div>
       </section>
     </div>
   </div>
 </div>
 
-<dialog id="detail">
-  <div class="card-head"><h2 id="d-name">Vendor</h2>
-    <span>
-      <button class="btn btn-ghost btn-sm" type="button" id="d-edit">Edit</button>
-      <button class="btn btn-ghost btn-sm" type="button" id="d-close">Close</button>
-    </span></div>
-  <div class="hub-tabs" style="padding:0 1.25rem;">
-    <button class="btn btn-secondary btn-sm" data-dtab="overview">Overview</button>
-    <button class="btn btn-ghost btn-sm" data-dtab="commission">Commission Structure</button>
-    <button class="btn btn-ghost btn-sm" data-dtab="registration">Registration Instructions</button>
-  </div>
-  <div class="card-pad" id="d-body"></div>
-</dialog>
-
 <dialog id="dlg">
   <form id="vendor-form" method="dialog">
-    <div class="card-head"><h2 id="dlg-title">Vendor</h2>
+    <div class="card-head"><h2>Add a vendor</h2>
       <button class="btn btn-ghost btn-sm" type="button" id="close">Close</button></div>
     <div class="card-pad">
       <div class="notice notice-error" hidden></div>
-      <div class="field"><label for="name">Name</label>
-        <input id="name" name="name" maxlength="120" required>
-        <p class="field-hint">Renaming carries every reservation with it, so reports stay in one row.</p></div>
-      <div class="field-row">
-        <div class="field"><label for="finalDays">Balance due, days before departure</label>
-          <input id="finalDays" name="finalDays" type="number" min="0" max="730" placeholder="90">
-          <p class="field-hint">Their standard terms. Used to suggest a date, never to set one silently.</p></div>
-        <div class="field"><label for="depositDays">Deposit due, days after booking</label>
-          <input id="depositDays" name="depositDays" type="number" min="0" max="365" placeholder="7"></div>
-      </div>
-      <div class="field"><label for="commissionPct">Usual commission (%)</label>
-        <input id="commissionPct" name="commissionPct" type="number" min="0" max="100" step="0.1" placeholder="16"></div>
-      <div class="field">
-        <label>Phone numbers</label>
-        <div id="phones"></div>
-        <button class="btn btn-ghost btn-sm" type="button" id="add-phone">+ Add phone number</button>
-        <p class="field-hint">Reservations, groups, after hours. Kept separately so each one
-          stays dialable.</p>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="phone">Agent phone</label>
-          <input id="phone" name="phone" type="tel" maxlength="40"></div>
-        <div class="field"><label for="email">Agent email</label>
-          <input id="email" name="email" type="email" maxlength="160"></div>
-      </div>
+      <div class="field"><label for="name">Vendor name</label>
+        <input id="name" name="name" maxlength="120" required></div>
       <div class="field"><label for="category">Category</label>
-        <select id="category" name="category"></select>
-        <p class="field-hint">Which group they appear under here. Uncategorised vendors gather
-          under Other rather than disappearing.</p></div>
-      <div class="field-row">
-        <div class="field"><label for="portalUrl">Advisor website</label>
-          <input id="portalUrl" name="portalUrl" type="url" placeholder="https://..."></div>
-        <div class="field"><label for="website">Client website</label>
-          <input id="website" name="website" type="url" placeholder="https://..."></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="signupUrl">Where to register</label>
-          <input id="signupUrl" name="signupUrl" type="url" placeholder="https://..."></div>
-        <div class="field"><label for="accountNumber">Agency account number</label>
-          <input id="accountNumber" name="accountNumber" maxlength="60"></div>
-      </div>
-
-      <p class="label" style="margin:1.4rem 0 .2rem;">Business development manager</p>
-      <p class="field-hint" style="margin:0 0 .6rem;">The person to ring when a booking needs
-        a human. Worth keeping current: it is the reason to open this page at all.</p>
-      <div class="field-row">
-        <div class="field"><label for="bdmName">Name</label>
-          <input id="bdmName" name="bdmName" maxlength="120"></div>
-        <div class="field"><label for="bdmEmail">Email</label>
-          <input id="bdmEmail" name="bdmEmail" type="email" maxlength="160"></div>
-        <div class="field"><label for="bdmPhone">Phone</label>
-          <input id="bdmPhone" name="bdmPhone" type="tel" maxlength="40"></div>
-      </div>
-      <div class="field"><label for="commissionStructure">Commission structure</label>
-        <textarea id="commissionStructure" name="commissionStructure" maxlength="4000"
-          placeholder="16% on cruise fare, 10% on air, bonus paid quarterly"></textarea>
-        <p class="field-hint">Prose, because a real commission deal rarely reduces to one
-          percentage. The number above is only used for the arithmetic.</p></div>
-      <div class="field"><label for="registrationInstructions">Registration instructions</label>
-        <textarea id="registrationInstructions" name="registrationInstructions" maxlength="4000"
-          placeholder="How to sign the agency up, who to ask, what they need"></textarea></div>
-      <div class="field"><label for="notes">Notes</label>
-        <textarea id="notes" name="notes" maxlength="2000"></textarea></div>
-
-      <p class="label" style="margin:1.4rem 0 .2rem;">Cancellation terms</p>
-      <p class="field-hint" style="margin:0 0 .6rem;">Their standard schedule, copied onto a
-        reservation when you book it. A trip keeps the terms it was sold on, so changing these
-        never rewrites what a client already agreed to.</p>
-      <div id="tiers"></div>
-      <div class="field-row" style="align-items:flex-end;">
-        <div class="field" style="margin:0;"><label for="t-days">Days before</label>
-          <input id="t-days" inputmode="numeric" placeholder="89"></div>
-        <div class="field" style="margin:0;"><label for="t-pct">Percent</label>
-          <input id="t-pct" inputmode="decimal" placeholder="50"></div>
-        <div class="field" style="margin:0;"><label for="t-amount">or Amount</label>
-          <input id="t-amount" inputmode="decimal" placeholder="600.00"></div>
-        <div class="field" style="margin:0;flex:2;"><label for="t-note">What they call it</label>
-          <input id="t-note" maxlength="160" placeholder="Deposit forfeit"></div>
-        <button class="btn btn-secondary btn-sm" type="button" id="t-add">Add</button>
-      </div>
-      <div class="notice notice-error" id="tier-error" hidden></div>
+        <select id="category" name="category"></select></div>
+      <p class="field-hint">The rest of the record, including their manager and how to register,
+        is on the vendor's own page once this is saved.</p>
     </div>
-    <div class="card-foot" style="display:flex;justify-content:space-between;align-items:center;">
-      <button class="btn btn-ghost btn-sm" type="button" id="delete-vendor">Delete Vendor</button>
-      <span>
-        <button class="btn btn-ghost" type="button" id="cancel">Cancel</button>
-        <button class="btn btn-primary" type="submit" id="save-vendor">Save Changes</button>
-      </span>
-    </div>
+    <div class="card-foot"><button class="btn btn-primary" type="submit">Save vendor</button></div>
   </form>
 </dialog>
 
 <script type="module">
-import { api, mountShell, esc, money, dateFmt, showError, onSubmit,
+import { api, mountShell, esc, showError, onSubmit,
          mountScopePicker, advisorParam } from '/js/app.js';
 const ME = (await mountShell()).id;
 
-const panel = document.getElementById('panel');
 const err = document.getElementById('err');
+const panel = document.getElementById('panel');
+const rail = document.getElementById('rail');
+const search = document.getElementById('search');
 const dlg = document.getElementById('dlg');
 const form = document.getElementById('vendor-form');
+
 let cache = [];
 let categories = [];
-let favouritesOnly = false;
+let filter = 'all';   // 'all' | 'favourites' | a category name
 
-const search = document.getElementById('search');
-const view = document.getElementById('view');
-const tabAll = document.getElementById('tab-all');
-const tabFav = document.getElementById('tab-fav');
+const initials = (name) => String(name || '?').replace(/[^A-Za-z ]/g, '').trim()
+  .split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
 
-function setTab(fav) {
-  favouritesOnly = fav;
-  tabAll.setAttribute('aria-pressed', String(!fav));
-  tabFav.setAttribute('aria-pressed', String(fav));
-  tabAll.className = `btn btn-sm ${fav ? 'btn-ghost' : 'btn-secondary'}`;
-  tabFav.className = `btn btn-sm ${fav ? 'btn-secondary' : 'btn-ghost'}`;
-  drawList();
-}
-
-tabAll.addEventListener('click', () => setTab(false));
-tabFav.addEventListener('click', () => setTab(true));
-search.addEventListener('input', () => drawList());
-view.addEventListener('change', () => drawList());
-
-function render(d) {
-  cache = d.vendors;
-  const s = d.stats;
-  document.getElementById('stats').innerHTML = `
-    <div class="stat"><p class="label">Vendors</p><p class="value">${s.total}</p>
-      <p class="meta">${s.unused} with nothing booked</p></div>
-    <div class="stat"><p class="label">With terms recorded</p><p class="value">${s.withTerms}</p>
-      <p class="meta">Can suggest a final payment date</p></div>
-    <div class="stat"><p class="label">Possible duplicates</p>
-      <p class="value" style="${s.possibleDuplicates.length ? 'color:var(--amber-600);' : ''}">${s.possibleDuplicates.length}</p>
-      <p class="meta">Names that may be one vendor</p></div>`;
-
-  const dupeCard = document.getElementById('dupe-card');
-  dupeCard.hidden = !s.possibleDuplicates.length;
-  if (s.possibleDuplicates.length) {
-    document.getElementById('dupes').innerHTML = `
-      <p class="field-hint" style="margin:0 0 .9rem;">Each set is spelled differently but may be one
-        vendor. Folding them together rewrites the name on every reservation, so reports stop
-        splitting. Only you can tell whether they really are the same.</p>
-      ${s.possibleDuplicates.map((group, gi) => `<div class="dupe-group">
-        ${group.map((v, vi) => `<label class="dupe-option">
-          <input type="radio" name="keep-${gi}" value="${esc(v.id)}"${vi === 0 ? ' checked' : ''}>
-          <span><span class="t">${esc(v.name)}</span>
-            <span class="m">${v.trips} reservation${v.trips === 1 ? '' : 's'}</span></span>
-        </label>`).join('')}
-        <button class="btn btn-secondary btn-sm" data-merge="${gi}">Keep the ticked one</button>
-      </div>`).join('')}`;
-
-    document.querySelectorAll('[data-merge]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const gi = Number(btn.dataset.merge);
-        const group = s.possibleDuplicates[gi];
-        const keep = document.querySelector(`input[name="keep-${gi}"]:checked`).value;
-        const drop = group.map((v) => v.id).filter((x) => x !== keep);
-        btn.disabled = true;
-        try {
-          const res = await api('/api/vendors/merge', { method: 'POST', body: { keep, drop } });
-          err.innerHTML = `<div class="notice notice-ok">Folded into ${esc(res.keptName)}.
-            ${res.reservationsMoved} reservation${res.reservationsMoved === 1 ? '' : 's'} moved.</div>`;
-          await load();
-        } catch (e) { showError(err, e); btn.disabled = false; }
-      });
-    });
-  }
-
-  drawList();
-}
-
-/** What the tabs and the search box leave showing. */
 function visible() {
   const q = search.value.trim().toLowerCase();
   return cache.filter((v) => {
-    if (favouritesOnly && !v.favourite) return false;
+    if (filter === 'favourites' && !v.favourite) return false;
+    if (filter !== 'all' && filter !== 'favourites' && (v.category || 'Other') !== filter) return false;
     if (!q) return true;
-    // Searched across the things somebody would actually recall: the name,
-    // who their manager is, and the account number on the paperwork.
+    // Searched across what somebody would actually recall: the name, their
+    // manager, and the account number on the paperwork.
     return [v.name, v.bdm_name, v.account_number, v.category]
       .some((x) => String(x || '').toLowerCase().includes(q));
   });
 }
 
-function contactLine(v) {
-  const bits = [];
-  if (v.bdm_name) bits.push(esc(v.bdm_name));
-  if (v.trips) bits.push(`${v.trips} trip${v.trips === 1 ? '' : 's'}`);
-  if (!bits.length && v.final_days) bits.push(`balance ${v.final_days}d out`);
-  return bits.join(' · ');
+function drawRail() {
+  const counts = new Map();
+  for (const v of cache) {
+    const k = v.category || 'Other';
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const favs = cache.filter((v) => v.favourite).length;
+  const order = [...counts.keys()].sort((a, b) => (
+    a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)));
+
+  const item = (key, label, n) => `<li><button data-filter="${esc(key)}"
+    aria-pressed="${filter === key ? 'true' : 'false'}">
+    <span>${esc(label)}</span><span class="n">${n}</span></button></li>`;
+
+  rail.innerHTML = `
+    <ul style="margin-bottom:1rem;">
+      ${item('all', 'Everyone', cache.length)}
+      ${item('favourites', 'Starred', favs)}
+    </ul>
+    <h3>Categories</h3>
+    <ul>${order.map((c) => item(c, c, counts.get(c))).join('')}</ul>`;
+
+  rail.querySelectorAll('[data-filter]').forEach((b) => {
+    b.addEventListener('click', () => { filter = b.dataset.filter; drawRail(); drawList(); });
+  });
 }
 
 function starButton(v) {
   // Only on your own vendors. An owner reading the agency sees every advisor's
   // suppliers, and starring one of those fails: favourites live on the vendor
   // row and the row belongs to somebody else. A star that cannot work is worse
-  // than no star, so it is not offered, the same way Edit is not.
+  // than no star.
   if (v.user_id !== ME) return '';
   return `<button class="star" data-star="${esc(v.id)}" aria-pressed="${v.favourite ? 'true' : 'false'}"
-    title="${v.favourite ? 'Remove from favourites' : 'Add to favourites'}"
     aria-label="${v.favourite ? 'Remove' : 'Add'} ${esc(v.name)} ${v.favourite ? 'from' : 'to'} favourites"
-    >${v.favourite ? '\u2605' : '\u2606'}</button>`;
+    >${v.favourite ? '★' : '☆'}</button>`;
+}
+
+function subLine(v) {
+  const bits = [];
+  if (v.bdm_name) bits.push(esc(v.bdm_name));
+  if (v.trips) bits.push(`${v.trips} trip${v.trips === 1 ? '' : 's'}`);
+  else if (v.final_days) bits.push(`balance ${v.final_days}d out`);
+  return bits.join(' · ');
 }
 
 function drawList() {
   const rows = visible();
 
   if (!rows.length) {
-    panel.innerHTML = favouritesOnly
-      ? `<div class="empty"><h3>No favourites yet</h3>
-          <p>Star a vendor and it will be waiting here.</p></div>`
-      : cache.length
-        ? `<div class="empty"><h3>Nothing matches</h3><p>No vendor by that name.</p></div>`
-        // Said "a vendor record appears the first time you book one", which
-        // stopped being the whole truth the moment Add Vendor existed and left
-        // an empty directory telling you to go and book something.
-        : `<div class="empty"><h3>No vendors yet</h3>
-            <p>Add the suppliers you sell, or book one and it will appear here on its own.</p>
-            <button class="btn btn-primary" type="button" id="empty-add">+ Add Vendor</button></div>`;
-    const emptyAdd = document.getElementById('empty-add');
-    if (emptyAdd) emptyAdd.addEventListener('click', () => document.getElementById('add-vendor').click());
+    panel.innerHTML = cache.length
+      ? '<div class="empty"><h3>Nothing here</h3><p>No supplier matches that.</p></div>'
+      // Said "a vendor record appears the first time you book one", which
+      // stopped being true the moment adding one by hand was possible.
+      : `<div class="empty"><h3>No vendors yet</h3>
+          <p>Paste in a supplier list, add them one at a time, or book one and it will
+            appear here on its own.</p></div>`;
     return;
   }
 
-  panel.innerHTML = view.value === 'table' ? tableView(rows) : hubView(rows);
-  wireRows();
-}
-
-function hubView(rows) {
-  // Grouped onto shelves. A vendor with no category is not hidden; it lands in
-  // Other, because a directory that quietly omits things is worse than untidy.
-  const groups = new Map();
-  for (const v of rows) {
-    const key = v.category || 'Other';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(v);
-  }
-  const order = [...groups.keys()].sort((a, b) => (
-    a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)));
-
-  return `<div class="card-pad"><div class="hub-grid">${order.map((cat) => `
-    <div class="shelf">
-      <h3>${esc(cat)}<span class="count">${groups.get(cat).length}</span></h3>
-      <ul>${groups.get(cat)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((v) => `<li>
-          <span class="who">
-            <a class="nm name" href="#" data-open="${esc(v.id)}">${esc(v.name)}</a>
-            ${contactLine(v) ? `<span class="sub">${contactLine(v)}</span>` : ''}
-          </span>
-          ${starButton(v)}
-          ${v.user_id === ME
-            ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(v.id)}">Edit</button>` : ''}
-        </li>`).join('')}</ul>
-    </div>`).join('')}</div></div>`;
-}
-
-function tableView(rows) {
-  return `<div class="table-wrap"><table>
-    <thead><tr><th style="width:2rem;"></th><th>Vendor</th><th>Category</th><th>Manager</th>
-      <th>Terms</th><th class="num">Trips</th><th class="num">Volume</th>
-      <th class="num">Commission</th><th></th></tr></thead>
-    <tbody>${rows.map((v) => `<tr>
-      <td>${starButton(v)}</td>
-      <td><a class="name" href="#" data-open="${esc(v.id)}">${esc(v.name)}</a>
-        ${v.portal_url ? `<div><a class="muted" href="${esc(v.portal_url)}"
-          target="_blank" rel="noopener noreferrer">advisor website</a></div>` : ''}</td>
-      <td>${esc(v.category || '')}</td>
-      <td>${esc(v.bdm_name || '')}${v.bdm_email
-        ? `<div><a class="muted" href="mailto:${esc(v.bdm_email)}">${esc(v.bdm_email)}</a></div>` : ''}</td>
-      <td>${v.final_days
-        ? `balance ${v.final_days}d before departure`
-        : '<span class="muted">not recorded</span>'}
-        ${v.undated ? `<div class="muted">${v.undated} trip${v.undated === 1 ? '' : 's'} with no date</div>` : ''}</td>
-      <td class="num">${v.trips}</td>
-      <td class="num">${money(v.gross_cents)}</td>
-      <td class="num">${money(v.commission_cents)}</td>
-      <td class="num">${v.user_id === ME
-        ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(v.id)}">Edit</button>`
-        : '<span class="muted">view only</span>'}</td>
-    </tr>`).join('')}</tbody></table></div>`;
-}
-
-function wireRows() {
-  panel.querySelectorAll('[data-edit]').forEach((btn) => {
-    btn.addEventListener('click', () => openEdit(cache.find((v) => v.id === btn.dataset.edit)));
-  });
-
-  // The name opens the record. Reading a vendor is what this page is for, and
-  // an owner looking at an associate's supplier can read it without being
-  // offered an edit form they cannot save.
-  panel.querySelectorAll('[data-open]').forEach((a) => {
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      openDetail(cache.find((v) => v.id === a.dataset.open));
-    });
-  });
+  panel.innerHTML = `<ul class="v-list">${rows
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((v) => `<li class="v-row">
+      <span class="v-mark">${esc(initials(v.name))}</span>
+      <span class="who">
+        <a class="name" href="/app/vendor?id=${encodeURIComponent(v.id)}">${esc(v.name)}</a>
+        ${subLine(v) ? `<span class="sub">${subLine(v)}</span>` : ''}
+      </span>
+      ${filter === 'all' || filter === 'favourites'
+        ? `<span class="cat">${esc(v.category || '')}</span>` : ''}
+      ${starButton(v)}
+    </li>`).join('')}</ul>`;
 
   panel.querySelectorAll('[data-star]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const v = cache.find((x) => x.id === btn.dataset.star);
       if (!v) return;
       const next = !v.favourite;
-      // Moved before the request so the star answers the click straight away,
-      // and put back if the save fails rather than lying about what is stored.
+      // Moved before the request so the star answers the click at once, and put
+      // back if the save fails rather than lying about what is stored.
       v.favourite = next ? 1 : 0;
       btn.setAttribute('aria-pressed', next ? 'true' : 'false');
-      btn.textContent = next ? '\u2605' : '\u2606';
+      btn.textContent = next ? '★' : '☆';
       try {
         await api(`/api/vendors/${encodeURIComponent(v.id)}/favourite`,
           { method: 'POST', body: { favourite: next } });
-        if (favouritesOnly && !next) drawList();
+        drawRail();
+        if (filter === 'favourites' && !next) drawList();
       } catch (e) {
         v.favourite = next ? 0 : 1;
         btn.setAttribute('aria-pressed', next ? 'false' : 'true');
-        btn.textContent = next ? '\u2606' : '\u2605';
+        btn.textContent = next ? '☆' : '★';
         showError(err, e);
       }
     });
   });
 }
 
-// Phone rows are held in the DOM rather than in a variable, so what is on
-// screen is what gets saved. One list, not two.
-function phoneRow(label = '', number = '') {
-  const row = document.createElement('div');
-  row.className = 'field-row phone-row';
-  row.style.alignItems = 'flex-end';
-  row.innerHTML = `
-    <div class="field" style="margin:0;flex:1;"><label>What it is</label>
-      <input class="p-label" maxlength="40" placeholder="Reservations"></div>
-    <div class="field" style="margin:0;flex:1;"><label>Number</label>
-      <input class="p-number" type="tel" maxlength="40"></div>
-    <button class="btn btn-ghost btn-sm" type="button" data-drop-phone>Remove</button>`;
-  row.querySelector('.p-label').value = label;
-  row.querySelector('.p-number').value = number;
-  row.querySelector('[data-drop-phone]').addEventListener('click', () => row.remove());
-  return row;
+function render(data) {
+  cache = data.vendors;
+  categories = data.categories || [];
+  const s = data.stats;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Suppliers</p><p class="value">${s.total}</p>
+      <p class="meta">${s.unused} with nothing booked</p></div>
+    <div class="stat"><p class="label">Starred</p><p class="value">${s.favourites}</p>
+      <p class="meta">The ones you actually sell</p></div>
+    <div class="stat"><p class="label">With terms recorded</p><p class="value">${s.withTerms}</p>
+      <p class="meta">Can suggest a final payment date</p></div>
+    ${data.truncated ? `<div class="stat"><p class="label">Showing</p>
+      <p class="value">${cache.length}</p>
+      <p class="meta">More exist than this page will list</p></div>` : ''}`;
+
+  drawDupes(s);
+  drawRail();
+  drawList();
 }
 
-function drawPhones(list) {
-  const box = document.getElementById('phones');
-  box.innerHTML = '';
-  for (const p of list || []) box.appendChild(phoneRow(p.label, p.number));
+function drawDupes(s) {
+  const card = document.getElementById('dupe-card');
+  const groups = s.possibleDuplicates || [];
+  card.hidden = !groups.length;
+  if (!groups.length) return;
+
+  document.getElementById('dupes').innerHTML = groups.map((group, gi) => `
+    <div style="padding:.5rem 0;border-bottom:1px solid var(--navy-100);">
+      ${group.map((v, i) => `<label style="display:block;padding:.15rem 0;">
+        <input type="radio" name="keep-${gi}" value="${esc(v.id)}"${i === 0 ? ' checked' : ''}>
+        ${esc(v.name)} <span class="muted">${v.trips} trip${v.trips === 1 ? '' : 's'}</span>
+      </label>`).join('')}
+      <button class="btn btn-secondary btn-sm" data-merge="${gi}">Keep the ticked one</button>
+    </div>`).join('');
+
+  document.querySelectorAll('[data-merge]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const gi = Number(btn.dataset.merge);
+      const group = groups[gi];
+      const keep = document.querySelector(`input[name="keep-${gi}"]:checked`).value;
+      const drop = group.map((v) => v.id).filter((x) => x !== keep);
+      btn.disabled = true;
+      try {
+        const res = await api('/api/vendors/merge', { method: 'POST', body: { keep, drop } });
+        err.innerHTML = `<div class="notice notice-ok">Folded into ${esc(res.keptName)}.
+          ${res.reservationsMoved} reservation${res.reservationsMoved === 1 ? '' : 's'} moved.</div>`;
+        await load();
+      } catch (e) { showError(err, e); btn.disabled = false; }
+    });
+  });
 }
 
-function readPhones() {
-  return [...document.querySelectorAll('#phones .phone-row')]
-    .map((r) => ({
-      label: r.querySelector('.p-label').value.trim(),
-      number: r.querySelector('.p-number').value.trim(),
-    }))
-    .filter((p) => p.number);
-}
+// --------------------------------------------------------------- importing --
 
-function parsePhones(v) {
-  try { const a = JSON.parse(v.phones_json || '[]'); return Array.isArray(a) ? a : []; }
-  catch { return []; }
-}
+const importCard = document.getElementById('import-card');
+const importResult = document.getElementById('import-result');
+const runBtn = document.getElementById('import-run');
 
-document.getElementById('add-phone').addEventListener('click', () => {
-  document.getElementById('phones').appendChild(phoneRow());
+document.getElementById('import-open').addEventListener('click', () => {
+  importCard.hidden = false;
+  document.getElementById('paste').focus();
+});
+document.getElementById('import-close').addEventListener('click', () => {
+  importCard.hidden = true;
+  importResult.innerHTML = '';
+  runBtn.hidden = true;
 });
 
-/** A blank form, for a vendor that has not been booked yet. */
+document.getElementById('import-preview').addEventListener('click', async () => {
+  const text = document.getElementById('paste').value;
+  if (!text.trim()) return;
+  importResult.innerHTML = '<p class="spinner">Reading...</p>';
+  runBtn.hidden = true;
+  try {
+    const r = await api('/api/vendors/import', { method: 'POST', body: { text } });
+    const cats = Object.entries(r.byCategory || {}).sort((a, b) => b[1] - a[1]);
+    importResult.innerHTML = `
+      <div class="notice notice-info" style="margin-top:.8rem;">
+        <strong>${r.add} to add</strong>${r.update ? `, ${r.update} to fill in` : ''}${
+          r.unchanged ? `, ${r.unchanged} already on your list` : ''}.
+        ${r.duplicateCount
+          ? `<div class="muted" style="margin-top:.4rem;">${r.duplicateCount} name${
+              r.duplicateCount === 1 ? ' appears' : 's appear'} under more than one heading and
+              will be filed under the first: ${r.duplicates.slice(0, 6)
+                .map((x) => esc(x.name)).join(', ')}${r.duplicateCount > 6 ? ' and others' : ''}.</div>`
+          : ''}
+        ${cats.length ? `<div class="muted" style="margin-top:.4rem;">${
+          cats.map(([c, n]) => `${esc(c)} ${n}`).join(' · ')}</div>` : ''}
+      </div>`;
+    runBtn.hidden = r.add === 0 && r.update === 0;
+  } catch (e) { showError(importResult, e); }
+});
+
+runBtn.addEventListener('click', async () => {
+  const text = document.getElementById('paste').value;
+  runBtn.disabled = true;
+  try {
+    const r = await api('/api/vendors/import', { method: 'POST', body: { text, commit: true } });
+    importCard.hidden = true;
+    importResult.innerHTML = '';
+    runBtn.hidden = true;
+    document.getElementById('paste').value = '';
+    err.innerHTML = `<div class="notice notice-ok">Added ${r.added} supplier${
+      r.added === 1 ? '' : 's'}${r.updated ? `, filled in ${r.updated}` : ''}.</div>`;
+    await load();
+  } catch (e) { showError(importResult, e); }
+  finally { runBtn.disabled = false; }
+});
+
+// ------------------------------------------------------------- adding one --
+
 document.getElementById('add-vendor').addEventListener('click', () => {
   form.reset();
-  delete form.dataset.id;
-  document.getElementById('dlg-title').textContent = 'Add a Vendor';
-  document.getElementById('save-vendor').textContent = 'Save Vendor';
-  document.getElementById('delete-vendor').hidden = true;
   form.querySelector('.notice-error').hidden = true;
-  const catSel = form.elements.category;
-  catSel.innerHTML = `<option value="">Uncategorised</option>${
+  form.elements.category.innerHTML = `<option value="">Uncategorised</option>${
     categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}`;
-  drawPhones([]);
-  document.getElementById('tiers').innerHTML =
-    '<p class="muted">Cancellation terms can be added once the vendor is saved.</p>';
   dlg.showModal();
   form.elements.name.focus();
 });
+document.getElementById('close').addEventListener('click', () => dlg.close());
 
-document.getElementById('delete-vendor').addEventListener('click', async () => {
-  const id = form.dataset.id;
-  const v = cache.find((x) => x.id === id);
-  if (!v) return;
-  // Says what will happen to the trips, because "delete" on a vendor with
-  // reservations under it reads like it might take them too.
-  const warn = v.trips
-    ? `Delete ${v.name}? Its ${v.trips} reservation${v.trips === 1 ? '' : 's'} will be kept, `
-      + 'still showing this supplier name.'
-    : `Delete ${v.name}?`;
-  if (!confirm(warn)) return;
-  try {
-    await api(`/api/vendors/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    dlg.close();
-    await load();
-  } catch (e) { showError(err, e); }
+onSubmit(form, async (values) => {
+  const created = await api('/api/vendors', { method: 'POST', body: values });
+  dlg.close();
+  // Straight to the record, since the rest of what a vendor holds lives there.
+  location.href = `/app/vendor?id=${encodeURIComponent(created.id)}`;
 });
 
-const detail = document.getElementById('detail');
-let detailId = null;
-let detailTab = 'overview';
-
-const para = (t) => `<p style="white-space:pre-wrap;margin:0;">${esc(t)}</p>`;
-
-function detailBody(v) {
-  if (detailTab === 'commission') {
-    return v.commission_structure
-      ? para(v.commission_structure)
-      : `<p class="muted">No commission structure recorded.${
-          v.commission_pct ? ` The rate on file is ${v.commission_pct}%.` : ''}</p>`;
-  }
-  if (detailTab === 'registration') {
-    return v.registration_instructions
-      ? para(v.registration_instructions)
-        + (v.signup_url ? `<p style="margin:.8rem 0 0;"><a href="${esc(v.signup_url)}"
-            target="_blank" rel="noopener noreferrer">Registration page</a></p>` : '')
-      : v.signup_url
-        ? `<p><a href="${esc(v.signup_url)}" target="_blank" rel="noopener noreferrer">Registration page</a></p>`
-        : '<p class="muted">No registration instructions recorded.</p>';
-  }
-
-  const phones = parsePhones(v);
-  const line = (label, value) => (value
-    ? `<div class="row-between" style="padding:.4rem 0;border-bottom:1px solid var(--navy-50,#eef1f5);">
-        <span class="muted">${esc(label)}</span><span>${value}</span></div>`
-    : '');
-  const mail = (a) => `<a href="mailto:${esc(a)}">${esc(a)}</a>`;
-  const web = (u, text) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
-  const tel = (n) => `<a href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">${esc(n)}</a>`;
-
-  return `
-    ${line('Category', v.category ? esc(v.category) : '')}
-    ${phones.map((p) => line(p.label || 'Phone', tel(p.number))).join('')}
-    ${line('Agent phone', v.phone ? tel(v.phone) : '')}
-    ${line('Agent email', v.email ? mail(v.email) : '')}
-    ${line('Advisor website', v.portal_url ? web(v.portal_url, 'Open') : '')}
-    ${line('Client website', v.website ? web(v.website, 'Open') : '')}
-    ${line('BDM name', v.bdm_name ? esc(v.bdm_name) : '')}
-    ${line('BDM phone', v.bdm_phone ? tel(v.bdm_phone) : '')}
-    ${line('BDM email', v.bdm_email ? mail(v.bdm_email) : '')}
-    ${line('Agency account number', v.account_number ? esc(v.account_number) : '')}
-    ${line('Balance due', v.final_days ? `${v.final_days} days before departure` : '')}
-    ${line('Reservations', v.trips ? String(v.trips) : '')}
-    ${v.notes ? `<p class="label" style="margin:1rem 0 .3rem;">Notes</p>${para(v.notes)}` : ''}`;
-}
-
-function drawDetail() {
-  const v = cache.find((x) => x.id === detailId);
-  if (!v) return;
-  document.getElementById('d-name').textContent = v.name;
-  document.getElementById('d-edit').hidden = v.user_id !== ME;
-  document.querySelectorAll('[data-dtab]').forEach((b) => {
-    const on = b.dataset.dtab === detailTab;
-    b.className = `btn btn-sm ${on ? 'btn-secondary' : 'btn-ghost'}`;
-  });
-  document.getElementById('d-body').innerHTML = detailBody(v);
-}
-
-function openDetail(v) {
-  if (!v) return;
-  detailId = v.id;
-  detailTab = 'overview';
-  drawDetail();
-  detail.showModal();
-}
-
-document.querySelectorAll('[data-dtab]').forEach((b) => {
-  b.addEventListener('click', () => { detailTab = b.dataset.dtab; drawDetail(); });
-});
-document.getElementById('d-close').addEventListener('click', () => detail.close());
-document.getElementById('d-edit').addEventListener('click', () => {
-  detail.close();
-  openEdit(cache.find((x) => x.id === detailId));
-});
-
-function openEdit(v) {
-  if (!v) return;
-  form.dataset.id = v.id;
-  document.getElementById('save-vendor').textContent = 'Save Changes';
-  document.getElementById('delete-vendor').hidden = false;
-  document.getElementById('dlg-title').textContent = v.name;
-  form.querySelector('.notice-error').hidden = true;
-  const set = (n, val) => { const el = form.elements[n]; if (el) el.value = val ?? ''; };
-  set('name', v.name); set('finalDays', v.final_days); set('depositDays', v.deposit_days);
-  set('commissionPct', v.commission_pct); set('phone', v.phone); set('email', v.email);
-  set('portalUrl', v.portal_url); set('notes', v.notes);
-  const catSel = form.elements.category;
-  catSel.innerHTML = `<option value="">Uncategorised</option>${
-    categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}`;
-  catSel.value = v.category || '';
-  set('website', v.website); set('signupUrl', v.signup_url);
-  set('accountNumber', v.account_number);
-  set('bdmName', v.bdm_name); set('bdmEmail', v.bdm_email); set('bdmPhone', v.bdm_phone);
-  set('commissionStructure', v.commission_structure);
-  set('registrationInstructions', v.registration_instructions);
-  drawPhones(parsePhones(v));
-  drawTiers(v.id);
-  dlg.showModal();
-}
-
-/**
- * A vendor's standard cancellation schedule.
- *
- * Listed newest window last, earliest period first, because that is the order
- * a confirmation prints them and copying between two differently ordered lists
- * is how a tier ends up in the wrong place.
- */
-async function drawTiers(vendorId) {
-  const box = document.getElementById('tiers');
-  const err = document.getElementById('tier-error');
-  err.hidden = true;
-  box.innerHTML = '<p class="spinner">Loading...</p>';
-
-  let rows = [];
-  try {
-    const r = await api(`/api/penalties?vendor=${encodeURIComponent(vendorId)}`);
-    rows = r.tiers || [];
-  } catch (e) { box.innerHTML = `<p class="wempty">${esc(e.message)}</p>`; return; }
-
-  box.innerHTML = rows.length
-    ? `<div class="table-wrap"><table>
-        <thead><tr><th>From</th><th>Penalty</th><th></th></tr></thead>
-        <tbody>${rows.map((t) => `<tr>
-          <td>${t.from_days} days before${t.note ? `<div class="muted">${esc(t.note)}</div>` : ''}</td>
-          <td>${t.pct !== null && t.pct !== undefined ? esc(String(t.pct)) + '%' : money(t.amount_cents)}</td>
-          <td class="num"><button class="btn btn-ghost btn-sm" data-drop="${esc(t.id)}">Remove</button></td>
-        </tr>`).join('')}</tbody></table></div>`
-    : '<p class="wempty" style="text-align:left;padding:.4rem 0;">No schedule recorded.</p>';
-
-  box.querySelectorAll('[data-drop]').forEach((b) => b.addEventListener('click', async () => {
-    b.disabled = true;
-    try { await api(`/api/penalties/${encodeURIComponent(b.dataset.drop)}`, { method: 'DELETE' }); }
-    catch (e) { err.textContent = e.message; err.hidden = false; b.disabled = false; return; }
-    drawTiers(vendorId);
-  }));
-
-  const add = document.getElementById('t-add');
-  add.onclick = async () => {
-    const err2 = document.getElementById('tier-error');
-    err2.hidden = true;
-    add.disabled = true;
-    try {
-      await api('/api/penalties', { method: 'POST', body: {
-        vendorId,
-        fromDays: document.getElementById('t-days').value,
-        pct: document.getElementById('t-pct').value,
-        amount: document.getElementById('t-amount').value,
-        note: document.getElementById('t-note').value,
-      } });
-      for (const f of ['t-days', 't-pct', 't-amount', 't-note']) document.getElementById(f).value = '';
-      drawTiers(vendorId);
-    } catch (e) { err2.textContent = e.message; err2.hidden = false; }
-    finally { add.disabled = false; }
-  };
-}
+// ------------------------------------------------------------ suggestions --
 
 async function offerDates() {
-  let d;
-  try { d = await api('/api/vendors/suggest-dates'); } catch { return; }
+  let s;
+  try { s = await api('/api/vendors/suggest-dates'); } catch { return; }
   const card = document.getElementById('suggest-card');
-  card.hidden = !d.suggestions.length;
-  if (!d.suggestions.length) return;
+  card.hidden = !s.suggestions.length;
+  if (!s.suggestions.length) return;
 
-  document.getElementById('suggested').innerHTML = `
-    <p class="field-hint" style="padding:0 1.25rem;margin:0 0 .8rem;">
-      Worked out from each vendor's standard terms. A guess, not a fact: a group, a promotion or a
-      late booking all move the real date, so check anything that matters before relying on it.</p>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Client</th><th>Vendor</th><th>Departing</th><th>Balance due</th></tr></thead>
-      <tbody>${d.suggestions.map((sg) => `<tr>
-        <td><a class="name" href="/app/reservation?id=${esc(sg.id)}">${esc(sg.clientName)}</a></td>
-        <td>${esc(sg.vendor)}<div class="muted">${sg.finalDays}d before</div></td>
-        <td>${esc(dateFmt(sg.departDate))}</td>
-        <td>${esc(dateFmt(sg.suggested))}
-          ${sg.alreadyPassed ? '<div><span class="badge badge-red">already passed</span></div>' : ''}</td>
-      </tr>`).join('')}</tbody></table></div>`;
+  document.getElementById('suggested').innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Client</th><th>Vendor</th><th>Departs</th><th>Final payment</th></tr></thead>
+    <tbody>${s.suggestions.map((x) => `<tr>
+      <td>${esc(x.clientName)}</td><td>${esc(x.vendor)}</td>
+      <td>${esc(x.departDate)}</td><td>${esc(x.finalPaymentDue)}</td>
+    </tr>`).join('')}</tbody></table></div>`;
 
-  document.getElementById('apply-dates').onclick = async () => {
-    const btn = document.getElementById('apply-dates');
-    btn.disabled = true;
-    let done = 0;
+  document.getElementById('apply-dates').onclick = async (e) => {
+    e.target.disabled = true;
     try {
-      for (const sg of d.suggestions) {
-        await api(`/api/bookings/${encodeURIComponent(sg.id)}/quick`,
-          { method: 'POST', body: { finalPaymentDue: sg.suggested } });
-        done += 1;
-      }
-      err.innerHTML = `<div class="notice notice-ok">${done} final payment date${done === 1 ? '' : 's'} set.</div>`;
+      const r = await api('/api/vendors/suggest-dates', { method: 'POST', body: { apply: true } });
+      err.innerHTML = `<div class="notice notice-ok">${r.applied} date${
+        r.applied === 1 ? '' : 's'} set.</div>`;
+      card.hidden = true;
       await load();
-    } catch (e) { showError(err, e); }
-    finally { btn.disabled = false; }
+    } catch (e2) { showError(err, e2); e.target.disabled = false; }
   };
 }
+
+search.addEventListener('input', () => drawList());
 
 async function load() {
   try {
-    const d = await api(`/api/vendors${advisorParam() ? '?' + advisorParam() : ''}`);
-    categories = d.categories || [];
-    mountScopePicker(document.getElementById('scope'), d, load);
-    render(d);
+    const data = await api(`/api/vendors${advisorParam() ? '?' + advisorParam() : ''}`);
+    mountScopePicker(document.getElementById('scope'), data, load);
+    render(data);
     await offerDates();
   } catch (e) { showError(panel, e); }
 }
-
-document.getElementById('close').addEventListener('click', () => dlg.close());
-document.getElementById('cancel').addEventListener('click', () => dlg.close());
-
-onSubmit(form, async (values) => {
-  const body = { ...values, phones: readPhones() };
-  if (form.dataset.id) {
-    await api(`/api/vendors/${encodeURIComponent(form.dataset.id)}`, { method: 'PUT', body });
-  } else {
-    await api('/api/vendors', { method: 'POST', body });
-  }
-  dlg.close();
-  await load();
-});
 
 await load();
 </script>

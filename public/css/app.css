@@ -110,6 +110,14 @@ input, select, textarea {
   width: 100%; font: inherit; color: var(--ink-900); background: #fff;
   border: 1px solid var(--navy-200); border-radius: 9px; padding: .55rem .7rem;
 }
+/* A tick box is not a text field. The rule above stretched every radio and
+   checkbox to the width of its container, which drew the dot in the middle of
+   the row with its label stranded at the left edge. Places that noticed had
+   each set width:auto themselves; this fixes the ones that did not. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; padding: 0; border-radius: 0; vertical-align: middle;
+}
+
 input:focus, select:focus, textarea:focus { border-color: var(--navy-400); outline-offset: 1px; }
 textarea { min-height: 90px; resize: vertical; }
 .field { margin-bottom: 1rem; }

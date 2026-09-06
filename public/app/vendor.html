@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendor | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  /* One supplier, read top to bottom. Deliberately not a grid of boxes: this
+     is a record you open to find a phone number, so the things you reach for
+     sit above the things you rarely need. */
+  .v-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+  .v-mark {
+    width: 52px; height: 52px; flex: none; border-radius: 10px;
+    background: var(--navy-600, #1b3a5f); color: #fff;
+    display: grid; place-items: center; font-size: 1.25rem; font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .v-title { flex: 1; min-width: 12rem; }
+  .v-title h1 { margin: 0 0 .2rem; }
+  .v-meta { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+
+  .star {
+    background: none; border: 0; cursor: pointer; font-size: 1.3rem; line-height: 1;
+    padding: .2rem .3rem; border-radius: 4px; color: var(--navy-200, #c3ccd8);
+  }
+  .star[aria-pressed="true"] { color: var(--amber-600, #b7791f); }
+  .star:focus-visible { outline: 2px solid var(--navy-600); outline-offset: 1px; }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 1.5rem; }
+  .fact { padding: .55rem 0; border-bottom: 1px solid var(--navy-50, #eef1f5); }
+  .fact dt {
+    font-size: .7rem; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--navy-400, #7b8798); margin: 0 0 .15rem;
+  }
+  .fact dd { margin: 0; font-size: .95rem; }
+  .prose { white-space: pre-wrap; margin: 0; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <p class="sub" style="margin:0 0 .2rem;"><a href="/app/vendors">Vendors</a></p>
+        <h1 id="crumb">Vendor</h1>
+      </div>
+      <span id="actions"></span>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <div id="panel"><p class="spinner">Loading...</p></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, money, dateFmt, showError, onSubmit } from '/js/app.js';
+const ME = (await mountShell()).id;
+
+const params = new URLSearchParams(location.search);
+const id = params.get('id');
+const err = document.getElementById('err');
+const panel = document.getElementById('panel');
+let d = null;
+let editing = false;
+
+const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '');
+const initials = (name) => String(name || '?').replace(/[^A-Za-z ]/g, '').trim()
+  .split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
+
+function parsePhones(v) {
+  try { const a = JSON.parse(v.phones_json || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+
+const tel = (n) => `<a href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">${esc(n)}</a>`;
+const mail = (a) => `<a href="mailto:${esc(a)}">${esc(a)}</a>`;
+const web = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`;
+
+function fact(label, value) {
+  return value
+    ? `<div class="fact"><dt>${esc(label)}</dt><dd>${value}</dd></div>`
+    : '';
+}
+
+function readView() {
+  const v = d.vendor;
+  const phones = parsePhones(v);
+  const t = d.totals;
+
+  return `
+    <section class="card">
+      <div class="card-pad">
+        <dl class="facts" style="margin:0;">
+          ${phones.map((p) => fact(p.label || 'Phone', tel(p.number))).join('')}
+          ${fact('Agent phone', v.phone ? tel(v.phone) : '')}
+          ${fact('Agent email', v.email ? mail(v.email) : '')}
+          ${fact('Advisor website', v.portal_url ? web(v.portal_url, 'Open') : '')}
+          ${fact('Client website', v.website ? web(v.website, 'Open') : '')}
+          ${fact('Agency account number', v.account_number ? esc(v.account_number) : '')}
+          ${fact('Balance due', v.final_days ? `${v.final_days} days before departure` : '')}
+          ${fact('Deposit due', v.deposit_days ? `${v.deposit_days} days after booking` : '')}
+          ${fact('Usual commission', v.commission_pct ? `${v.commission_pct}%` : '')}
+        </dl>
+        ${phones.length || v.phone || v.email || v.portal_url || v.account_number
+          ? '' : '<p class="muted" style="margin:0;">Nothing recorded yet. Use Edit to fill this in.</p>'}
+      </div>
+    </section>
+
+    ${v.bdm_name || v.bdm_email || v.bdm_phone ? `
+    <section class="card" style="margin-top:1.25rem;">
+      <div class="card-head"><h2>Business development manager</h2></div>
+      <div class="card-pad">
+        <dl class="facts" style="margin:0;">
+          ${fact('Name', v.bdm_name ? esc(v.bdm_name) : '')}
+          ${fact('Phone', v.bdm_phone ? tel(v.bdm_phone) : '')}
+          ${fact('Email', v.bdm_email ? mail(v.bdm_email) : '')}
+        </dl>
+      </div>
+    </section>` : ''}
+
+    ${v.commission_structure ? `
+    <section class="card" style="margin-top:1.25rem;">
+      <div class="card-head"><h2>Commission</h2></div>
+      <div class="card-pad"><p class="prose">${esc(v.commission_structure)}</p></div>
+    </section>` : ''}
+
+    ${v.registration_instructions || v.signup_url ? `
+    <section class="card" style="margin-top:1.25rem;">
+      <div class="card-head"><h2>Registering</h2></div>
+      <div class="card-pad">
+        ${v.registration_instructions ? `<p class="prose">${esc(v.registration_instructions)}</p>` : ''}
+        ${v.signup_url ? `<p style="margin:.7rem 0 0;">${web(v.signup_url, 'Registration page')}</p>` : ''}
+      </div>
+    </section>` : ''}
+
+    ${v.notes ? `
+    <section class="card" style="margin-top:1.25rem;">
+      <div class="card-head"><h2>Notes</h2></div>
+      <div class="card-pad"><p class="prose">${esc(v.notes)}</p></div>
+    </section>` : ''}
+
+    <section class="card" style="margin-top:1.25rem;">
+      <div class="card-head"><h2>Cancellation terms</h2></div>
+      <div class="card-pad">
+        <p class="field-hint" style="margin-top:0;">Their standard schedule, copied onto a
+          reservation when you book it. A trip keeps the terms it was sold on, so changing these
+          never rewrites what a client already agreed to.</p>
+        <div id="tiers"><p class="spinner">Loading...</p></div>
+        ${d.canEdit ? `
+        <div class="field-row" style="align-items:flex-end;margin-top:.6rem;">
+          <div class="field" style="margin:0;"><label for="t-days">Days before</label>
+            <input id="t-days" inputmode="numeric" placeholder="89"></div>
+          <div class="field" style="margin:0;"><label for="t-pct">Percent</label>
+            <input id="t-pct" inputmode="decimal" placeholder="50"></div>
+          <div class="field" style="margin:0;"><label for="t-amount">or Amount</label>
+            <input id="t-amount" inputmode="decimal" placeholder="600.00"></div>
+          <div class="field" style="margin:0;flex:2;"><label for="t-note">What they call it</label>
+            <input id="t-note" maxlength="160" placeholder="Deposit forfeit"></div>
+          <!-- .field-row is a grid, so a plain button stretches the whole
+               column. justify-self, not flex, is what sizes a grid item. -->
+          <button class="btn btn-secondary btn-sm" type="button" id="t-add"
+            style="justify-self:start;">Add</button>
+        </div>
+        <div class="notice notice-error" id="tier-error" hidden></div>` : ''}
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:1.25rem;">
+      <div class="card-head"><h2>Sold through this vendor</h2>
+        <span class="muted">${t.trips} trip${t.trips === 1 ? '' : 's'} ·
+          ${money(t.grossCents)} · ${money(t.commissionCents)} commission</span></div>
+      ${d.bookings.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Trip</th><th>Departs</th><th>Status</th>
+          <th class="num">Value</th></tr></thead>
+        <tbody>${d.bookings.map((b) => `<tr>
+          <td><a class="name" href="/app/reservation?id=${esc(b.id)}">${esc(b.client_name)}</a>
+            <div class="muted">${esc(b.confirmation_number || '')}</div></td>
+          <td>${esc(b.product_name || '')}</td>
+          <td>${esc(short(b.depart_date))}</td>
+          <td>${esc(b.status)}</td>
+          <td class="num">${money(b.gross_cents)}</td>
+        </tr>`).join('')}</tbody></table></div>`
+        : '<p class="wempty">No reservations with this vendor yet.</p>'}
+    </section>`;
+}
+
+function editView() {
+  const v = d.vendor;
+  const phones = parsePhones(v);
+  const val = (x) => esc(x ?? '');
+
+  return `
+    <form id="vendor-form">
+      <section class="card">
+        <div class="card-head"><h2>Details</h2></div>
+        <div class="card-pad">
+          <div class="notice notice-error" hidden></div>
+          <div class="field-row">
+            <div class="field"><label for="name">Vendor name</label>
+              <input id="name" name="name" maxlength="120" required value="${val(v.name)}">
+              <p class="field-hint">Renaming carries every reservation with it, so reports stay
+                in one row.</p></div>
+            <div class="field"><label for="category">Category</label>
+              <select id="category" name="category">
+                <option value="">Uncategorised</option>
+                ${d.categories.map((c) => `<option value="${esc(c)}"${
+                  c === v.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+              </select></div>
+          </div>
+
+          <div class="field">
+            <label>Phone numbers</label>
+            <div id="phones"></div>
+            <button class="btn btn-ghost btn-sm" type="button" id="add-phone">Add a number</button>
+            <p class="field-hint">Reservations, groups, after hours. Kept apart so each one
+              stays dialable.</p>
+          </div>
+
+          <div class="field-row">
+            <div class="field"><label for="phone">Agent phone</label>
+              <input id="phone" name="phone" type="tel" maxlength="40" value="${val(v.phone)}"></div>
+            <div class="field"><label for="email">Agent email</label>
+              <input id="email" name="email" type="email" maxlength="160" value="${val(v.email)}"></div>
+          </div>
+
+          <div class="field-row">
+            <div class="field"><label for="portalUrl">Advisor website</label>
+              <input id="portalUrl" name="portalUrl" type="url" value="${val(v.portal_url)}"
+                placeholder="https://..."></div>
+            <div class="field"><label for="website">Client website</label>
+              <input id="website" name="website" type="url" value="${val(v.website)}"
+                placeholder="https://..."></div>
+          </div>
+
+          <div class="field-row">
+            <div class="field"><label for="signupUrl">Where to register</label>
+              <input id="signupUrl" name="signupUrl" type="url" value="${val(v.signup_url)}"
+                placeholder="https://..."></div>
+            <div class="field"><label for="accountNumber">Agency account number</label>
+              <input id="accountNumber" name="accountNumber" maxlength="60"
+                value="${val(v.account_number)}"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:1.25rem;">
+        <div class="card-head"><h2>Business development manager</h2></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin-top:0;">The person to ring when a booking needs a
+            human. It is the reason to open this record at all, so it is worth keeping current.</p>
+          <div class="field-row">
+            <div class="field"><label for="bdmName">Name</label>
+              <input id="bdmName" name="bdmName" maxlength="120" value="${val(v.bdm_name)}"></div>
+            <div class="field"><label for="bdmPhone">Phone</label>
+              <input id="bdmPhone" name="bdmPhone" type="tel" maxlength="40" value="${val(v.bdm_phone)}"></div>
+            <div class="field"><label for="bdmEmail">Email</label>
+              <input id="bdmEmail" name="bdmEmail" type="email" maxlength="160" value="${val(v.bdm_email)}"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:1.25rem;">
+        <div class="card-head"><h2>Terms and what they pay</h2></div>
+        <div class="card-pad">
+          <div class="field-row">
+            <div class="field"><label for="finalDays">Balance due, days before departure</label>
+              <input id="finalDays" name="finalDays" type="number" min="0" max="730"
+                value="${val(v.final_days)}" placeholder="90">
+              <p class="field-hint">Used to suggest a date, never to set one silently.</p></div>
+            <div class="field"><label for="depositDays">Deposit due, days after booking</label>
+              <input id="depositDays" name="depositDays" type="number" min="0" max="365"
+                value="${val(v.deposit_days)}" placeholder="7"></div>
+            <div class="field"><label for="commissionPct">Usual commission (%)</label>
+              <input id="commissionPct" name="commissionPct" type="number" min="0" max="100"
+                step="0.1" value="${val(v.commission_pct)}" placeholder="16"></div>
+          </div>
+          <div class="field"><label for="commissionStructure">Commission, in full</label>
+            <textarea id="commissionStructure" name="commissionStructure" maxlength="4000"
+              placeholder="16% on cruise fare, 10% on air. Bonus paid quarterly.">${val(v.commission_structure)}</textarea>
+            <p class="field-hint">Prose, because a real deal rarely reduces to one percentage.
+              The number above is only used for the arithmetic.</p></div>
+          <div class="field"><label for="registrationInstructions">How to register</label>
+            <textarea id="registrationInstructions" name="registrationInstructions" maxlength="4000"
+              placeholder="Who to ask, what they need, how long it takes">${val(v.registration_instructions)}</textarea></div>
+          <div class="field"><label for="notes">Notes</label>
+            <textarea id="notes" name="notes" maxlength="2000">${val(v.notes)}</textarea></div>
+        </div>
+        <div class="card-foot" style="display:flex;justify-content:space-between;align-items:center;">
+          <button class="btn btn-ghost btn-sm" type="button" id="delete-vendor">Delete this vendor</button>
+          <span>
+            <button class="btn btn-ghost" type="button" id="cancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Save changes</button>
+          </span>
+        </div>
+      </section>
+    </form>`;
+}
+
+function phoneRow(label = '', number = '') {
+  const row = document.createElement('div');
+  row.className = 'field-row phone-row';
+  row.style.alignItems = 'flex-end';
+  row.innerHTML = `
+    <div class="field" style="margin:0;flex:1;"><label>What it is</label>
+      <input class="p-label" maxlength="40" placeholder="Reservations"></div>
+    <div class="field" style="margin:0;flex:1;"><label>Number</label>
+      <input class="p-number" type="tel" maxlength="40"></div>
+    <button class="btn btn-ghost btn-sm" type="button" data-drop-phone>Remove</button>`;
+  row.querySelector('.p-label').value = label;
+  row.querySelector('.p-number').value = number;
+  row.querySelector('[data-drop-phone]').addEventListener('click', () => row.remove());
+  return row;
+}
+
+function readPhones() {
+  return [...document.querySelectorAll('#phones .phone-row')]
+    .map((r) => ({
+      label: r.querySelector('.p-label').value.trim(),
+      number: r.querySelector('.p-number').value.trim(),
+    }))
+    .filter((p) => p.number);
+}
+
+function render() {
+  const v = d.vendor;
+  document.getElementById('crumb').textContent = v.name;
+  document.title = `${v.name} | Trip Vara Portal`;
+
+  document.getElementById('actions').innerHTML = d.canEdit && !editing
+    ? '<button class="btn btn-secondary btn-sm" id="edit">Edit</button>'
+    : '';
+  const edit = document.getElementById('edit');
+  if (edit) edit.addEventListener('click', () => { editing = true; render(); });
+
+  panel.innerHTML = `
+    <div class="v-head" style="margin-bottom:1.25rem;">
+      <span class="v-mark">${esc(initials(v.name))}</span>
+      <span class="v-title">
+        <h1 style="font-size:1.5rem;">${esc(v.name)}</h1>
+        <span class="v-meta">
+          ${v.category ? `<span class="badge badge-navy">${esc(v.category)}</span>` : ''}
+          ${d.canEdit ? `<button class="star" id="star" aria-pressed="${v.favourite ? 'true' : 'false'}"
+            aria-label="${v.favourite ? 'Remove from' : 'Add to'} favourites"
+            >${v.favourite ? '★' : '☆'}</button>` : ''}
+        </span>
+      </span>
+    </div>
+    ${editing ? editView() : readView()}`;
+
+  const star = document.getElementById('star');
+  if (star) star.addEventListener('click', async () => {
+    const next = !v.favourite;
+    v.favourite = next ? 1 : 0;
+    star.setAttribute('aria-pressed', next ? 'true' : 'false');
+    star.textContent = next ? '★' : '☆';
+    try {
+      await api(`/api/vendors/${encodeURIComponent(id)}/favourite`,
+        { method: 'POST', body: { favourite: next } });
+    } catch (e) {
+      v.favourite = next ? 0 : 1;
+      star.setAttribute('aria-pressed', next ? 'false' : 'true');
+      star.textContent = next ? '☆' : '★';
+      showError(err, e);
+    }
+  });
+
+  if (editing) wireEdit(); else drawTiers();
+}
+
+/**
+ * The vendor's own cancellation schedule.
+ *
+ * Lived in the edit dialog on the list page, which meant reading a vendor's
+ * terms required opening a form to change them. It belongs on the record.
+ */
+async function drawTiers() {
+  const box = document.getElementById('tiers');
+  if (!box) return;
+
+  let rows = [];
+  try {
+    const r = await api(`/api/penalties?vendor=${encodeURIComponent(id)}`);
+    rows = r.tiers || [];
+  } catch (e) { box.innerHTML = `<p class="wempty">${esc(e.message)}</p>`; return; }
+
+  box.innerHTML = rows.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>From</th><th>Penalty</th><th></th></tr></thead>
+        <tbody>${rows.map((t) => `<tr>
+          <td>${t.from_days} days before${t.note ? `<div class="muted">${esc(t.note)}</div>` : ''}</td>
+          <td>${t.pct !== null && t.pct !== undefined ? esc(String(t.pct)) + '%' : money(t.amount_cents)}</td>
+          <td class="num">${d.canEdit
+            ? `<button class="btn btn-ghost btn-sm" data-drop="${esc(t.id)}">Remove</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : '<p class="wempty" style="text-align:left;padding:.4rem 0;">No schedule recorded.</p>';
+
+  const tierErr = document.getElementById('tier-error');
+  box.querySelectorAll('[data-drop]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await api(`/api/penalties/${encodeURIComponent(b.dataset.drop)}`, { method: 'DELETE' }); }
+    catch (e) {
+      if (tierErr) { tierErr.textContent = e.message; tierErr.hidden = false; }
+      b.disabled = false;
+      return;
+    }
+    drawTiers();
+  }));
+
+  const add = document.getElementById('t-add');
+  if (add) add.onclick = async () => {
+    if (tierErr) tierErr.hidden = true;
+    add.disabled = true;
+    try {
+      await api('/api/penalties', { method: 'POST', body: {
+        vendorId: id,
+        fromDays: document.getElementById('t-days').value,
+        pct: document.getElementById('t-pct').value,
+        amount: document.getElementById('t-amount').value,
+        note: document.getElementById('t-note').value,
+      } });
+      for (const f of ['t-days', 't-pct', 't-amount', 't-note']) document.getElementById(f).value = '';
+      drawTiers();
+    } catch (e) {
+      if (tierErr) { tierErr.textContent = e.message; tierErr.hidden = false; }
+    } finally { add.disabled = false; }
+  };
+}
+
+function wireEdit() {
+  const box = document.getElementById('phones');
+  for (const p of parsePhones(d.vendor)) box.appendChild(phoneRow(p.label, p.number));
+
+  document.getElementById('add-phone').addEventListener('click', () => {
+    box.appendChild(phoneRow());
+  });
+
+  document.getElementById('cancel').addEventListener('click', () => { editing = false; render(); });
+
+  document.getElementById('delete-vendor').addEventListener('click', async () => {
+    const t = d.totals.trips;
+    // Says what happens to the trips, because Delete on a vendor with
+    // reservations under it reads like it might take them too.
+    const warn = t
+      ? `Delete ${d.vendor.name}? Its ${t} reservation${t === 1 ? '' : 's'} will be kept, still`
+        + ' showing this supplier name.'
+      : `Delete ${d.vendor.name}?`;
+    if (!confirm(warn)) return;
+    try {
+      await api(`/api/vendors/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      location.href = '/app/vendors';
+    } catch (e) { showError(err, e); }
+  });
+
+  onSubmit(document.getElementById('vendor-form'), async (values) => {
+    await api(`/api/vendors/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: { ...values, phones: readPhones() },
+    });
+    editing = false;
+    await load();
+  });
+}
+
+async function load() {
+  try {
+    d = await api(`/api/vendors/${encodeURIComponent(id)}`);
+    render();
+  } catch (e) { showError(panel, e); }
+}
+
+if (!id) {
+  panel.innerHTML = '<div class="empty"><h3>No vendor chosen</h3>'
+    + '<p><a href="/app/vendors">Back to vendors</a></p></div>';
+} else {
+  await load();
+}
+</script>
+</body></html>
