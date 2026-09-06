@@ -671,7 +671,15 @@ function drawPanels() {
           { method: 'PUT', body: { done: box.checked } });
         const t = (d.tasks || []).find((x) => x.id === box.dataset.task);
         if (t) t.done_at = box.checked ? Math.floor(Date.now() / 1000) : null;
-        drawPanels();
+        // Removed in place rather than redrawing the dashboard. Every tab of
+        // this panel lists open tasks, so a ticked one leaves whichever tab
+        // you are on; redrawing rebuilds every panel from its default tab, so
+        // ticking a task off "Coming up" would drop you back on "Due" and you
+        // would lose your place every single time.
+        const row = box.closest('li');
+        const list = row && row.parentElement;
+        if (row) row.remove();
+        if (list && !list.querySelector('li')) list.remove();
       } catch {
         box.checked = !box.checked;
         box.disabled = false;
