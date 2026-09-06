@@ -62,6 +62,11 @@ const ALLOWED = [
   ['SELECT id FROM travel_groups WHERE group_code = ?',
     'deliberately every advisor: the code is a public web address, so it has to be '
     + 'unique across all of them, not just within one book'],
+  ['SELECT group_code FROM travel_groups WHERE group_code IN',
+    'deliberately every advisor, for the same reason: it asks whether a code this '
+    + 'advisor already holds is also held elsewhere. Only codes they can already see '
+    + 'go in, and only those same codes come back, so it says "yours is not the only '
+    + 'group on this code" and nothing about whose the other one is'],
   ['COUNT(*) AS n FROM group_registrations',
     'a rate limit on a public page, counted for the group being signed up to; there is '
     + 'no session on that request and the owner comes from the group'],

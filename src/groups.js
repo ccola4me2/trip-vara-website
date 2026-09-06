@@ -98,6 +98,7 @@ export async function handleListGroups(request, env) {
   const open = groups.filter((g) => g.status === 'open');
   return json({
     groups,
+    clashingCodes: await clashingCodes(env, groups),
     today,
     stats: {
       open: open.length,
@@ -112,6 +113,27 @@ export async function handleListGroups(request, env) {
     scope: db.scopeLabel(scope, user),
     advisors: await db.advisorOptions(env, user),
   });
+}
+
+/**
+ * Which of these codes another group also answers to.
+ *
+ * The code is a public address now, so two groups holding the same one means
+ * one of the two pages is unreachable. Uniqueness is enforced from here on,
+ * but codes handed out before that are still sitting in the table, and the
+ * advisor cannot see the clash because the other group may be somebody
+ * else's. Only the codes they already hold are checked, so this says "yours
+ * is not the only group on this code" and nothing about whose the other is.
+ */
+async function clashingCodes(env, groups) {
+  const codes = [...new Set(groups.map((g) => g.group_code).filter(Boolean))];
+  if (!codes.length) return [];
+  const marks = codes.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(
+    `SELECT group_code FROM travel_groups WHERE group_code IN (${marks})
+      GROUP BY group_code HAVING COUNT(*) > 1`
+  ).bind(...codes).all();
+  return (results || []).map((r) => r.group_code);
 }
 
 function isoAhead(days) {

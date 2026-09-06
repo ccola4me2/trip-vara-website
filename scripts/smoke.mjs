@@ -1678,6 +1678,15 @@ async function main() {
   check(codeClash.status === 400, 'and its code cannot be taken by another group',
     `status ${codeClash.status}`);
 
+  // Codes handed out before uniqueness was enforced can still collide, and the
+  // advisor cannot see it because the other group may be somebody else's. The
+  // list says which of their own codes are shared so the page can flag them.
+  const codeShareCheck = await call(advisor, 'GET', '/api/groups');
+  check(Array.isArray(codeShareCheck.data.clashingCodes)
+    && !codeShareCheck.data.clashingCodes.includes(`ph-${stamp}`),
+    'and the list says which codes are shared, this one with nobody',
+    JSON.stringify(codeShareCheck.data.clashingCodes));
+
   const publicPage = await call(null, 'GET', `/g/ph-${stamp}`);
   check(publicPage.status === 200, 'the page is public, with no session at all',
     `status ${publicPage.status}`);

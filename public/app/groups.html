@@ -119,6 +119,7 @@ const form = document.getElementById('group-form');
 const deleteBtn = document.getElementById('delete');
 const statusFilter = document.getElementById('status-filter');
 let editingId = null;
+let clashes = new Set();
 let cache = [];
 
 const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
@@ -145,6 +146,8 @@ function render(d) {
     return;
   }
 
+  clashes = new Set(d.clashingCodes || []);
+
   panel.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Group</th>${showAdvisor ? '<th>Advisor</th>' : ''}<th>Vendor</th><th>Departing</th>
       <th>Option date</th><th class="num">Held</th><th class="num">Sold</th><th class="num">Left</th><th></th></tr></thead>
@@ -157,7 +160,8 @@ function render(d) {
         : days === 0 ? 'releases today' : `releases in ${days}d`;
       return `<tr>
         <td><span class="name">${esc(g.name)}</span>
-          <div class="muted">${esc([g.group_code, g.product_name].filter(Boolean).join(' / '))}</div></td>
+          <div class="muted">${esc([g.group_code, g.product_name].filter(Boolean).join(' / '))}</div>
+          ${clashes.has(g.group_code) ? '<div><span class="badge badge-red">code used twice</span></div>' : ''}</td>
         ${showAdvisor ? `<td class="muted">${esc(g.advisor_name || '-')}</td>` : ''}
         <td>${esc(g.vendor || '-')}</td>
         <td>${esc(short(g.depart_date))}</td>
@@ -210,6 +214,10 @@ function openEdit(g) {
     ? `People sign up at <code>/g/${esc(g.group_code)}</code>. Share that link and who is `
       + 'interested becomes a list rather than a pile of replies.'
     : 'Give the group a code first: the code is the web address people sign up on.';
+  if (clashes.has(g.group_code)) {
+    hint.innerHTML = `Another group already answers to <code>${esc(g.group_code)}</code>, so `
+      + 'only one of the two sign-up pages can be reached. Change this code before sharing it.';
+  }
 
   dlg.showModal();
 }
