@@ -262,7 +262,7 @@ export async function catalogSearch(env, {
     `SELECT COUNT(*) AS n FROM sailings WHERE ${where.join(' AND ')}`
   ).bind(...binds).first();
 
-  return { sailings: results || [], total: countRow?.n || 0 };
+  return { sailings: (results || []).map(withReturn), total: countRow?.n || 0 };
 }
 
 /** The destinations and ports worth offering as filters. */
@@ -282,6 +282,28 @@ export async function catalogFacets(env) {
   return { destinations: dest.results || [], ports: ports.results || [] };
 }
 
+/**
+ * The return date, derived when the row does not carry one.
+ *
+ * A sailing that knows it is seven nights and leaves on the 26th also knows
+ * it comes back on the 3rd, but not every row in the table says so: the feed
+ * omits it, and rows imported before the mirror started computing it kept the
+ * blank. The reservation form fills the return date from whatever is here, so
+ * a blank in the table is a blank the advisor has to work out and type, which
+ * is exactly the arithmetic that puts a final payment date a week wrong.
+ *
+ * Derived on the way out rather than backfilled, so it is right for rows that
+ * arrive tomorrow as well as the ones already stored.
+ */
+export function withReturn(row) {
+  if (!row) return row;
+  if (row.return_date || !row.nights) return row;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(row.depart_date || '')) return row;
+  const d = new Date(`${row.depart_date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + Number(row.nights));
+  return { ...row, return_date: d.toISOString().slice(0, 10) };
+}
+
 export async function catalogDates(env, ship, line) {
   const shipNorm = normKey(ship);
   if (!shipNorm) return [];
@@ -298,7 +320,7 @@ export async function catalogDates(env, ship, line) {
   for (const r of results || []) {
     if (seen.has(r.depart_date)) continue;
     seen.add(r.depart_date);
-    out.push(r);
+    out.push(withReturn(r));
   }
   return out;
 }
@@ -319,5 +341,5 @@ export async function matchSailing(env, ship, departDate) {
     `SELECT id, cruise_line, ship, name, depart_date, return_date, nights,
             departure_port, disembark_port, destination
        FROM sailings WHERE ship_norm = ? AND depart_date = ? LIMIT 1`
-  ).bind(shipNorm, date).first();
+  ).bind(shipNorm, date).first().then(withReturn);
 }

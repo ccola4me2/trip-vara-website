@@ -10,7 +10,7 @@ import { requireUser, requireAdmin } from './auth.js';
 import * as db from './db.js';
 import {
   catalogLines, catalogShips, catalogDates, matchSailing,
-  importCatalogStep, importStatus, catalogReady, catalogSearch, catalogFacets,
+  importCatalogStep, importStatus, catalogReady, catalogSearch, catalogFacets, withReturn,
 } from './catalog.js';
 
 export async function handleCatalogLines(request, env) {
@@ -57,7 +57,7 @@ export async function handleCatalogSailing(request, env) {
        FROM sailings WHERE id = ?`
   ).bind(id).first();
   if (!row) return notFound('That sailing is not in the catalog.');
-  return json({ sailing: row });
+  return json({ sailing: withReturn(row) });
 }
 
 export async function handleCatalogShips(request, env) {

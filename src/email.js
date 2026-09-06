@@ -70,7 +70,7 @@ export function layout(env, { heading, body, cta, footer }) {
 </body></html>`;
 }
 
-async function send(env, { to, subject, html }) {
+async function send(env, { to, subject, html, replyTo }) {
   const key = env.RESEND_API_KEY;
   if (!key) {
     console.log('email skipped, RESEND_API_KEY not set:', subject, '->', to);
@@ -86,6 +86,9 @@ async function send(env, { to, subject, html }) {
       body: JSON.stringify({
         from: env.MAIL_FROM || 'Trip Vara <noreply@tripvaratravel.com>',
         to: recipients,
+        // So hitting reply answers the person who got in touch, rather than a
+        // noreply box nobody reads.
+        ...(replyTo ? { reply_to: [replyTo] } : {}),
         subject,
         html,
       }),
@@ -149,6 +152,43 @@ export function sendAdminNewSignupEmail(env, user) {
              <p style="margin:0;">Agency: ${escapeHtml(user.agency_name || 'not given')}<br>
              Phone: ${escapeHtml(user.phone || 'not given')}</p>`,
       cta: { label: 'Review in admin', href: `${appUrl(env)}/admin/` },
+    }),
+  });
+}
+
+/**
+ * Somebody put their name down on a public page.
+ *
+ * A sign-up that only exists on a screen nobody has open is a lead that goes
+ * cold, and the whole reason for the page is that the advisor stops finding
+ * out by accident. Sent to whoever owns the thing that was signed up on, with
+ * reply-to set to the person, so answering is one keystroke rather than a
+ * trip through the portal to copy an address.
+ */
+export function sendSignupNoticeEmail(env, { to, advisorFirstName, what, href,
+                                             name, email, phone, partySize, notes }) {
+  if (!to) return Promise.resolve({ skipped: true });
+  const rows = [
+    ['Email', email],
+    ['Mobile', phone],
+    ['How many', partySize ? String(partySize) : ''],
+  ].filter(([, v]) => v);
+
+  return send(env, {
+    to,
+    replyTo: email || undefined,
+    subject: `${name} put their name down: ${what}`,
+    html: layout(env, {
+      heading: `${escapeHtml(name)} is interested`,
+      body: `<p style="margin:0 0 12px;">Hi ${escapeHtml(advisorFirstName || 'there')},</p>
+             <p style="margin:0 0 12px;"><strong>${escapeHtml(name)}</strong> signed up on
+             <strong>${escapeHtml(what)}</strong>.</p>
+             ${rows.length ? `<p style="margin:0 0 12px;">${rows
+               .map(([k, v]) => `${escapeHtml(k)}: ${escapeHtml(v)}`).join('<br>')}</p>` : ''}
+             ${notes ? `<p style="margin:0 0 12px;padding:12px 14px;background:#f6f9fc;
+               border-radius:8px;">${escapeHtml(notes)}</p>` : ''}
+             <p style="margin:0;">Reply to this email to answer them directly.</p>`,
+      cta: href ? { label: 'Open it in the portal', href } : undefined,
     }),
   });
 }

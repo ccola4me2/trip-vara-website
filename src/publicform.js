@@ -8,11 +8,12 @@
 // These pages are unauthenticated by design. Everything below assumes hostile
 // input.
 
-import { json, badRequest, notFound, uid, now, clean, isValidEmail, normalizeEmail, sha256Hex, readJson } from './util.js';
+import { json, badRequest, notFound, uid, now, clean, cleanText, isValidEmail, normalizeEmail, sha256Hex, readJson } from './util.js';
 import * as ghl from './ghl.js';
 import { upsertContact } from './sync.js';
 import { hydrateForm } from './formbuilder.js';
 import { fireTrigger } from './automations.js';
+import { sendSignupNoticeEmail } from './email.js';
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -211,6 +212,34 @@ export async function renderGroupPage(request, env, code) {
     { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
+function appUrl(env) {
+  return (env.APP_URL || 'https://tripvaratravel.com').replace(/\/$/, '');
+}
+
+/**
+ * Let the advisor know somebody got in touch.
+ *
+ * A public page that quietly files names into a screen nobody has open is the
+ * inbox problem again with an extra step. Everything here is best effort and
+ * nothing it does can fail the submission: the name is already saved, and a
+ * lead lost because Resend was rate limiting would be a far worse trade than
+ * a notice that did not arrive.
+ */
+async function notifyOwner(env, userId, { to, ...details }) {
+  try {
+    const owner = userId ? await env.DB.prepare(
+      'SELECT email, first_name FROM users WHERE id = ?'
+    ).bind(userId).first() : null;
+    const address = to || owner?.email;
+    if (!address) return;
+    await sendSignupNoticeEmail(env, {
+      to: address, advisorFirstName: owner?.first_name, ...details,
+    });
+  } catch (e) {
+    console.error('signup notice', e);
+  }
+}
+
 export async function handleGroupRegistration(request, env, code) {
   const g = await loadGroup(env, code);
   if (!g || g.status === 'cancelled') return notFound('This trip is not taking names.');
@@ -238,13 +267,24 @@ export async function handleGroupRegistration(request, env, code) {
   if (!name) return badRequest('Your name is required.');
   if (!email || !isValidEmail(email)) return badRequest('A working email address is required.');
 
+  const phone = clean(body.phone, 40) || null;
+  const partySize = Math.max(0, Math.min(Number(body.party_size) || 0, 99)) || null;
+  const notes = cleanText(body.notes, 1000) || null;
+
   await env.DB.prepare(
     `INSERT INTO group_registrations
        (id, group_id, user_id, name, email, phone, party_size, notes, ip_hash, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(uid(), g.id, g.user_id, name, email, clean(body.phone, 40) || null,
-         Math.max(0, Math.min(Number(body.party_size) || 0, 99)) || null,
-         clean(body.notes, 1000) || null, ipHash, now()).run();
+  ).bind(uid(), g.id, g.user_id, name, email, phone, partySize, notes, ipHash, now()).run();
+
+  // Tell the advisor. The row is already written, so a mail failure loses the
+  // notice and not the lead: this is a best-effort nudge towards a page that
+  // has the name on it either way.
+  await notifyOwner(env, g.user_id, {
+    what: g.name,
+    href: `${appUrl(env)}/app/group?id=${encodeURIComponent(g.id)}`,
+    name, email, phone, partySize, notes,
+  });
 
   return json({ ok: true, message: 'We will be in touch with the details shortly.' });
 }
@@ -368,6 +408,22 @@ export async function handlePublicSubmit(request, env, slug) {
   if (contactId) {
     await fireTrigger(env, row.location_id, 'contact.created', context);
   }
+
+  // The form has carried a "notify" address since it got its settings, and
+  // nothing has ever read it: a lead arrived, the row was written, and the
+  // person who asked to be told was not. Where no address is set the form's
+  // author is told instead, which is what somebody building a form expects
+  // and is the same rule the group pages follow.
+  await notifyOwner(env, row.created_by, {
+    to: form.notifyEmail || null,
+    what: form.name,
+    href: `${appUrl(env)}/app/forms`,
+    name: name || 'Someone',
+    email, phone,
+    notes: Object.entries(data)
+      .filter(([, v]) => v !== '' && v != null)
+      .map(([k, v]) => `${k}: ${v}`).join('\n') || null,
+  });
 
   return json({
     ok: true,
