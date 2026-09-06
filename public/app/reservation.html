@@ -591,6 +591,9 @@ function drawDetail() {
   const b = d.booking;
   const o = d.fieldOptions || {};
   const ro = !d.editable;
+  // Whether the grid has anything in it. With lines, the totals are its
+  // arithmetic; without, they are the only figures there are.
+  const priced = Boolean(d.priceSummary);
 
   const text = (name, label, value, extra = '') => `
     <div class="field"><label for="f-${name}">${esc(label)}</label>
@@ -628,9 +631,24 @@ function drawDetail() {
         text('travellers', 'Travellers', b.travellers || 1, 'inputmode="numeric"')),
 
     group('Money'),
-    row(text('gross', 'Trip total', b.gross_cents ? (b.gross_cents / 100).toFixed(2) : '', 'inputmode="decimal"'),
+    // Once the grid has lines in it, the trip total and the commission are its
+    // arithmetic and not somebody's opinion, and syncBookingTotals overwrites
+    // whatever is typed here the next time it is saved. Readonly rather than
+    // disabled on purpose: a disabled field submits nothing, parseBooking would
+    // read that as zero, and saving the reservation would wipe both figures.
+    row(text('gross', 'Trip total',
+          b.gross_cents ? (b.gross_cents / 100).toFixed(2) : '',
+          priced ? 'readonly class="derived"' : 'inputmode="decimal"'),
         text('deposit', 'Deposit', b.deposit_cents ? (b.deposit_cents / 100).toFixed(2) : '', 'inputmode="decimal"'),
-        text('commission', 'Commission', b.commission_cents ? (b.commission_cents / 100).toFixed(2) : '', 'inputmode="decimal"')),
+        text('commission', 'Commission',
+          b.commission_cents ? (b.commission_cents / 100).toFixed(2) : '',
+          priced ? 'readonly class="derived"' : 'inputmode="decimal"')),
+    priced
+      ? `<p class="field-hint" style="margin:-.4rem 0 0;">The trip total and the commission are
+          added up from the <a href="#sec-pricing">pricing grid</a>. The deposit is what the vendor
+          asked for to hold it, which is not a charge, so it is typed here.</p>`
+      : `<p class="field-hint" style="margin:-.4rem 0 0;">Typed here for now. Price the trip in the
+          <a href="#sec-pricing">grid above</a> and these follow it instead.</p>`,
     row(date('depositDue', 'Deposit due', b.deposit_due),
         date('finalPaymentDue', 'Final payment due', b.final_payment_due),
         select('commissionStatus', 'Commission status', o.commissionStatuses, b.commission_status)),

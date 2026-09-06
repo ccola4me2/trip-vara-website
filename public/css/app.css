@@ -806,3 +806,12 @@ table.grid input:focus { border-color: var(--navy-400); background: #fff; }
 
 /* Anchors sit under the sticky nav without it covering the heading. */
 .card-head[id] { scroll-margin-top: 3.5rem; }
+
+/* A field whose value is arithmetic rather than an opinion. Readonly, not
+   disabled: a disabled input submits nothing, and the save would read that as
+   zero and wipe the figure it was showing. */
+input.derived {
+  background: var(--navy-50);
+  color: var(--ink-500);
+  cursor: default;
+}

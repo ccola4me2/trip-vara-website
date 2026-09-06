@@ -170,6 +170,9 @@ document.getElementById('fields').innerHTML = [
    <button class="btn btn-ghost btn-sm" type="button" id="add-traveller">Add another traveller</button>`,
 
   group('Money'),
+  `<p class="field-hint" style="margin:-.2rem 0 .6rem;">Rough figures are fine. Once you price the
+    trip on the reservation, the total and the commission are added up from the charge rows and
+    these stop being typed at all.</p>`,
   row(text('gross', 'Trip total', 'inputmode="decimal"'),
       text('deposit', 'Deposit', 'inputmode="decimal"'),
       text('commission', 'Commission', 'inputmode="decimal"')),
