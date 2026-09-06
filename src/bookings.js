@@ -503,7 +503,9 @@ export async function handleDeleteBooking(request, env, id) {
   // And nothing keeps pointing at a reservation that has gone.
   await env.DB.prepare(
     'UPDATE client_credits SET booking_id = NULL, updated_at = ? WHERE booking_id = ? AND user_id = ?'
-  ).bind(Date.now(), id, user.id).run().catch(() => null);
+    // Seconds, like every other timestamp. This wrote milliseconds, which
+    // sorts and compares as a date ~55,000 years from now.
+  ).bind(now(), id, user.id).run();
 
   await db.logActivity(env, user.id, 'booking.delete', 'Deleted a booking', { id });
   return json({ ok: true });

@@ -46,7 +46,12 @@ function line(actual, goal, elapsed) {
 async function readGoal(env, userId, year) {
   const row = await env.DB.prepare(
     'SELECT * FROM goals WHERE user_id = ? AND year = ?'
-  ).bind(userId, year).first().catch(() => null);
+    // No catch: .first() already answers null when there is no goal set, so
+    // catching here could only ever hide a real failure. It did. With the
+    // goals table missing in production this read returned null and the page
+    // showed a blank target, which reads as "no goal yet" rather than "this
+    // cannot be read".
+  ).bind(userId, year).first();
   return row || null;
 }
 

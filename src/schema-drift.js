@@ -15,6 +15,18 @@ import { EXPECTED_SCHEMA, COLUMN_ORIGIN } from './schema-expected.js';
 const SAFE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
+ * The migration that creates a table, found through any one of its columns:
+ * a CREATE TABLE registers every column it declares against its own file.
+ */
+function tableOrigin(table) {
+  for (const col of EXPECTED_SCHEMA[table] || []) {
+    const file = COLUMN_ORIGIN[`${table}.${col}`];
+    if (file) return file;
+  }
+  return null;
+}
+
+/**
  * Compare the live schema against what the migrations describe.
  *
  * Returns { ok, missingTables, missingColumns, checked }. Extra columns and
@@ -48,7 +60,14 @@ export async function schemaDrift(env) {
     }
   });
 
-  const pending = [...new Set(missingColumns.flatMap((m) => m.migrations))].sort();
+  // Both kinds of absence, in one list. Built from missing columns alone at
+  // first, which made pendingMigrations report nothing while missingTables
+  // named a table: the one field meant to be the summary was the one that
+  // left something out.
+  const pending = [...new Set([
+    ...missingTables.map(tableOrigin),
+    ...missingColumns.flatMap((m) => m.migrations),
+  ].filter(Boolean))].sort();
 
   return {
     ok: !missingTables.length && !missingColumns.length,
@@ -74,9 +93,11 @@ export function migrationHint(message) {
   const [, what, name] = m;
 
   if (what === 'table') {
-    return EXPECTED_SCHEMA[name]
-      ? `Table "${name}" is missing: the database has not had every migration applied.`
-      : null;
+    if (!EXPECTED_SCHEMA[name]) return null;
+    const file = tableOrigin(name);
+    return file
+      ? `Table "${name}" is missing: run migration ${file}. See /api/admin/health for the full list.`
+      : `Table "${name}" is missing: the database has not had every migration applied.`;
   }
 
   const key = Object.keys(COLUMN_ORIGIN).find((k) => k.endsWith(`.${name}`));
