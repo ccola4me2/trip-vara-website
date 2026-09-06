@@ -23,6 +23,18 @@
       <div id="err"></div>
       <section class="card" id="panel"><p class="spinner">Loading...</p></section>
       <section class="card" id="detail" hidden></section>
+
+      <section class="card" id="ghl-card" style="margin-top:1.25rem;" hidden>
+        <div class="card-head"><h2>Sequences in Trip Vara Tools</h2>
+          <span class="muted" id="ghl-count"></span></div>
+        <div class="card-pad">
+          <p class="field-hint" style="margin-top:0;">The drip campaigns and workflows you built
+            over there. They are not edited here: an automation on this page can hand a client to
+            one of them, which is how a travel moment starts a sequence somebody has already
+            written.</p>
+          <div id="ghl-list"></div>
+        </div>
+      </section>
     </div>
   </div>
 </div>
@@ -291,6 +303,48 @@ async function load() {
   try { render((await api('/api/automations')).automations); }
   catch (err) { showError(document.getElementById('err'), err); panel.innerHTML = ''; }
 }
+
+/**
+ * What already exists in GoHighLevel, listed rather than rebuilt.
+ *
+ * Loaded after the automations and never blocking them: this reaches another
+ * system, and a page about this portal's own automations should not wait on
+ * somebody else's API, nor disappear when it is down.
+ */
+async function loadSequences() {
+  let d;
+  try { d = await api('/api/campaigns'); } catch { return; }
+
+  const card = document.getElementById('ghl-card');
+  const rows = [
+    ...(d.workflows || []).map((w) => ({ ...w, kind: 'Workflow' })),
+    ...(d.campaigns || []).map((c) => ({ ...c, kind: 'Campaign' })),
+  ];
+
+  // Shown even with nothing in it when the CRM is connected, because "you have
+  // none" is worth knowing; hidden entirely when it is not connected, since
+  // that is already said elsewhere on the dashboard.
+  if (!d.configured && !rows.length) return;
+  card.hidden = false;
+
+  document.getElementById('ghl-count').textContent = rows.length
+    ? `${rows.length} to hand a client to` : '';
+
+  const failed = [d.workflowsError && `workflows: ${d.workflowsError}`,
+    d.campaignsError && `campaigns: ${d.campaignsError}`].filter(Boolean);
+
+  document.getElementById('ghl-list').innerHTML =
+    (failed.length ? `<div class="notice notice-info">${esc(failed.join(' · '))}</div>` : '')
+    + (rows.length
+      ? `<ul class="rows">${rows.map((r) => `<li><div class="row-between">
+          <span><span class="t">${esc(r.name || r.id || 'Unnamed')}</span>
+            <span class="m">${esc(r.kind)}${r.status ? ` · ${esc(r.status)}` : ''}</span></span>
+          <span class="muted" style="font-size:.72rem;">${esc(r.id || '')}</span>
+        </div></li>`).join('')}</ul>`
+      : '<p class="wempty">Nothing built over there yet.</p>');
+}
+
 await load();
+await loadSequences();
 </script>
 </body></html>

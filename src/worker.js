@@ -51,7 +51,9 @@ import {
   handlePayments, handleCreatePayment, handlePaymentReminder, handleUpdatePayment,
   handleMarkPaid, handleDeletePayment, handleGenerateSchedule, handleSetBookingStatus,
 } from './payments.js';
-import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './forms.js';
+import {
+  handleListForms, handleListWorkflows, handleAddToWorkflow, handleListCampaigns,
+} from './forms.js';
 import { handleCrmLinks } from './crm.js';
 import {
   handleListForms as handleListOwnForms, handleGetForm, handleSaveForm, handleDeleteForm,
@@ -417,6 +419,7 @@ async function routeApi(request, env, path, method) {
   // ---- forms and workflows ----------------------------------------------
   if (path === '/api/forms' && method === 'GET') return handleListForms(request, env);
   if (path === '/api/workflows' && method === 'GET') return handleListWorkflows(request, env);
+  if (path === '/api/campaigns' && method === 'GET') return handleListCampaigns(request, env);
   if (path === '/api/crm/links' && method === 'GET') return handleCrmLinks(request, env);
 
   // Our own forms, built and hosted here.

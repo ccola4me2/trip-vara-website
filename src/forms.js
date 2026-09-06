@@ -48,6 +48,39 @@ export async function handleListWorkflows(request, env) {
   }
 }
 
+/**
+ * The drip campaigns and workflows that already exist in GoHighLevel.
+ *
+ * They cannot be built or edited from here, and should not be: the campaigns
+ * live where they were built, and rebuilding them would mean maintaining the
+ * same thing twice and watching the two drift. What this portal adds is the
+ * travel moment to start one at, so seeing the list is what matters.
+ *
+ * Both kinds, because they are different things there: a workflow is the
+ * newer automation, a campaign the older drip, and an advisor thinks of both
+ * as "the sequence I built".
+ */
+export async function handleListCampaigns(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const loc = ghl.locationFor(env, user);
+  // One failing does not hide the other: they are separate endpoints there and
+  // an account can have access to one without the other.
+  const [workflows, campaigns] = await Promise.all([
+    ghl.listWorkflows(env, loc).catch((e) => ({ error: String(e.message || e).slice(0, 160) })),
+    ghl.listCampaigns(env, loc).catch((e) => ({ error: String(e.message || e).slice(0, 160) })),
+  ]);
+
+  return json({
+    workflows: Array.isArray(workflows) ? workflows : [],
+    campaigns: Array.isArray(campaigns) ? campaigns : [],
+    workflowsError: Array.isArray(workflows) ? null : workflows.error,
+    campaignsError: Array.isArray(campaigns) ? null : campaigns.error,
+    configured: ghl.ghlConfigured(env),
+  });
+}
+
 export async function handleAddToWorkflow(request, env, contactId) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
