@@ -14,10 +14,16 @@
   <div class="main">
     <header class="topbar">
       <div><h1>Media</h1><p class="sub">Files in your Trip Vara Tools library.</p></div>
-      <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+      <span class="toolbar" style="margin:0;padding:0;">
+        <button class="btn btn-primary btn-sm" id="add">Add files</button>
+        <button class="btn btn-ghost btn-sm" id="refresh">Refresh</button>
+      </span>
     </header>
     <div class="content">
       <div id="err"></div>
+      <input id="picker" type="file" multiple hidden
+        accept="image/*,video/*,application/pdf">
+      <div id="progress"></div>
       <section class="card" id="panel"><p class="spinner">Loading files...</p></section>
     </div>
   </div>
@@ -27,6 +33,55 @@ import { api, mountShell, esc, showError } from '/js/app.js';
 await mountShell();
 const panel = document.getElementById('panel');
 const isImage = (n) => /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(n || '');
+
+const picker = document.getElementById('picker');
+const progress = document.getElementById('progress');
+
+document.getElementById('add').addEventListener('click', () => picker.click());
+
+/**
+ * Uploaded straight into the Trip Vara Tools library, not stored here.
+ *
+ * That is where a campaign or a social post looks for a file, so a copy kept
+ * on this side would be a second library to keep in step with the first.
+ *
+ * One at a time on purpose: the library is somebody else's API, and six
+ * uploads at once is how a rate limit turns into six failures instead of one
+ * slow queue. Each file says what happened to it.
+ */
+picker.addEventListener('change', async () => {
+  const files = [...picker.files];
+  picker.value = '';
+  if (!files.length) return;
+
+  document.getElementById('err').innerHTML = '';
+  let done = 0;
+  const failed = [];
+
+  for (const file of files) {
+    progress.innerHTML = `<div class="notice notice-info">Uploading ${
+      esc(file.name)}${files.length > 1 ? ` (${done + 1} of ${files.length})` : ''}...</div>`;
+    const body = new FormData();
+    body.append('file', file, file.name);
+    body.append('name', file.name);
+    try {
+      // FormData, so no JSON content type: fetch writes the boundary itself.
+      const res = await fetch('/api/library/media', { method: 'POST', body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+      done += 1;
+    } catch (e) {
+      failed.push(`${file.name}: ${e.message}`);
+    }
+  }
+
+  progress.innerHTML = failed.length
+    ? `<div class="notice notice-error">${done} uploaded, ${failed.length} not:
+        ${esc(failed.join(' · '))}</div>`
+    : `<div class="notice notice-ok">${done} file${done === 1 ? '' : 's'} added to the library.</div>`;
+
+  await load();
+});
 
 async function load() {
   panel.innerHTML = '<p class="spinner">Loading files...</p>';

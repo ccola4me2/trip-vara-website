@@ -840,6 +840,54 @@ export async function listProductPrices(env, locationId, productId) {
 // ---------------------------------------------------------------------------
 // Media library
 // ---------------------------------------------------------------------------
+/**
+ * Put a file into the media library.
+ *
+ * Not through request(), which sends JSON: this endpoint wants multipart, and
+ * the boundary has to be the one fetch writes, so Content-Type is deliberately
+ * not set here. Setting it by hand is the usual way this fails, with a header
+ * whose boundary does not match the body.
+ *
+ * The file is streamed through rather than stored on the way past. This portal
+ * is not the library; GoHighLevel is, and a second copy would be a second
+ * thing to keep in step.
+ */
+export async function uploadMedia(env, locationId, file, name) {
+  if (!ghlConfigured(env)) {
+    throw new GhlError('Trip Vara Tools is not connected yet.', 503, { code: 'not_configured' });
+  }
+
+  const form = new FormData();
+  form.append('file', file, name || file.name || 'upload');
+  form.append('name', name || file.name || 'upload');
+  form.append('hosted', 'false');
+
+  const url = new URL(`${apiBase(env)}/medias/upload-file`);
+  url.searchParams.set('altId', locationId);
+  url.searchParams.set('altType', 'location');
+
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.GHL_API_TOKEN}`,
+      Version: env.GHL_API_VERSION || '2021-07-28',
+      Accept: 'application/json',
+    },
+    body: form,
+  });
+
+  const text = await res.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text.slice(0, 200) }; }
+
+  if (!res.ok) {
+    throw new GhlError(
+      data.message || `The library refused that file (${res.status}).`, res.status, data
+    );
+  }
+  return { id: pickId(data) || data.fileId || null, url: data.url || data.fileUrl || '' };
+}
+
 export async function listMedia(env, locationId, { limit = 60 } = {}) {
   const data = await request(env, '/medias/files', {
     query: {

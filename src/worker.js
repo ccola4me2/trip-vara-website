@@ -108,7 +108,7 @@ import {
   handleDeleteAutomation, handleRunAutomations, processDueRuns, scanTimeTriggers, purgeOldRuns,
 } from './automations.js';
 import {
-  handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys,
+  handleMarketing, handleCatalog, handleLibrary, handleAccount, handleSurveys, handleUploadMedia,
   handleCreateSocialPost, handleCreateProduct, handleCreateAccountItem,
 } from './library.js';
 import { handleDashboard, handleProduction, handleMonth } from './reports.js';
@@ -450,6 +450,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/marketing' && method === 'GET') return handleMarketing(request, env);
   if (path === '/api/catalog' && method === 'GET') return handleCatalog(request, env);
   if (path === '/api/library' && method === 'GET') return handleLibrary(request, env);
+  if (path === '/api/library/media' && method === 'POST') return handleUploadMedia(request, env);
   if (path === '/api/account' && method === 'GET') return handleAccount(request, env);
   if (path === '/api/marketing/social' && method === 'POST') return handleCreateSocialPost(request, env);
   if (path === '/api/catalog/products' && method === 'POST') return handleCreateProduct(request, env);

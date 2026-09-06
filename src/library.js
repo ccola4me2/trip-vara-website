@@ -5,7 +5,7 @@
 // pages pull from many resources at once, and one unavailable area should cost
 // its own panel rather than the whole screen.
 
-import { json } from './util.js';
+import { json, badRequest, clean } from './util.js';
 import { requireUser } from './auth.js';
 import * as ghl from './ghl.js';
 
@@ -128,8 +128,43 @@ export async function handleSurveys(request, env) {
 // the same shape: a scope check present on one handler and missing on its
 // neighbour, so the rule is that the location is derived, never supplied.
 // ---------------------------------------------------------------------------
-import { badRequest, clean, oneOf, toCents, readJson } from './util.js';
+import { oneOf, toCents, readJson } from './util.js';
 import * as db from './db.js';
+
+/**
+ * Add a file to the media library, from here rather than from the CRM.
+ *
+ * Uploaded straight through to GoHighLevel, because that is where the library
+ * lives and where a campaign or a social post will look for it. Keeping a copy
+ * here as well would be a second library to keep in step with the first.
+ */
+export async function handleUploadMedia(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  let form;
+  try { form = await request.formData(); } catch { form = null; }
+  const file = form && form.get('file');
+  if (!file || typeof file === 'string') return badRequest('Choose a file to upload.');
+
+  // Twenty-five megabytes, which is what the library accepts. Refused here
+  // with a sentence rather than there with a status code.
+  const MAX = 25 * 1024 * 1024;
+  if (file.size > MAX) {
+    return badRequest(`That file is ${Math.round(file.size / 1024 / 1024)}MB. The library takes 25MB.`);
+  }
+  if (!file.size) return badRequest('That file is empty.');
+
+  const name = clean(form.get('name'), 200) || file.name || 'upload';
+
+  try {
+    const saved = await ghl.uploadMedia(env, ghl.locationFor(env, user), file, name);
+    await db.logActivity(env, user.id, 'media.upload', `Uploaded ${name}`, { id: saved.id });
+    return json({ ok: true, ...saved, name });
+  } catch (e) {
+    return ghl.ghlErrorResponse(e);
+  }
+}
 
 export async function handleCreateSocialPost(request, env) {
   const { user, response } = await requireUser(request, env);
