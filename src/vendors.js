@@ -6,7 +6,7 @@
 // when the balance falls due, and holding it here turns a reservation with no
 // final payment date from a guess into an answer.
 
-import { json, badRequest, notFound, clean, uid, now, readJson } from './util.js';
+import { json, badRequest, notFound, clean, cleanText, uid, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 
@@ -15,7 +15,9 @@ const COLUMNS = `
   v.phone, v.email, v.portal_url, v.notes, v.created_at, v.updated_at,
   v.category, v.favourite, v.bdm_name, v.bdm_email, v.bdm_phone,
   v.signup_url, v.website, v.account_number,
-  v.phones_json, v.commission_structure, v.registration_instructions
+  v.phones_json, v.commission_structure, v.registration_instructions,
+  v.partner_status, v.travel_types, v.budget_category, v.booking_instructions,
+  v.bdm_info, v.vendor_login
 `;
 
 // The shelves a directory of suppliers falls into. Fixed, because a free text
@@ -52,6 +54,12 @@ export const CATEGORIES = [
 // The heading a supplier list uses for the ones already starred, rather than
 // for a kind of supplier. Treated as the star it is, not as a shelf.
 const FAVOURITES_HEADING = 'favorite suppliers';
+
+// Not suppliers anybody sells. The partner directory lists a hundred and ten
+// of them, which would have been a third of the whole list and none of it
+// useful, so they are dropped on the way in rather than imported and tidied
+// up afterwards.
+const SKIP_CATEGORIES = new Set(['tourism boards']);
 
 /** The vendor record for a name, made if it is new. */
 export async function resolveVendor(env, userId, name) {
@@ -198,15 +206,16 @@ function parseVendor(body) {
       portalUrl: link(body.portalUrl),
       website: link(body.website),
       signupUrl: link(body.signupUrl),
-      notes: clean(body.notes, 2000) || null,
+      notes: cleanText(body.notes, 2000) || null,
       category: CATEGORIES.includes(String(body.category)) ? String(body.category) : null,
       bdmName: clean(body.bdmName, 120) || null,
       bdmEmail: clean(body.bdmEmail, 160) || null,
       bdmPhone: clean(body.bdmPhone, 40) || null,
       accountNumber: clean(body.accountNumber, 60) || null,
       phonesJson: phones.length ? JSON.stringify(phones) : null,
-      commissionStructure: clean(body.commissionStructure, 4000) || null,
-      registrationInstructions: clean(body.registrationInstructions, 4000) || null,
+      commissionStructure: cleanText(body.commissionStructure, 4000) || null,
+      registrationInstructions: cleanText(body.registrationInstructions, 4000) || null,
+      bookingInstructions: cleanText(body.bookingInstructions, 4000) || null,
     },
   };
 }
@@ -240,12 +249,16 @@ export function parseVendorList(text) {
   const unknownHeadings = [];
   let category = null;
   let starring = false;
+  let skipping = false;
+  let skipped = 0;
 
   for (const line of lines) {
     const lower = line.toLowerCase();
 
-    if (lower === FAVOURITES_HEADING) { starring = true; category = null; continue; }
-    if (byLower.has(lower)) { category = byLower.get(lower); starring = false; continue; }
+    if (lower === FAVOURITES_HEADING) { starring = true; category = null; skipping = false; continue; }
+    if (SKIP_CATEGORIES.has(lower)) { skipping = true; category = null; starring = false; continue; }
+    if (byLower.has(lower)) { category = byLower.get(lower); starring = false; skipping = false; continue; }
+    if (skipping) { skipped += 1; continue; }
 
     // "Name, Category" for a hand-made list.
     let name = line;
@@ -279,7 +292,93 @@ export function parseVendorList(text) {
     found.push(row);
   }
 
-  return { vendors: found, duplicates, unknownHeadings: [...new Set(unknownHeadings)] };
+  return { vendors: found, duplicates, skipped, unknownHeadings: [...new Set(unknownHeadings)] };
+}
+
+/**
+ * The handful of HTML entities a directory export leaves in its text.
+ *
+ * These fields were written in a rich text box and exported as they were
+ * stored, so a booking instruction arrives reading "your number &amp; theirs"
+ * and a paragraph of spacing arrives as a run of &nbsp;. Left alone they show
+ * up literally on the vendor's page.
+ */
+function decodeEntities(value) {
+  return String(value || '')
+    .replace(/&nbsp;|\u00a0/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;|&rsquo;/g, "'")
+    .replace(/&ndash;/g, '-')
+    .replace(/&mdash;/g, ', ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * A row out of a partner directory export, as opposed to a pasted page.
+ *
+ * The export carries what the web page does not: how to place a booking, the
+ * agency's standing with the supplier, their login details, and the sales
+ * desk numbers with the name of each desk against them.
+ */
+export function parseVendorRow(raw) {
+  const name = clean(decodeEntities(raw.name), 120);
+  if (!name) return null;
+
+  const text = (v, max = 4000) => cleanText(decodeEntities(v), max) || null;
+
+  // "CP Star Desk: 1-877-202-1530" a line at a time. A desk with a name
+  // against it is worth more than a wall of numbers, which is what these
+  // become when they are pasted into one field.
+  const phones = [];
+  for (const line of decodeEntities(raw.contacts).split(/\r?\n/)) {
+    const m = line.match(/^\s*([^:]{1,40}?)\s*:\s*(.+?)\s*$/);
+    if (m && /\d/.test(m[2])) phones.push({ label: clean(m[1], 40), number: clean(m[2], 40) });
+    else if (/^\s*[\d(+][\d\s()+.-]{6,}$/.test(line)) phones.push({ label: '', number: clean(line.trim(), 40) });
+    if (phones.length >= 12) break;
+  }
+
+  // The manager's block is free text and sometimes a whole signature with a
+  // postal address in it, so the parts are picked out and the original kept.
+  const bdm = decodeEntities(raw.bdm);
+  const email = bdm.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  const phone = bdm.match(/(?:\+?\d[\d\s().-]{8,}\d)/);
+  // These read "Andrea Loyola - BDM - Southeast Region", so the name is what
+  // comes before the job title rather than the whole line.
+  const bdmName = bdm.split(/\r?\n/)
+    .map((l) => l.trim().split(/\s+[-\u2013,|]\s+/)[0].trim())
+    .find((l) => l && !/[@\d]/.test(l) && l.split(/\s+/).length <= 4
+      && !/^(bdm|business development|cell|phone|email|office)/i.test(l)
+      // The supplier's own name appears in these blocks as the company line,
+      // and it is not the name of a person to ring.
+      && l.toLowerCase() !== name.toLowerCase());
+
+  // The first of several. A supplier that sells cruises and expeditions both
+  // has to sit somewhere, and the export lists the main one first.
+  const category = decodeEntities(raw.category).split(',')[0].trim();
+
+  return {
+    name,
+    category: CATEGORIES.includes(category) ? category : null,
+    skip: SKIP_CATEGORIES.has(category.toLowerCase()),
+    favourite: Boolean(raw.favourite),
+    partnerStatus: text(raw.status, 60),
+    travelTypes: text(raw.travelTypes, 200),
+    budgetCategory: text(raw.budget, 100),
+    commissionStructure: text(raw.commission),
+    bookingInstructions: text(raw.bookingInstructions),
+    registrationInstructions: text(raw.registrationInstructions),
+    bdmInfo: text(raw.bdm),
+    bdmName: bdmName ? clean(bdmName, 120) : null,
+    bdmPhone: phone ? clean(phone[0].trim(), 40) : null,
+    bdmEmail: email ? clean(email[0], 160) : null,
+    vendorLogin: text(raw.login, 1000),
+    notes: text(raw.notes, 2000),
+    phonesJson: phones.length ? JSON.stringify(phones) : null,
+  };
 }
 
 export async function handleImportVendors(request, env) {
@@ -287,7 +386,23 @@ export async function handleImportVendors(request, env) {
   if (response) return response;
 
   const body = await readJson(request);
-  const parsed = parseVendorList(body.text);
+
+  // Two ways in. A pasted directory page gives names and headings; an export
+  // gives a row per supplier with everything on it. Same endpoint, because
+  // what happens afterwards is identical.
+  const fromRows = Array.isArray(body.rows);
+  let parsed;
+  if (fromRows) {
+    const rows = body.rows.slice(0, 2000).map(parseVendorRow).filter(Boolean);
+    parsed = {
+      vendors: rows.filter((r) => !r.skip),
+      duplicates: [],
+      skipped: rows.filter((r) => r.skip).length,
+      unknownHeadings: [],
+    };
+  } else {
+    parsed = parseVendorList(body.text);
+  }
   if (!parsed.vendors.length) return badRequest('Nothing in that looks like a supplier list.');
 
   // What is already on the books, so a second paste tops up rather than
@@ -298,11 +413,13 @@ export async function handleImportVendors(request, env) {
   const have = new Map((existing || []).map((v) => [v.name.toLowerCase(), v]));
 
   const toAdd = parsed.vendors.filter((v) => !have.has(v.name.toLowerCase()));
+  // A row import carries real detail, so it refreshes what it brought. A
+  // pasted page carries only a name and a heading, so it fills gaps and
+  // overrules nothing: a category or star set here was somebody's decision.
   const toUpdate = parsed.vendors.filter((v) => {
     const cur = have.get(v.name.toLowerCase());
     if (!cur) return false;
-    // Only fills gaps. A category or star already set here is a decision
-    // somebody made, and an import should not overrule it.
+    if (fromRows) return true;
     return (v.category && !cur.category) || (v.favourite && !cur.favourite);
   });
 
@@ -314,6 +431,7 @@ export async function handleImportVendors(request, env) {
       unchanged: parsed.vendors.length - toAdd.length - toUpdate.length,
       duplicates: parsed.duplicates.slice(0, 40),
       duplicateCount: parsed.duplicates.length,
+      skipped: parsed.skipped || 0,
       unknownHeadings: parsed.unknownHeadings,
       byCategory: countByCategory(parsed.vendors),
       sample: toAdd.slice(0, 12),
@@ -323,16 +441,41 @@ export async function handleImportVendors(request, env) {
   const ts = now();
   const writes = [];
   for (const v of toAdd) {
-    writes.push(env.DB.prepare(
-      `INSERT INTO vendors (id, user_id, name, category, favourite, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(uid(), user.id, v.name, v.category, v.favourite ? 1 : 0, ts, ts));
+    writes.push(fromRows
+      ? env.DB.prepare(
+        `INSERT INTO vendors
+           (id, user_id, name, category, favourite, partner_status, travel_types,
+            budget_category, commission_structure, booking_instructions,
+            registration_instructions, bdm_info, bdm_name, bdm_phone, bdm_email,
+            vendor_login, notes, phones_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(uid(), user.id, v.name, v.category, v.favourite ? 1 : 0,
+             v.partnerStatus, v.travelTypes, v.budgetCategory, v.commissionStructure,
+             v.bookingInstructions, v.registrationInstructions, v.bdmInfo,
+             v.bdmName, v.bdmPhone, v.bdmEmail, v.vendorLogin, v.notes,
+             v.phonesJson, ts, ts)
+      : env.DB.prepare(
+        `INSERT INTO vendors (id, user_id, name, category, favourite, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(uid(), user.id, v.name, v.category, v.favourite ? 1 : 0, ts, ts));
   }
   for (const v of toUpdate) {
     const cur = have.get(v.name.toLowerCase());
-    writes.push(env.DB.prepare(
-      'UPDATE vendors SET category = ?, favourite = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-    ).bind(cur.category || v.category, (cur.favourite || v.favourite) ? 1 : 0, ts, cur.id, user.id));
+    writes.push(fromRows
+      ? env.DB.prepare(
+        `UPDATE vendors SET
+           category = COALESCE(?, category), partner_status = ?, travel_types = ?,
+           budget_category = ?, commission_structure = ?, booking_instructions = ?,
+           registration_instructions = ?, bdm_info = ?, bdm_name = ?, bdm_phone = ?,
+           bdm_email = ?, vendor_login = ?, notes = ?, phones_json = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`
+      ).bind(v.category, v.partnerStatus, v.travelTypes, v.budgetCategory,
+             v.commissionStructure, v.bookingInstructions, v.registrationInstructions,
+             v.bdmInfo, v.bdmName, v.bdmPhone, v.bdmEmail, v.vendorLogin, v.notes,
+             v.phonesJson, ts, cur.id, user.id)
+      : env.DB.prepare(
+        'UPDATE vendors SET category = ?, favourite = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+      ).bind(cur.category || v.category, (cur.favourite || v.favourite) ? 1 : 0, ts, cur.id, user.id));
   }
 
   // In batches, because a partner directory is several hundred rows and one
@@ -345,7 +488,8 @@ export async function handleImportVendors(request, env) {
     `Imported ${toAdd.length} vendor${toAdd.length === 1 ? '' : 's'}`,
     { added: toAdd.length, updated: toUpdate.length });
 
-  return json({ ok: true, added: toAdd.length, updated: toUpdate.length });
+  return json({ ok: true, added: toAdd.length, updated: toUpdate.length,
+                skipped: parsed.skipped || 0 });
 }
 
 function countByCategory(rows) {
@@ -471,7 +615,7 @@ export async function handleUpdateVendor(request, env, id) {
        phone = ?, email = ?, portal_url = ?, notes = ?, category = ?,
        bdm_name = ?, bdm_email = ?, bdm_phone = ?, signup_url = ?, website = ?,
        account_number = ?, phones_json = ?, commission_structure = ?,
-       registration_instructions = ?, updated_at = ?
+       registration_instructions = ?, booking_instructions = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
     // favourite is deliberately absent. It has its own endpoint, and writing
     // it here from a form that has no star field cleared the star every time
@@ -481,7 +625,7 @@ export async function handleUpdateVendor(request, env, id) {
          fields.category, fields.bdmName, fields.bdmEmail, fields.bdmPhone,
          fields.signupUrl, fields.website, fields.accountNumber,
          fields.phonesJson, fields.commissionStructure,
-         fields.registrationInstructions,
+         fields.registrationInstructions, fields.bookingInstructions,
          now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Vendor not found.');
 

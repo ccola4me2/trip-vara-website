@@ -102,6 +102,8 @@ function readView() {
           ${fact('Advisor website', v.portal_url ? web(v.portal_url, 'Open') : '')}
           ${fact('Client website', v.website ? web(v.website, 'Open') : '')}
           ${fact('Agency account number', v.account_number ? esc(v.account_number) : '')}
+          ${fact('Price bracket', v.budget_category ? esc(v.budget_category) : '')}
+          ${fact('Login', v.vendor_login ? esc(v.vendor_login) : '')}
           ${fact('Balance due', v.final_days ? `${v.final_days} days before departure` : '')}
           ${fact('Deposit due', v.deposit_days ? `${v.deposit_days} days after booking` : '')}
           ${fact('Usual commission', v.commission_pct ? `${v.commission_pct}%` : '')}
@@ -111,7 +113,13 @@ function readView() {
       </div>
     </section>
 
-    ${v.bdm_name || v.bdm_email || v.bdm_phone ? `
+    ${v.booking_instructions ? `
+    <section class="card" style="margin-top:1.25rem;">
+      <div class="card-head"><h2>Placing a booking</h2></div>
+      <div class="card-pad"><p class="prose">${esc(v.booking_instructions)}</p></div>
+    </section>` : ''}
+
+    ${v.bdm_name || v.bdm_email || v.bdm_phone || v.bdm_info ? `
     <section class="card" style="margin-top:1.25rem;">
       <div class="card-head"><h2>Business development manager</h2></div>
       <div class="card-pad">
@@ -120,6 +128,11 @@ function readView() {
           ${fact('Phone', v.bdm_phone ? tel(v.bdm_phone) : '')}
           ${fact('Email', v.bdm_email ? mail(v.bdm_email) : '')}
         </dl>
+        ${v.bdm_info && (!v.bdm_name || !v.bdm_email)
+          // Shown when the parts could not all be picked out of it, so a
+          // half-read signature block still gives you something to ring.
+          ? `<p class="prose muted" style="margin-top:.7rem;font-size:.85rem;">${
+              esc(v.bdm_info)}</p>` : ''}
       </div>
     </section>` : ''}
 
@@ -287,6 +300,9 @@ function editView() {
           <div class="field"><label for="registrationInstructions">How to register</label>
             <textarea id="registrationInstructions" name="registrationInstructions" maxlength="4000"
               placeholder="Who to ask, what they need, how long it takes">${val(v.registration_instructions)}</textarea></div>
+          <div class="field"><label for="bookingInstructions">How to place a booking</label>
+            <textarea id="bookingInstructions" name="bookingInstructions" maxlength="4000"
+              placeholder="Which number to give, whose account it goes under">${val(v.booking_instructions)}</textarea></div>
           <div class="field"><label for="notes">Notes</label>
             <textarea id="notes" name="notes" maxlength="2000">${val(v.notes)}</textarea></div>
         </div>
@@ -344,6 +360,11 @@ function render() {
         <h1 style="font-size:1.5rem;">${esc(v.name)}</h1>
         <span class="v-meta">
           ${v.category ? `<span class="badge badge-navy">${esc(v.category)}</span>` : ''}
+          ${v.partner_status ? `<span class="badge ${
+            v.partner_status === 'Preferred' ? 'badge-green' : 'badge-amber'}">${
+            esc(v.partner_status)}</span>` : ''}
+          ${v.travel_types ? `<span class="muted" style="font-size:.78rem;">${
+            esc(v.travel_types)}</span>` : ''}
           ${d.canEdit ? `<button class="star" id="star" aria-pressed="${v.favourite ? 'true' : 'false'}"
             aria-label="${v.favourite ? 'Remove from' : 'Add to'} favourites"
             >${v.favourite ? '★' : '☆'}</button>` : ''}

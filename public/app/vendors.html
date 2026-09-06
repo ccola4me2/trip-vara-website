@@ -88,8 +88,15 @@
             and paste it here. Category headings and the names under them are read as they come,
             so nothing needs reformatting first. Anything already on your list is left alone.</p>
           <div class="field">
-            <label for="paste">Supplier list</label>
-            <textarea id="paste" rows="10"></textarea>
+            <label for="file">A partner directory export</label>
+            <input id="file" type="file" accept=".xlsx">
+            <p class="field-hint">The spreadsheet export, which carries commission, booking and
+              registration instructions, sales desks and the manager for each supplier. Read here
+              in your browser: the file itself is never uploaded.</p>
+          </div>
+          <div class="field">
+            <label for="paste">Or paste the page</label>
+            <textarea id="paste" rows="8"></textarea>
           </div>
           <div class="toolbar" style="padding:0;">
             <button class="btn btn-secondary btn-sm" id="import-preview">Check it</button>
@@ -322,6 +329,128 @@ function drawDupes(s) {
 
 // --------------------------------------------------------------- importing --
 
+/**
+ * Read an .xlsx in the browser.
+ *
+ * A spreadsheet is a zip of XML, and everything needed to open one is already
+ * in the browser: DecompressionStream inflates the entries and DOMParser reads
+ * the sheet. That is a hundred lines against a library this page would
+ * otherwise have to load from a CDN, for a file shape we know.
+ *
+ * The file never leaves the machine. Only the rows read out of it are sent.
+ */
+async function readXlsx(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(buf.buffer);
+
+  // The end-of-central-directory record, found by scanning back for its
+  // signature: the only fixed point in a zip.
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 66000; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('That does not look like a spreadsheet.');
+
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const entries = [];
+  for (let i = 0; i < count; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    // Both sizes. The compressed one bounds the bytes handed to the
+    // decompressor: giving it the rest of the file instead makes it choke on
+    // whatever follows the entry, which it reports as a failed fetch.
+    const compressedSize = dv.getUint32(p + 20, true);
+    const size = dv.getUint32(p + 24, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const offset = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nameLen));
+    entries.push({ name, method, size, compressedSize, offset });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+
+  const read = async (entry) => {
+    // The local header repeats the name and extra lengths, and they are not
+    // always the same as the central directory's, so they are read again.
+    const h = entry.offset;
+    if (dv.getUint32(h, true) !== 0x04034b50) throw new Error('Damaged spreadsheet.');
+    const nameLen = dv.getUint16(h + 26, true);
+    const extraLen = dv.getUint16(h + 28, true);
+    const start = h + 30 + nameLen + extraLen;
+    const raw = buf.subarray(start, start + (entry.method === 0 ? entry.size : entry.compressedSize));
+    if (entry.method === 0) return new TextDecoder().decode(raw);
+    const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Response(stream).text();
+  };
+
+  const sheet = entries.find((e) => /^xl\/worksheets\/sheet1\.xml$/.test(e.name));
+  if (!sheet) throw new Error('No sheet in that file.');
+
+  // Shared strings are optional: this export inlines its text, but a file
+  // saved by Excel itself would not.
+  const sharedEntry = entries.find((e) => e.name === 'xl/sharedStrings.xml');
+  let shared = [];
+  if (sharedEntry) {
+    const doc = new DOMParser().parseFromString(await read(sharedEntry), 'application/xml');
+    shared = [...doc.getElementsByTagName('si')].map((si) =>
+      [...si.getElementsByTagName('t')].map((t) => t.textContent).join(''));
+  }
+
+  const doc = new DOMParser().parseFromString(await read(sheet), 'application/xml');
+  const out = [];
+  for (const row of doc.getElementsByTagName('row')) {
+    const cells = {};
+    for (const c of row.getElementsByTagName('c')) {
+      const col = (c.getAttribute('r') || '').replace(/\d/g, '');
+      const type = c.getAttribute('t');
+      let value = '';
+      if (type === 'inlineStr') {
+        value = [...c.getElementsByTagName('t')].map((t) => t.textContent).join('');
+      } else {
+        const v = c.getElementsByTagName('v')[0];
+        value = v ? v.textContent : '';
+        if (type === 's') value = shared[Number(value)] ?? '';
+      }
+      cells[col] = value;
+    }
+    out.push(cells);
+  }
+  return out;
+}
+
+/** The partner export's columns, in the order that file puts them. */
+function rowsFromSheet(sheet) {
+  if (!sheet.length) return [];
+  // The header row names the columns, so a reordered export still lands
+  // correctly instead of silently filing phone numbers as commission.
+  const header = sheet[0];
+  const at = {};
+  for (const [col, label] of Object.entries(header)) at[String(label).trim().toLowerCase()] = col;
+
+  const get = (row, label) => (at[label] ? row[at[label]] || '' : '');
+
+  return sheet.slice(1)
+    .filter((r) => get(r, 'partner').trim())
+    .map((r) => ({
+      name: get(r, 'partner'),
+      status: get(r, 'status'),
+      travelTypes: get(r, 'travel types'),
+      category: get(r, 'travel categories'),
+      budget: get(r, 'budget categories'),
+      commission: get(r, 'commission'),
+      contacts: get(r, 'sales contacts'),
+      bookingInstructions: get(r, 'booking instructions'),
+      registrationInstructions: get(r, 'registration instructions'),
+      bdm: get(r, 'bdm info'),
+      login: get(r, 'vendor login info'),
+      notes: get(r, 'general notes'),
+    }));
+}
+
+let pendingRows = null;
+
 const importCard = document.getElementById('import-card');
 const importResult = document.getElementById('import-result');
 const runBtn = document.getElementById('import-run');
@@ -336,13 +465,26 @@ document.getElementById('import-close').addEventListener('click', () => {
   runBtn.hidden = true;
 });
 
+document.getElementById('file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  importResult.innerHTML = '<p class="spinner">Reading the file...</p>';
+  runBtn.hidden = true;
+  try {
+    pendingRows = rowsFromSheet(await readXlsx(file));
+    if (!pendingRows.length) throw new Error('No suppliers found in that spreadsheet.');
+    document.getElementById('import-preview').click();
+  } catch (e2) { pendingRows = null; showError(importResult, e2); }
+});
+
 document.getElementById('import-preview').addEventListener('click', async () => {
   const text = document.getElementById('paste').value;
-  if (!text.trim()) return;
+  if (!pendingRows && !text.trim()) return;
   importResult.innerHTML = '<p class="spinner">Reading...</p>';
   runBtn.hidden = true;
   try {
-    const r = await api('/api/vendors/import', { method: 'POST', body: { text } });
+    const r = await api('/api/vendors/import',
+      { method: 'POST', body: pendingRows ? { rows: pendingRows } : { text } });
     const cats = Object.entries(r.byCategory || {}).sort((a, b) => b[1] - a[1]);
     importResult.innerHTML = `
       <div class="notice notice-info" style="margin-top:.8rem;">
@@ -354,6 +496,8 @@ document.getElementById('import-preview').addEventListener('click', async () => 
               will be filed under the first: ${r.duplicates.slice(0, 6)
                 .map((x) => esc(x.name)).join(', ')}${r.duplicateCount > 6 ? ' and others' : ''}.</div>`
           : ''}
+        ${r.skipped ? `<div class="muted" style="margin-top:.4rem;">${r.skipped
+          } tourism board${r.skipped === 1 ? '' : 's'} left out.</div>` : ''}
         ${cats.length ? `<div class="muted" style="margin-top:.4rem;">${
           cats.map(([c, n]) => `${esc(c)} ${n}`).join(' · ')}</div>` : ''}
       </div>`;
@@ -365,11 +509,16 @@ runBtn.addEventListener('click', async () => {
   const text = document.getElementById('paste').value;
   runBtn.disabled = true;
   try {
-    const r = await api('/api/vendors/import', { method: 'POST', body: { text, commit: true } });
+    const r = await api('/api/vendors/import', {
+      method: 'POST',
+      body: pendingRows ? { rows: pendingRows, commit: true } : { text, commit: true },
+    });
     importCard.hidden = true;
     importResult.innerHTML = '';
     runBtn.hidden = true;
     document.getElementById('paste').value = '';
+    document.getElementById('file').value = '';
+    pendingRows = null;
     err.innerHTML = `<div class="notice notice-ok">Added ${r.added} supplier${
       r.added === 1 ? '' : 's'}${r.updated ? `, filled in ${r.updated}` : ''}.</div>`;
     await load();

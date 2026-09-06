@@ -942,6 +942,46 @@ async function main() {
   const junk = await call(advisor, 'POST', '/api/vendors/import', { text: '   ' });
   check(junk.status === 400, 'an empty paste is refused', `status ${junk.status}`);
 
+  // A partner directory export: a row per supplier, with everything on it.
+  const exported = await call(advisor, 'POST', '/api/vendors/import', {
+    commit: true,
+    rows: [
+      {
+        name: `Royal Caribbean ${stamp}`, status: 'Preferred', category: 'Cruise Lines, Expedition Experiences & Yacht',
+        travelTypes: 'Cruise', budget: 'Moderate', commission: '16% Cruise, 10% Insurance',
+        contacts: 'CP Star Desk: 1-877-202-1530\nReservations: 800-327-6700',
+        bookingInstructions: 'Use your number &amp; the HO number as secondary',
+        registrationInstructions: 'Step one&nbsp;\nStep two',
+        bdm: '\nAndrea Loyola - BDM - Southeast Region\n305-468-2389\naloyola@example.com\n',
+        login: 'someuser', notes: 'Preferred partner',
+      },
+      { name: `Aruba Tourism ${stamp}`, category: 'Tourism Boards' },
+    ],
+  });
+  check(exported.data?.added === 1, 'a directory export imports a row per supplier',
+    `${exported.data?.added} added`);
+  check(exported.data?.skipped === 1, 'and leaves tourism boards out, as asked',
+    `${exported.data?.skipped} skipped`);
+
+  const rich = (await call(advisor, 'GET', '/api/vendors')).data?.vendors
+    ?.find((v) => v.name === `Royal Caribbean ${stamp}`);
+  check(rich?.category === 'Cruise Lines',
+    'the first of several categories is the one it is filed under', rich?.category);
+  check(rich?.partner_status === 'Preferred' && rich?.budget_category === 'Moderate',
+    'standing and price bracket come across');
+  const desks = JSON.parse(rich?.phones_json || '[]');
+  check(desks.length === 2 && desks[0].label === 'CP Star Desk',
+    'each sales desk keeps the name it was listed under', `${desks.length} desk(s)`);
+  check(rich?.bdm_name === 'Andrea Loyola' && rich?.bdm_email === 'aloyola@example.com',
+    'the manager is picked out of a free text block');
+  // These fields were typed into a rich text box and exported as stored.
+  check(rich?.booking_instructions === 'Use your number & the HO number as secondary',
+    'HTML entities are decoded rather than shown literally', rich?.booking_instructions);
+  // clean() collapses every newline into a space, which is right for a name
+  // and wrong for a numbered list of registration steps.
+  check(rich?.registration_instructions === 'Step one\nStep two',
+    'and paragraphs survive being saved', JSON.stringify(rich?.registration_instructions));
+
   // A vendor typed in by hand, with everything the directory holds.
   const made = await call(advisor, 'POST', '/api/vendors', {
     name: `Windstar ${stamp}`, category: 'Cruise Lines',

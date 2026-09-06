@@ -164,6 +164,25 @@ export function clean(value, maxLength = 500) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
+/**
+ * Like clean, but for text that was written in paragraphs.
+ *
+ * clean collapses every run of whitespace into one space, which is right for a
+ * name and wrong for anything typed into a textarea: a supplier's registration
+ * instructions are a numbered list, and they arrived as one unbroken line. The
+ * page renders these with pre-wrap, which only means something if the newlines
+ * survive being saved.
+ */
+export function cleanText(value, maxLength = 4000) {
+  return String(value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, maxLength);
+}
+
 /** Accepts yyyy-mm-dd only. Returns null for anything else, including ''. */
 export function cleanDate(value) {
   const s = String(value ?? '').trim();
