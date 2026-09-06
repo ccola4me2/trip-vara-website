@@ -160,8 +160,14 @@ document.getElementById('fields').innerHTML = [
   group('Travel'),
   row(date('departDate', 'Departing'), date('returnDate', 'Returning')),
   row(text('destination', 'Destination'), text('itinerary', 'Itinerary')),
-  row(text('cabinCategory', 'Category'), text('cabin', 'Cabin or room'),
-      text('travellers', 'Travellers', 'inputmode="numeric" value="1"')),
+  row(text('cabinCategory', 'Category'), text('cabin', 'Cabin or room')),
+
+  group('Who is going'),
+  `<p class="field-hint" style="margin:-.2rem 0 .6rem;">Named here, they get a column each in
+    the pricing grid, and their passports get checked against the return date. Leave the first
+    one blank and the client is assumed to be travelling.</p>
+   <div id="traveller-rows"></div>
+   <button class="btn btn-ghost btn-sm" type="button" id="add-traveller">Add another traveller</button>`,
 
   group('Money'),
   row(text('gross', 'Trip total', 'inputmode="decimal"'),
@@ -175,6 +181,31 @@ document.getElementById('fields').innerHTML = [
 ].join('');
 
 suggestClients(form.elements.clientName, 'client-suggestions');
+
+/**
+ * The people going, named on the way in.
+ *
+ * CP Maxx asks for travellers on the first step of a reservation and prices
+ * them on the second, which is the right order: pricing is a column per
+ * person, and a reservation created without them has nobody to put in the
+ * columns. Asking for a headcount instead produced a grid with one column
+ * called "This trip" and no way to say that she took the drinks package.
+ */
+let travellerCount = 0;
+function addTravellerRow(value = '') {
+  travellerCount += 1;
+  const n = travellerCount;
+  const box = document.createElement('div');
+  box.className = 'field';
+  box.style.marginBottom = '.5rem';
+  box.innerHTML = `<input id="t-name-${n}" class="traveller-name" maxlength="120"
+    placeholder="${n === 1 ? 'Full name, as on the passport' : 'Another traveller'}"
+    value="${esc(value)}">`;
+  document.getElementById('traveller-rows').append(box);
+  suggestClients(box.querySelector('input'), `traveller-suggestions-${n}`);
+}
+addTravellerRow();
+document.getElementById('add-traveller').addEventListener('click', () => addTravellerRow());
 
 /**
  * The sailing picker: line, then ship, then departure.
@@ -246,8 +277,24 @@ pickDate.addEventListener('change', () => {
 // the payment schedule are. Creating one and being left on a list is being
 // sent back to look for the thing you just made.
 onSubmit(form, async (values) => {
+  const names = [...document.querySelectorAll('.traveller-name')]
+    .map((el) => el.value.trim()).filter(Boolean);
+  // Nobody named means the client is the one travelling, which is true of most
+  // reservations and is a better guess than a trip with no passengers.
+  if (!names.length && values.clientName) names.push(values.clientName.trim());
+
   const res = await api('/api/bookings', { method: 'POST', body: values });
-  location.href = `/app/reservation?id=${encodeURIComponent(res.booking.id)}`;
+  const id = res.booking.id;
+
+  // One at a time, and failures are not fatal: the reservation exists and the
+  // names can be added on it. Losing the trip because a passenger name was
+  // rejected would be the wrong way round.
+  for (const [i, name] of names.entries()) {
+    await api(`/api/bookings/${encodeURIComponent(id)}/travellers`,
+      { method: 'POST', body: { name, isLead: i === 0 } }).catch(() => null);
+  }
+
+  location.href = `/app/reservation?id=${encodeURIComponent(id)}`;
 });
 </script>
 </body></html>
