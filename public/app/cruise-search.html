@@ -59,12 +59,15 @@
                 <option value="13-99">13 nights or more</option>
               </select></div>
           </div>
+          <div class="toolbar" style="padding:.9rem 0 0;">
+            <button class="btn btn-primary" id="search">Search</button>
+            <button class="btn btn-ghost btn-sm" id="clear">Start again</button>
+          </div>
         </div>
       </section>
 
       <section class="card" style="margin-top:1.25rem;">
-        <div class="card-head"><h2>Sailings</h2>
-          <button class="btn btn-ghost btn-sm" id="clear">Clear filters</button></div>
+        <div class="card-head"><h2>Sailings</h2></div>
         <div id="results"><p class="spinner">Loading...</p></div>
       </section>
     </div>
@@ -87,8 +90,8 @@ const els = {
   nights: document.getElementById('nights'),
 };
 
-let timer;
 let filled = false;
+let searched = false;
 
 function query() {
   const p = new URLSearchParams();
@@ -110,7 +113,10 @@ function query() {
 const short = (iso) => (iso ? dateFmt(iso) : '');
 
 function draw(d) {
-  document.getElementById('count').textContent = d.total
+  // Only once somebody has searched. The first call runs to fill the filter
+  // lists, and its total sitting in the header reads as an answer to a
+  // question nobody has asked yet.
+  document.getElementById('count').textContent = searched && d.total
     ? `${d.total.toLocaleString()} sailing${d.total === 1 ? '' : 's'}`
     : '';
 
@@ -124,6 +130,16 @@ function draw(d) {
     els.port.innerHTML = '<option value="">Any port</option>'
       + (d.ports || []).map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
     filled = true;
+  }
+
+  if (!searched) {
+    // Nothing until it is asked for. Seventy-five thousand sailings in date
+    // order is not a useful thing to open a page onto, and it reads as a
+    // result when nobody has searched for anything.
+    results.innerHTML = `<div class="empty"><h3>What are they looking for?</h3>
+      <p>Set the region, the dates or the length, then search. Leave it all blank to see
+        everything.</p></div>`;
+    return;
   }
 
   if (!d.ready) {
@@ -156,23 +172,30 @@ async function load() {
   } catch (e) { showError(err, e); }
 }
 
-// Both events on every control, debounced. A select fires change and a text
-// box fires input, and asking each element which it is was a way to be clever
-// about something that does not need it.
+document.getElementById('search').addEventListener('click', () => {
+  searched = true;
+  load();
+});
+
+// Enter in any of the boxes means the same as pressing it.
 for (const el of Object.values(els)) {
-  for (const evt of ['input', 'change']) {
-    el.addEventListener(evt, () => {
-      clearTimeout(timer);
-      timer = setTimeout(load, 200);
-    });
-  }
+  el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    searched = true;
+    load();
+  });
 }
 
 document.getElementById('clear').addEventListener('click', () => {
   for (const el of Object.values(els)) el.value = '';
+  searched = false;
+  document.getElementById('count').textContent = '';
   load();
 });
 
+// The first call fills the region, port and line lists from what is actually
+// in the catalog. Its results are not shown: nobody has searched yet.
 await load();
 </script>
 </body></html>
