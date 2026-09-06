@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Calendar</h1><p class="sub">Upcoming appointments across your Trip Vara Tools calendars.</p></div>
+      <div><h1>Calendar</h1><p class="sub">Departures, money due and appointments, on one run of days.</p></div>
       <div class="toolbar" style="margin:0;">
         <select id="range" aria-label="Range">
           <option value="7">Next 7 days</option>
@@ -64,7 +64,7 @@
 </dialog>
 
 <script type="module">
-import { api, mountShell, esc, timeAgo, showError, onSubmit } from '/js/app.js';
+import { api, mountShell, esc, money, timeAgo, showError, onSubmit } from '/js/app.js';
 await mountShell();
 
 const panel = document.getElementById('panel');
@@ -73,53 +73,110 @@ const range = document.getElementById('range');
 const dlg = document.getElementById('appt-dialog');
 let calendars = [];
 
-const dayKey = (iso) => new Date(iso).toDateString();
-const dayLabel = (iso) => {
-  const d = new Date(iso);
-  const today = new Date().toDateString();
-  const tomorrow = new Date(Date.now() + 86400000).toDateString();
-  if (d.toDateString() === today) return 'Today';
-  if (d.toDateString() === tomorrow) return 'Tomorrow';
+// Days are keyed as YYYY-MM-DD so an appointment's timestamp and a
+// reservation's plain date land on the same key and sort against each other.
+const localDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${
+  String(d.getDate()).padStart(2, '0')}`;
+const dayKey = (iso) => localDay(new Date(iso));
+// A bare date parses as UTC midnight, which reads as the day before anywhere
+// west of Greenwich. Built from the parts instead, so a departure shows on the
+// day it is written on the reservation.
+const fromDay = (day) => {
+  const [y, m, dd] = String(day).slice(0, 10).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, dd || 1);
+};
+const dayLabel = (day) => {
+  const d = fromDay(day);
+  if (localDay(d) === localDay(new Date())) return 'Today';
+  if (localDay(d) === localDay(new Date(Date.now() + 86400000))) return 'Tomorrow';
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 };
 const timeLabel = (iso) =>
   new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
+const TRAVEL_TONE = {
+  departure: { icon: 'Departs', tone: 'var(--teal-600, var(--navy-600))' },
+  return: { icon: 'Home', tone: 'var(--green-600)' },
+  payment: { icon: 'Due', tone: 'var(--amber-600)' },
+};
+
+/**
+ * One stream of days, holding two different kinds of thing.
+ *
+ * Appointments come from the CRM and have a time. Departures, returns and
+ * money due come off the reservations and are all-day facts, so they sort to
+ * the top of their day rather than pretending to happen at midnight.
+ */
+function merge(d) {
+  const items = [];
+  for (const e of d.events || []) {
+    items.push({ day: dayKey(e.startTime), at: Date.parse(e.startTime) || 0, appt: e });
+  }
+  for (const t of d.travel || []) {
+    items.push({ day: t.date, at: -1, travel: t });
+  }
+  return items.sort((a, b) => (a.day === b.day ? a.at - b.at : a.day.localeCompare(b.day)));
+}
+
 function render(d) {
-  calendars = d.calendars;
-  const upcoming = d.events.filter((e) => Date.parse(e.startTime) >= Date.now());
+  calendars = d.calendars || [];
+  const items = merge(d);
+  const today = new Date().toISOString().slice(0, 10);
+  const ahead = items.filter((i) => i.day >= today);
+  const travelAhead = ahead.filter((i) => i.travel);
+  const nextTrip = travelAhead.find((i) => i.travel.kind === 'departure');
+  const dueSoon = travelAhead.filter((i) => i.travel.kind === 'payment');
 
   statsEl.innerHTML = `
-    <div class="stat"><p class="label">Upcoming</p><p class="value">${upcoming.length}</p>
+    <div class="stat"><p class="label">Coming up</p><p class="value">${ahead.length}</p>
       <p class="meta">In the next ${d.days} days</p></div>
-    <div class="stat"><p class="label">Calendars</p><p class="value">${d.calendars.length}</p>
-      <p class="meta">${d.calendars.filter((c) => c.isActive).length} active</p></div>
-    <div class="stat"><p class="label">Next up</p>
-      <p class="value" style="font-size:1.1rem;">${upcoming.length ? esc(timeAgo(upcoming[0].startTime)) : 'Nothing booked'}</p>
-      <p class="meta">${upcoming.length ? esc(upcoming[0].title) : ''}</p></div>`;
+    <div class="stat"><p class="label">Next departure</p>
+      <p class="value" style="font-size:1.1rem;">${nextTrip
+        ? esc(dayLabel(nextTrip.travel.date)) : 'None booked'}</p>
+      <p class="meta">${nextTrip ? esc(nextTrip.travel.title) : ''}</p></div>
+    <div class="stat"><p class="label">Money due</p><p class="value">${dueSoon.length}</p>
+      <p class="meta">Vendor deadlines in this window</p></div>
+    <div class="stat"><p class="label">Calendars</p><p class="value">${calendars.length}</p>
+      <p class="meta">${calendars.filter((c) => c.isActive).length} active</p></div>`;
 
-  if (!d.events.length) {
-    panel.innerHTML = d.calendars.length
-      ? '<div class="empty"><h3>Nothing scheduled</h3><p>No appointments in this window.</p></div>'
-      : '<div class="empty"><h3>No calendars</h3><p>Create a calendar in Trip Vara Tools and it will show up here.</p></div>';
+  if (!items.length) {
+    panel.innerHTML = '<div class="empty"><h3>Nothing scheduled</h3>'
+      + '<p>No departures, payments or appointments in this window.</p></div>';
     return;
   }
 
-  let html = '';
+  let html = d.crmError
+    ? `<div class="notice notice-info">Showing your reservations. The CRM calendars could not be
+        reached, so appointments are missing from this view.</div>`
+    : '';
   let lastDay = null;
-  for (const e of d.events) {
-    const key = dayKey(e.startTime);
-    if (key !== lastDay) {
-      html += `<div class="day-head">${esc(dayLabel(e.startTime))}</div>`;
-      lastDay = key;
+  for (const item of items) {
+    if (item.day !== lastDay) {
+      html += `<div class="day-head">${esc(dayLabel(item.day))}</div>`;
+      lastDay = item.day;
     }
-    html += `<div class="event">
-      <div class="time">${esc(timeLabel(e.startTime))}</div>
-      <div class="what">
-        <div class="title">${esc(e.title)}</div>
-        <div class="muted">${esc(e.calendarName || '')}${e.status ? ' · ' + esc(e.status) : ''}</div>
-        ${e.contactId ? `<a class="muted" href="/app/contact?id=${encodeURIComponent(e.contactId)}">Open contact</a>` : ''}
-      </div></div>`;
+    if (item.travel) {
+      const t = item.travel;
+      const tone = TRAVEL_TONE[t.kind] || TRAVEL_TONE.departure;
+      html += `<div class="event">
+        <div class="time" style="color:${tone.tone};font-weight:600;">${esc(tone.icon)}</div>
+        <div class="what">
+          <div class="title"><a class="name" href="/app/reservation?id=${esc(t.bookingId)}">${
+            esc(t.title)}</a>${t.personal ? ' <span class="badge badge-navy">own travel</span>' : ''}</div>
+          <div class="muted">${esc(t.detail || '')}${
+            t.amountCents ? ` · ${money(t.amountCents)}` : ''}${
+            t.reference ? ` · ${esc(t.reference)}` : ''}</div>
+        </div></div>`;
+    } else {
+      const e = item.appt;
+      html += `<div class="event">
+        <div class="time">${esc(timeLabel(e.startTime))}</div>
+        <div class="what">
+          <div class="title">${esc(e.title)}</div>
+          <div class="muted">${esc(e.calendarName || '')}${e.status ? ' · ' + esc(e.status) : ''}</div>
+          ${e.contactId ? `<a class="muted" href="/app/contact?id=${encodeURIComponent(e.contactId)}">Open contact</a>` : ''}
+        </div></div>`;
+    }
   }
   panel.innerHTML = html;
 }

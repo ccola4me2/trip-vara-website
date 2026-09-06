@@ -7,7 +7,8 @@
 import { json, badRequest, clean, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as ghl from './ghl.js';
-import { logActivity } from './db.js';
+import * as db from './db.js';
+const { logActivity } = db;
 
 const DAY_MS = 86400000;
 
@@ -22,11 +23,20 @@ export async function handleListCalendar(request, env) {
 
   const locationId = ghl.locationFor(env, user);
 
+  // The travel itself, which is not in GoHighLevel and is the reason most of
+  // those appointments exist. Read first and returned whatever GoHighLevel
+  // does, so an unconfigured or failing CRM leaves the advisor with their
+  // departures rather than an empty week.
+  const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const scope = db.scopeFor(env, user, request);
+  const travel = await db.travelDates(env, scope, { from: iso(start), to: iso(end) })
+    .catch(() => []);
+
   try {
     const calendars = await ghl.listCalendars(env, locationId);
     const active = calendars.filter((c) => c.isActive);
 
-    if (!active.length) return json({ calendars, events: [], days });
+    if (!active.length) return json({ calendars, events: [], travel, days });
 
     // One request per calendar, and a calendar that errors is dropped rather
     // than failing the whole view.
@@ -46,8 +56,11 @@ export async function handleListCalendar(request, env) {
       (a, b) => Date.parse(a.startTime || 0) - Date.parse(b.startTime || 0)
     );
 
-    return json({ calendars, events, days });
+    return json({ calendars, events, travel, days });
   } catch (e) {
+    // A CRM that is down should not hide the departures. The travel comes off
+    // this portal's own database and is still worth showing on its own.
+    if (travel.length) return json({ calendars: [], events: [], travel, days, crmError: true });
     return ghl.ghlErrorResponse(e);
   }
 }

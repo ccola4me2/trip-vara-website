@@ -1300,6 +1300,26 @@ async function main() {
   check(badStatus.status === 400, 'an unknown status is refused rather than defaulted',
     `status ${badStatus.status}`);
 
+  // -------------------------------------------------- travel on the diary --
+  step('The calendar knows about the travel');
+
+  const diary = await call(advisor, 'GET', '/api/calendar?days=365');
+  const travel = diary.data?.travel || [];
+  check(diary.status === 200, 'the calendar answers even with no CRM configured',
+    `status ${diary.status}`);
+  check(travel.some((e) => e.kind === 'departure'),
+    'departures appear on it', `${travel.length} travel entr(ies)`);
+  check(travel.some((e) => e.kind === 'payment' && e.amountCents > 0),
+    'and so does money due, with the amount');
+  check(travel.every((e) => e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date)),
+    'each carrying a plain date rather than a timestamp');
+  check(travel.every((e) => e.bookingId),
+    'and linking back to the reservation it came from');
+  // Sorted, because the page renders them in order under day headings and
+  // sorting in two places is how the two disagree.
+  const dates = travel.map((e) => e.date);
+  check(dates.join() === [...dates].sort().join(), 'in date order');
+
   // ------------------------------------------------- commission reconciled --
   step('What the vendor actually paid');
 

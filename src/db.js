@@ -636,6 +636,75 @@ export async function insuranceExposure(env, scope, { today, limit = 20 } = {}) 
  * holiday somebody had eight months ago is a different conversation, and it
  * belongs on the rebooking list rather than this one.
  */
+/**
+ * The dates on the books, as calendar entries.
+ *
+ * Departures, returns and money due are already recorded on reservations, and
+ * were nowhere near the calendar: an advisor looking at their week saw
+ * GoHighLevel appointments and none of the travel those appointments were
+ * about. These are derived on read rather than written into GoHighLevel as
+ * appointments, because a departure date that moves would leave a stale
+ * appointment behind and nothing to reconcile it against. The reservation is
+ * the fact; the calendar entry is a view of it.
+ */
+export async function travelDates(env, scope, { from, to }) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+
+  const { results: trips } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.product_name, b.supplier, b.personal,
+            b.depart_date, b.return_date, b.confirmation_number
+       FROM bookings b
+      WHERE ${scoped.sql}
+        AND b.status IN ('quoted','booked','travelled')
+        AND ((b.depart_date IS NOT NULL AND b.depart_date BETWEEN ? AND ?)
+          OR (b.return_date IS NOT NULL AND b.return_date BETWEEN ? AND ?))
+      LIMIT 400`
+  ).bind(...scoped.binds, from, to, from, to).all();
+
+  const paymentScope = scopeWhere(scope, 'p.user_id');
+  const { results: due } = await env.DB.prepare(
+    `SELECT p.id, p.booking_id, p.kind, p.amount_cents, p.due_date,
+            b.client_name, b.product_name, b.supplier
+       FROM booking_payments p
+       JOIN bookings b ON b.id = p.booking_id AND b.user_id = p.user_id
+      WHERE ${paymentScope.sql}
+        AND p.paid_date IS NULL
+        AND p.payment_class = 'hard'
+        AND p.due_date BETWEEN ? AND ?
+        AND b.status IN ('quoted','booked')
+      LIMIT 400`
+  ).bind(...paymentScope.binds, from, to).all();
+
+  const events = [];
+  for (const t of trips || []) {
+    const label = t.product_name || t.supplier || 'Trip';
+    if (t.depart_date >= from && t.depart_date <= to) {
+      events.push({
+        source: 'reservation', kind: 'departure', date: t.depart_date,
+        bookingId: t.id, title: `${t.client_name} departs`, detail: label,
+        personal: Boolean(t.personal), reference: t.confirmation_number || null,
+      });
+    }
+    if (t.return_date && t.return_date >= from && t.return_date <= to) {
+      events.push({
+        source: 'reservation', kind: 'return', date: t.return_date,
+        bookingId: t.id, title: `${t.client_name} home`, detail: label,
+        personal: Boolean(t.personal), reference: t.confirmation_number || null,
+      });
+    }
+  }
+  for (const d of due || []) {
+    events.push({
+      source: 'reservation', kind: 'payment', date: d.due_date,
+      bookingId: d.booking_id, paymentId: d.id,
+      title: `${d.client_name}: ${d.kind === 'deposit' ? 'deposit' : 'payment'} due`,
+      detail: d.product_name || d.supplier || '', amountCents: d.amount_cents,
+    });
+  }
+
+  return events.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export async function welcomeHomeCandidates(env, scope, { today, days = 30, limit = 20 } = {}) {
   const scoped = scopeWhere(scope, 'b.user_id');
   const from = new Date(Date.parse(`${today}T00:00:00Z`) - days * 86400000)
