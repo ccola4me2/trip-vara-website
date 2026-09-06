@@ -54,7 +54,7 @@ import { handleListForms, handleListWorkflows, handleAddToWorkflow } from './for
 import { handleCrmLinks } from './crm.js';
 import {
   handleListForms as handleListOwnForms, handleGetForm, handleSaveForm, handleDeleteForm,
-  handleFormsReport,
+  handleFormsReport, handleReservationFromLead,
 } from './formbuilder.js';
 import { renderPublicForm, handlePublicSubmit } from './publicform.js';
 import { handleSearch } from './search.js';
@@ -277,6 +277,7 @@ async function routeApi(request, env, path, method) {
   const convoMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   const invoiceSendMatch = path.match(/^\/api\/billing\/invoices\/([^/]+)\/send$/);
   const ownFormMatch = path.match(/^\/api\/myforms\/([^/]+)$/);
+  const leadToBookingMatch = path.match(/^\/api\/leads\/submissions\/([^/]+)\/reservation$/);
   const publicFormMatch = path.match(/^\/api\/public\/forms\/([^/]+)$/);
   // Excludes /run, which is an action rather than an automation id.
   const accountItemMatch = path.match(/^\/api\/account\/(tags|custom-values|custom-fields)$/);
@@ -414,6 +415,9 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/myforms' && method === 'GET') return handleListOwnForms(request, env);
   // Before the /:id match, or "report" is read as a form id.
   if (path === '/api/myforms/report' && method === 'GET') return handleFormsReport(request, env);
+  if (leadToBookingMatch && method === 'POST') {
+    return handleReservationFromLead(request, env, leadToBookingMatch[1]);
+  }
   if (path === '/api/myforms' && method === 'POST') return handleSaveForm(request, env, null);
   if (ownFormMatch && method === 'GET') return handleGetForm(request, env, ownFormMatch[1]);
   if (ownFormMatch && method === 'PUT') return handleSaveForm(request, env, ownFormMatch[1]);

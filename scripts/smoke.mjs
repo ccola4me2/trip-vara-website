@@ -415,6 +415,41 @@ async function main() {
   check(shortWindow.status === 200 && shortWindow.data?.days === 1,
     'the period can be narrowed', `${shortWindow.data?.days}`);
 
+  // --------------------------------------------- a lead becomes a quote --
+  step('From lead to reservation');
+
+  const quoted = await call(advisor, 'POST',
+    `/api/leads/submissions/${myLead.id}/reservation`);
+  check(quoted.status === 200 && quoted.data?.bookingId,
+    'a lead can be turned into a reservation', `status ${quoted.status}`);
+
+  const fromLead = await call(advisor, 'GET', `/api/bookings/${quoted.data.bookingId}/record`);
+  const lb = fromLead.data?.booking;
+  // Quoted, never booked. Nobody has agreed to anything by filling in a form,
+  // and a booked reservation would land in production and commission owed.
+  check(lb?.status === 'quoted', 'as a quote, not a booking', lb?.status);
+  check(lb?.client_name === myLead.name, 'under the name they gave', lb?.client_name);
+  // A budget of "10,000 to 20,000" is not a price and must not become one.
+  check(lb?.gross_cents === 0, 'with no price on it, since a budget is not a quote',
+    `${lb?.gross_cents}`);
+  check((lb?.notes || '').includes(form.name),
+    'and the notes say which form it came from');
+  // resolveClient answers with an id, not a row. Reading it as an object left
+  // the reservation unattached to the client it was for.
+  check(Boolean(lb?.client_id), 'attached to a client record', `client_id ${lb?.client_id}`);
+  const leadTravellers = fromLead.data?.travellers || [];
+  check(leadTravellers.length === 1 && leadTravellers[0].is_lead === 1,
+    'with the person who filled it in as the first traveller');
+  check(leadTravellers[0]?.email === myLead.email,
+    'carrying the email they gave, so nobody has to ask twice');
+
+  cleanup('the reservation from a lead',
+    () => call(advisor, 'DELETE', `/api/bookings/${quoted.data.bookingId}`));
+
+  const notALead = await call(advisor, 'POST', '/api/leads/submissions/nope/reservation');
+  check(notALead.status === 404, 'and an unknown lead is refused',
+    `status ${notALead.status}`);
+
   // ------------------------------------------------------- automation run --
   step('The submission drives the automation');
   let detail = await call(advisor, 'GET', `/api/automations/${automationId}`);

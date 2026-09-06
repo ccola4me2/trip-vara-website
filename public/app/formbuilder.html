@@ -48,6 +48,37 @@ const panel = document.getElementById('panel');
 const subsEl = document.getElementById('subs');
 let cache = [];
 
+
+function render(forms) {
+  cache = forms;
+  if (!forms.length) {
+    panel.innerHTML = '<div class="empty"><h3>No forms yet</h3><p>Build one and it gets its own page on your domain, ready to share or embed.</p></div>';
+    return;
+  }
+  panel.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Form</th><th>Link</th><th class="num">Submissions</th><th>Updated</th><th></th></tr></thead>
+    <tbody>${forms.map((f) => `<tr>
+      <td><span class="name">${esc(f.name)}</span>
+        <div><span class="badge ${f.active ? 'badge-green' : 'badge-navy'}">${f.active ? 'live' : 'off'}</span></div></td>
+      <td><a href="/f/${esc(f.slug)}" target="_blank" rel="noopener">/f/${esc(f.slug)}</a>
+        <div><button class="btn btn-ghost btn-sm" data-copy="${esc(f.slug)}">Copy link</button></div></td>
+      <td class="num"><button class="btn btn-ghost btn-sm" data-subs="${esc(f.id)}">${f.submissions}</button></td>
+      <td><span class="muted">${esc(timeAgo(f.updatedAt))}</span></td>
+      <td class="num"><a class="btn btn-ghost btn-sm" href="/app/form?id=${
+        encodeURIComponent(f.id)}">Edit</a></td>
+    </tr>`).join('')}</tbody></table></div>`;
+
+  panel.querySelectorAll('[data-subs]').forEach((b) =>
+    b.addEventListener('click', () => showSubs(b.dataset.subs)));
+  panel.querySelectorAll('[data-copy]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const url = `${location.origin}/f/${b.dataset.copy}`;
+      try { await navigator.clipboard.writeText(url); b.textContent = 'Copied'; }
+      catch { prompt('Copy this link:', url); }
+      setTimeout(() => { b.textContent = 'Copy link'; }, 2000);
+    }));
+}
+
 async function showSubs(id) {
   subsEl.hidden = false;
   subsEl.innerHTML = '<p class="spinner">Loading submissions...</p>';
@@ -77,6 +108,74 @@ document.getElementById('new-form').addEventListener('click', () => {
   location.href = '/app/form';
 });
 
+
+const daysSel = document.getElementById('report-days');
+const leadList = document.getElementById('lead-list');
+
+function drawReport(r) {
+  const t = r.totals;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><p class="label">Leads in</p><p class="value">${t.submissions}</p>
+      <p class="meta">Last ${r.days} days</p></div>
+    <div class="stat"><p class="label">Reached the CRM</p><p class="value">${t.reachedCrm}</p>
+      <p class="meta">${t.strandedHere
+        ? `${t.strandedHere} stopped here and nobody was told`
+        : 'Every one of them'}</p></div>
+    <div class="stat"><p class="label">Live forms</p><p class="value">${t.activeForms}</p>
+      <p class="meta">Of ${t.forms} built</p></div>
+    <div class="stat"><p class="label">All time</p><p class="value">${t.allTime}</p>
+      <p class="meta">Every submission ever</p></div>`;
+
+  document.getElementById('subs-count').textContent =
+    `${r.submissions.length} in the last ${r.days} days`;
+
+  leadList.innerHTML = r.submissions.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Who</th><th>Form</th><th>They said</th><th>When</th><th>CRM</th>
+          <th></th></tr></thead>
+        <tbody>${r.submissions.map((s) => {
+          // The answers beyond name, email and phone, which is the part that
+          // says what they actually want.
+          const said = Object.entries(s.data || {})
+            .filter(([k]) => !/^(first_?name|last_?name|name|email|phone|mobile)$/i.test(k))
+            .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
+            .filter((x) => x.length < 120)
+            .slice(0, 3).join(' · ');
+          return `<tr>
+            <td><span class="name">${esc(s.name || s.email || 'Anonymous')}</span>
+              <div class="muted">${esc([s.email, s.phone].filter(Boolean).join(' · '))}</div></td>
+            <td>${esc(s.formName)}</td>
+            <td class="muted" style="max-width:22rem;">${esc(said)}</td>
+            <td class="muted">${esc(timeAgo(s.createdAt))}</td>
+            <td>${s.contactId
+              ? `<a class="muted" href="/app/contact?id=${encodeURIComponent(s.contactId)}">open</a>`
+              : '<span class="badge badge-amber">not sent</span>'}</td>
+            <td class="num"><button class="btn btn-ghost btn-sm"
+              data-quote="${esc(s.id)}">Start a reservation</button></td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>No leads yet</h3>
+        <p>Share a form's link and the people who fill it in appear here.</p></div>`;
+
+  leadList.querySelectorAll('[data-quote]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Starting...';
+      try {
+        const made = await api(`/api/leads/submissions/${encodeURIComponent(btn.dataset.quote)}/reservation`,
+          { method: 'POST' });
+        // Straight onto the reservation, which is where the next thing happens.
+        location.href = `/app/reservation?id=${encodeURIComponent(made.bookingId)}`;
+      } catch (e) {
+        showError(document.getElementById('err'), e);
+        btn.disabled = false;
+        btn.textContent = 'Start a reservation';
+      }
+    });
+  });
+}
+
+daysSel.addEventListener('change', load);
 
 async function load() {
   panel.innerHTML = '<p class="spinner">Loading forms...</p>';

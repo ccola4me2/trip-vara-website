@@ -252,10 +252,128 @@ function checkPageSyntax() {
   return broken;
 }
 
+// Names the browser provides. Anything called that is not declared in the
+// script, not imported, and not on this list is a function that will not be
+// there when the page runs.
+const BROWSER_GLOBALS = new Set([
+  'document', 'window', 'location', 'history', 'navigator', 'fetch', 'console',
+  'alert', 'confirm', 'prompt', 'setTimeout', 'clearTimeout', 'setInterval',
+  'clearInterval', 'requestAnimationFrame', 'queueMicrotask', 'structuredClone',
+  'encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI',
+  'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'String', 'Number', 'Boolean',
+  'Array', 'Object', 'JSON', 'Math', 'Date', 'RegExp', 'Error', 'TypeError',
+  'Promise', 'Set', 'Map', 'WeakMap', 'Symbol', 'BigInt', 'Intl', 'Proxy',
+  'URL', 'URLSearchParams', 'FormData', 'Blob', 'File', 'FileReader',
+  'DataTransfer', 'TextDecoder', 'TextEncoder', 'DecompressionStream',
+  'CompressionStream', 'Response', 'Request', 'Headers', 'DOMParser',
+  'AbortController', 'Event', 'CustomEvent', 'MutationObserver',
+  'IntersectionObserver', 'localStorage', 'sessionStorage', 'crypto',
+  'DataView', 'Uint8Array', 'ArrayBuffer', 'Image', 'atob', 'btoa',
+  'getComputedStyle', 'matchMedia', 'print', 'scrollTo', 'open', 'close',
+]);
+
+// Words that can sit in front of a bracket without being a function call.
+const KEYWORDS = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function',
+  'await', 'new', 'delete', 'void', 'yield', 'do', 'else', 'try', 'finally',
+  'in', 'of', 'case', 'throw', 'async', 'super', 'this', 'instanceof',
+]);
+
+/**
+ * Is every function a page calls actually there?
+ *
+ * node --check answers whether a script parses, and a script can parse
+ * perfectly while calling a function nobody declared. That happened twice in
+ * one day: deleting a dialog took render() and drawReport() with it, and the
+ * pages went out reading "render is not defined" with the parse check green.
+ *
+ * Deliberately only call position, `name(`. Checking every reference would
+ * mean tracking scopes properly, and a checker that cries wolf gets switched
+ * off. This catches the shape that actually shipped.
+ */
+function checkCalls(root) {
+  const files = [];
+  (function walk(d) {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const full = join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith('.html')) files.push(full);
+    }
+  })(join(root, 'public'));
+
+  let missing = 0;
+  for (const file of files.sort()) {
+    const html = readFileSync(file, 'utf8');
+    for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+      const [, attrs, body] = m;
+      if (/\bsrc\s*=/i.test(attrs) || !body.trim()) continue;
+
+      // Everything the script brings into scope by name.
+      const declared = new Set();
+      for (const d of body.matchAll(/(?:^|\s)(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) declared.add(d[1]);
+      for (const d of body.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) declared.add(d[1]);
+      for (const d of body.matchAll(/import\s*\{([^}]*)\}/g)) {
+        for (const part of d[1].split(',')) {
+          const nameOnly = part.trim().split(/\s+as\s+/).pop().trim();
+          if (nameOnly) declared.add(nameOnly);
+        }
+      }
+      // Destructured bindings and parameters, taken loosely: a name bound
+      // anywhere in the script counts, since this is not a scope analyser.
+      for (const d of body.matchAll(/(?:const|let|var)\s*[{[]([^}\]]*)[}\]]/g)) {
+        for (const part of d[1].split(',')) {
+          const nameOnly = part.split(':').pop().trim().replace(/=.*$/, '').trim();
+          if (/^[A-Za-z_$][\w$]*$/.test(nameOnly)) declared.add(nameOnly);
+        }
+      }
+      for (const d of body.matchAll(/\(([^)]*)\)\s*=>/g)) {
+        for (const part of d[1].split(',')) {
+          const nameOnly = part.trim().replace(/=.*$/, '').trim();
+          if (/^[A-Za-z_$][\w$]*$/.test(nameOnly)) declared.add(nameOnly);
+        }
+      }
+      for (const d of body.matchAll(/function\s*[A-Za-z_$\w]*\s*\(([^)]*)\)/g)) {
+        for (const part of d[1].split(',')) {
+          const nameOnly = part.trim().replace(/=.*$/, '').trim();
+          if (/^[A-Za-z_$][\w$]*$/.test(nameOnly)) declared.add(nameOnly);
+        }
+      }
+      for (const d of body.matchAll(/catch\s*\(\s*([A-Za-z_$][\w$]*)/g)) declared.add(d[1]);
+
+      // Strip strings, template literals and comments so text inside them is
+      // not read as code.
+      const code = body
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+        .replace(/`(?:\\.|[^`\\])*`/g, '``')
+        .replace(/'(?:\\.|[^'\\])*'/g, "''")
+        .replace(/"(?:\\.|[^"\\])*"/g, '""');
+
+      const unknown = new Set();
+      for (const c of code.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
+        const name = c[2];
+        if (declared.has(name) || BROWSER_GLOBALS.has(name) || KEYWORDS.has(name)) continue;
+        unknown.add(name);
+      }
+
+      if (unknown.size) {
+        missing += 1;
+        console.log(`FAIL  ${relative(root, file)}`);
+        console.log(`        calls but never declares: ${[...unknown].join(', ')}`);
+        console.log('        the page throws on load, however well it parses');
+      }
+    }
+  }
+
+  if (!missing) console.log('ok    every function a page calls is declared or imported');
+  return missing;
+}
+
 async function main() {
   // Offline and instant, so it runs before anything needs a server. A page
   // that does not parse cannot honour a contract either.
   const brokenSyntax = checkPageSyntax();
+  const missingCalls = checkCalls(new URL('..', import.meta.url).pathname);
 
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
@@ -389,7 +507,10 @@ async function main() {
       ? `\n${problems} contract mismatch(es).`
       : `\nAll verifiable page contracts match.${unverified ? ` ${unverified} page(s) had no sample data to check against.` : ''}`
   );
-  process.exit(problems || brokenSyntax ? 1 : 0);
+  if (missingCalls) {
+    console.log(`\n${missingCalls} page script(s) call something that is not there.`);
+  }
+  process.exit(problems || brokenSyntax || missingCalls ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(2); });

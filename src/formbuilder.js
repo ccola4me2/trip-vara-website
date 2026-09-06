@@ -415,6 +415,113 @@ export async function handleFormsReport(request, env) {
   });
 }
 
+/**
+ * What the lead already told you, as a reservation.
+ *
+ * A form lead landed in the report and in the CRM and then stopped: turning it
+ * into something quotable meant retyping their name, their dates and where
+ * they want to go, off a screen two clicks away. Everything the form asked is
+ * already here, so the reservation starts filled in.
+ *
+ * Quoted, never booked. Nobody has agreed to anything yet, and a reservation
+ * that arrives booked would land in production totals and commission owed on
+ * the strength of somebody filling in a form at a stand.
+ */
+export async function handleReservationFromLead(request, env, submissionId) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const locationId = ghl.locationFor(env, user);
+  // Scoped by location: a submission id is not a permission, and this reads a
+  // client's name, email and phone number.
+  const row = await env.DB.prepare(
+    `SELECT s.*, f.name AS form_name, f.source AS form_source
+       FROM form_submissions s JOIN forms f ON f.id = s.form_id
+      WHERE s.id = ? AND s.location_id = ?`
+  ).bind(submissionId, locationId).first();
+  if (!row) return notFound('That lead was not found.');
+
+  let data = {};
+  try { data = JSON.parse(row.data_json); } catch { data = {}; }
+
+  const clientName = clean(row.name, 120)
+    || clean(data.full_name, 120)
+    || [clean(data.first_name, 60), clean(data.last_name, 60)].filter(Boolean).join(' ')
+    || clean(row.email, 120);
+  if (!clientName) return badRequest('That lead has no name to file a reservation under.');
+
+  // The catalogue keys earn their keep here: the same question always arrives
+  // under the same name, so this mapping is a list rather than a guess.
+  const productType = ({
+    Cruise: 'cruise', 'All-inclusive resort': 'resort', 'Escorted tour': 'tour',
+    'Independent travel': 'package', 'River cruise': 'cruise', Expedition: 'cruise',
+  })[data.travel_type] || 'cruise';
+
+  // resolveClient answers with an id, not a row. Reading it as an object left
+  // client_id null on the reservation, so the trip was not attached to the
+  // client it was for.
+  const clientId = await db.resolveClient(env, user.id, clientName, {
+    ghlContactId: row.contact_id || null,
+  });
+
+  // The lead gave an email and a phone number, and a client record without
+  // them is a name. Only fills blanks: a record somebody has edited should not
+  // be overwritten by whatever an old form said.
+  if (clientId && (row.email || row.phone)) {
+    await env.DB.prepare(
+      `UPDATE clients SET email = COALESCE(NULLIF(email, ''), ?),
+         phone = COALESCE(NULLIF(phone, ''), ?), updated_at = ?
+       WHERE id = ? AND user_id = ?`
+    ).bind(row.email || null, row.phone || null, now(), clientId, user.id).run();
+  }
+
+  // What they said, kept as prose on the reservation. A budget of "10,000 to
+  // 20,000" is not a price and must not become one, so it goes in the notes
+  // rather than the gross.
+  const said = [
+    data.budget ? `Budget: ${data.budget}` : '',
+    data.nights ? `Length: ${data.nights}` : '',
+    data.occasion ? `Occasion: ${data.occasion}` : '',
+    data.travel_type ? `Interested in: ${data.travel_type}` : '',
+    data.special_needs ? `Needs: ${data.special_needs}` : '',
+    data.notes ? `They said: ${data.notes}` : '',
+    `From ${row.form_name}${row.form_source ? ` (${row.form_source})` : ''}`,
+  ].filter(Boolean).join('\n');
+
+  const booking = await db.createBooking(env, user.id, {
+    ghlContactId: row.contact_id || null,
+    clientName,
+    clientId: clientId || null,
+    productType,
+    destination: clean(data.destination, 120) || null,
+    departDate: cleanDate(data.travel_date),
+    returnDate: null,
+    depositDue: null,
+    finalPaymentDue: null,
+    travellers: Math.max(1, Math.min(Number(data.party_size) || 1, 99)),
+    grossCents: 0,
+    commissionCents: 0,
+    commissionStatus: 'pending',
+    status: 'quoted',
+    notes: said,
+    insuranceStatus: 'unknown',
+  });
+
+  // The person who filled the form in is the first traveller, and the lead
+  // holds their email and phone, so the reservation does not have to ask again.
+  await env.DB.prepare(
+    `INSERT INTO travellers (id, booking_id, user_id, name, email, phone, is_lead,
+       created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+  ).bind(uid(), booking.id, user.id, clientName, row.email || null, row.phone || null,
+         now(), now()).run();
+
+  await db.logActivity(env, user.id, 'lead.reservation',
+    `Started a reservation for ${clientName}`, { submissionId, bookingId: booking.id });
+
+  return json({ ok: true, bookingId: booking.id, clientName });
+}
+
 async function uniqueSlug(env, base, excludeId = null) {
   let slug = slugify(base);
   for (let i = 0; i < 50; i++) {
