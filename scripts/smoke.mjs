@@ -852,6 +852,55 @@ async function main() {
   check(suppliers.size === 1,
     'and rewrites the name on them, so a report stops splitting', [...suppliers].join(' / '));
 
+  // ----------------------------------------------------- the vendors hub --
+  step('The vendor directory');
+
+  const starred = await call(advisor, 'POST', `/api/vendors/${keep.id}/favourite`,
+    { favourite: true });
+  check(starred.status === 200, 'a vendor can be starred', `status ${starred.status}`);
+
+  const hub = await call(advisor, 'GET', '/api/vendors');
+  check((hub.data?.categories || []).includes('Cruise Lines'),
+    'the hub offers a fixed set of categories to shelve them under');
+  check(hub.data?.stats?.favourites >= 1, 'and counts what is starred',
+    `${hub.data?.stats?.favourites}`);
+
+  // The bug this test exists for. The star has its own endpoint; writing it
+  // from the full save cleared it every time a vendor was edited, because the
+  // edit form has no star field on it.
+  await call(advisor, 'PUT', `/api/vendors/${keep.id}`, {
+    name: keep.name, finalDays: 90, category: 'Cruise Lines',
+    bdmName: 'Dana Reyes', bdmEmail: 'dana@example.com',
+    signupUrl: 'https://example.com/signup', accountNumber: 'AG-4471',
+  });
+  const afterEdit = await call(advisor, 'GET', '/api/vendors');
+  const edited = (afterEdit.data?.vendors || []).find((v) => v.id === keep.id);
+  check(Boolean(edited?.favourite), 'and editing the vendor does not quietly unstar it');
+  check(edited?.category === 'Cruise Lines' && edited?.bdm_name === 'Dana Reyes',
+    'the manager and the shelf are kept', `${edited?.category} / ${edited?.bdm_name}`);
+  check(edited?.account_number === 'AG-4471', 'along with the agency account number');
+
+  // A link in a directory gets clicked without being read.
+  await call(advisor, 'PUT', `/api/vendors/${keep.id}`, {
+    name: keep.name, portalUrl: 'javascript:alert(1)',
+  });
+  const afterBadUrl = await call(advisor, 'GET', '/api/vendors');
+  check(!(afterBadUrl.data?.vendors || []).find((v) => v.id === keep.id)?.portal_url,
+    'a link that is not http is refused rather than stored');
+
+  const junkCategory = await call(advisor, 'PUT', `/api/vendors/${keep.id}`, {
+    name: keep.name, category: 'Made up shelf',
+  });
+  const afterJunk = (await call(advisor, 'GET', '/api/vendors')).data?.vendors
+    ?.find((v) => v.id === keep.id);
+  check(junkCategory.status === 200 && !afterJunk?.category,
+    'an unknown category is dropped rather than creating a new shelf');
+
+  const notMineStar = await call(admin, 'POST', `/api/vendors/${keep.id}/favourite`,
+    { favourite: true });
+  check(notMineStar.status === 404, 'and one advisor cannot star another advisor\'s vendor',
+    `status ${notMineStar.status}`);
+
   // Terms turn a departure into a deadline, which is the only reason an
   // imported reservation is any use.
   await call(advisor, 'PUT', `/api/vendors/${keep.id}`, { name: keep.name, finalDays: 90 });

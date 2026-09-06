@@ -37,7 +37,7 @@ export const EXPECTED_SCHEMA = {
   travellers: ['booking_id', 'created_at', 'dob', 'email', 'id', 'is_lead', 'name', 'notes', 'passport_country', 'passport_expiry', 'passport_number', 'phone', 'updated_at', 'user_id'],
   user_prefs: ['dashboard_json', 'updated_at', 'user_id'],
   users: ['agency_address', 'agency_name', 'approved_at', 'approved_by', 'created_at', 'default_split_pct', 'email', 'first_name', 'ghl_location_id', 'ghl_user_id', 'id', 'last_login_at', 'last_name', 'password_hash', 'phone', 'role', 'seller_of_travel', 'status', 'updated_at'],
-  vendors: ['commission_pct', 'created_at', 'deposit_days', 'email', 'final_days', 'id', 'name', 'notes', 'phone', 'portal_url', 'updated_at', 'user_id'],
+  vendors: ['account_number', 'bdm_email', 'bdm_name', 'bdm_phone', 'category', 'commission_pct', 'created_at', 'deposit_days', 'email', 'favourite', 'final_days', 'id', 'name', 'notes', 'phone', 'portal_url', 'signup_url', 'updated_at', 'user_id', 'website'],
 };
 
 /** "table.column" -> the migration file that adds it. */
@@ -429,16 +429,24 @@ export const COLUMN_ORIGIN = {
   'users.seller_of_travel': '0026_invoice.sql',
   'users.status': '0001_init.sql',
   'users.updated_at': '0001_init.sql',
+  'vendors.account_number': '0033_vendor_hub.sql',
+  'vendors.bdm_email': '0033_vendor_hub.sql',
+  'vendors.bdm_name': '0033_vendor_hub.sql',
+  'vendors.bdm_phone': '0033_vendor_hub.sql',
+  'vendors.category': '0033_vendor_hub.sql',
   'vendors.commission_pct': '0018_vendors.sql',
   'vendors.created_at': '0018_vendors.sql',
   'vendors.deposit_days': '0018_vendors.sql',
   'vendors.email': '0018_vendors.sql',
+  'vendors.favourite': '0033_vendor_hub.sql',
   'vendors.final_days': '0018_vendors.sql',
   'vendors.id': '0018_vendors.sql',
   'vendors.name': '0018_vendors.sql',
   'vendors.notes': '0018_vendors.sql',
   'vendors.phone': '0018_vendors.sql',
   'vendors.portal_url': '0018_vendors.sql',
+  'vendors.signup_url': '0033_vendor_hub.sql',
   'vendors.updated_at': '0018_vendors.sql',
   'vendors.user_id': '0018_vendors.sql',
+  'vendors.website': '0033_vendor_hub.sql',
 };

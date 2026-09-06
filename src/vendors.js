@@ -12,8 +12,31 @@ import * as db from './db.js';
 
 const COLUMNS = `
   v.id, v.user_id, v.name, v.final_days, v.deposit_days, v.commission_pct,
-  v.phone, v.email, v.portal_url, v.notes, v.created_at, v.updated_at
+  v.phone, v.email, v.portal_url, v.notes, v.created_at, v.updated_at,
+  v.category, v.favourite, v.bdm_name, v.bdm_email, v.bdm_phone,
+  v.signup_url, v.website, v.account_number
 `;
+
+// The shelves a directory of suppliers falls into. Fixed, because a free text
+// category becomes "Cruise", "Cruises" and "Cruise Line" within a fortnight,
+// which is the same mess vendors were created to end. Anything unrecognised
+// lands in Other rather than being refused.
+export const CATEGORIES = [
+  'Cruise Lines',
+  'All-Inclusive Resorts',
+  'Hotels and Resorts',
+  'Escorted Tours',
+  'River Cruise',
+  'Expedition and Yacht',
+  'Excursions and Attractions',
+  'Villas and Rentals',
+  'Rail',
+  'Car and Transfers',
+  'Air Consolidators',
+  'Insurance',
+  'Destination Management',
+  'Other',
+];
 
 /** The vendor record for a name, made if it is new. */
 export async function resolveVendor(env, userId, name) {
@@ -61,8 +84,10 @@ export async function handleListVendors(request, env) {
   const vendors = results || [];
   return json({
     vendors,
+    categories: CATEGORIES,
     stats: {
       total: vendors.length,
+      favourites: vendors.filter((v) => v.favourite).length,
       withTerms: vendors.filter((v) => v.final_days).length,
       unused: vendors.filter((v) => !v.trips).length,
       // Names that look like the same vendor written differently. Suggested
@@ -125,14 +150,30 @@ export async function handleUpdateVendor(request, env, id) {
     return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
   };
 
+  // Only http and https, and only when it parses. A link typed into a
+  // directory is clicked without being read, so a javascript: URL saved here
+  // would be a script the advisor runs on themselves.
+  const link = (v) => (/^https?:\/\//i.test(String(v || '')) ? clean(v, 300) : null);
+
   const res = await env.DB.prepare(
     `UPDATE vendors SET name = ?, final_days = ?, deposit_days = ?, commission_pct = ?,
-       phone = ?, email = ?, portal_url = ?, notes = ?, updated_at = ?
+       phone = ?, email = ?, portal_url = ?, notes = ?, category = ?,
+       bdm_name = ?, bdm_email = ?, bdm_phone = ?, signup_url = ?, website = ?,
+       account_number = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(name, num(body.finalDays, 730), num(body.depositDays, 365), num(body.commissionPct, 100),
          clean(body.phone, 40) || null, clean(body.email, 160) || null,
-         /^https?:\/\//i.test(String(body.portalUrl || '')) ? clean(body.portalUrl, 300) : null,
-         clean(body.notes, 2000) || null, now(), id, user.id).run();
+         link(body.portalUrl),
+         clean(body.notes, 2000) || null,
+         CATEGORIES.includes(String(body.category)) ? String(body.category) : null,
+         // favourite is deliberately absent. It has its own endpoint, and
+         // writing it here from a form that has no star field cleared the star
+         // every time a vendor was edited.
+         clean(body.bdmName, 120) || null, clean(body.bdmEmail, 160) || null,
+         clean(body.bdmPhone, 40) || null,
+         link(body.signupUrl), link(body.website),
+         clean(body.accountNumber, 60) || null,
+         now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Vendor not found.');
 
   // The name is what every report groups by and what a vendor prints on a
@@ -141,6 +182,26 @@ export async function handleUpdateVendor(request, env, id) {
     .bind(name, id, user.id).run().catch(() => {});
 
   return json({ ok: true });
+}
+
+/**
+ * Star or unstar a vendor.
+ *
+ * Its own endpoint rather than a field on the full save, because starring is
+ * one click on a directory of two hundred suppliers and sending the whole
+ * record back to toggle a flag would let a stale form overwrite the rest of it.
+ */
+export async function handleFavouriteVendor(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const res = await env.DB.prepare(
+    'UPDATE vendors SET favourite = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+  ).bind(body.favourite ? 1 : 0, now(), id, user.id).run();
+
+  if (!res.meta || res.meta.changes === 0) return notFound('Vendor not found.');
+  return json({ ok: true, favourite: Boolean(body.favourite) });
 }
 
 /**

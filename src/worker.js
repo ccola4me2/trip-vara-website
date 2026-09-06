@@ -88,6 +88,7 @@ import {
 import { importCatalogStep } from './catalog.js';
 import {
   handleListVendors, handleUpdateVendor, handleMergeVendors, handleSuggestDates,
+  handleFavouriteVendor,
 } from './vendors.js';
 import {
   handleAddTraveller, handleUpdateTraveller, handleDeleteTraveller,
@@ -290,6 +291,7 @@ async function routeApi(request, env, path, method) {
   const candidatesMatch = path.match(/^\/api\/commissions\/statements\/([^/]+)\/candidates$/);
   const clientMatch = path.match(/^\/api\/clients\/([^/]+)$/);
   const vendorMatch = path.match(/^\/api\/vendors\/([^/]+)$/);
+  const vendorStarMatch = path.match(/^\/api\/vendors\/([^/]+)\/favourite$/);
 
   // ---- auth -------------------------------------------------------------
   if (path === '/api/auth/signup' && method === 'POST') return handleSignup(request, env);
@@ -496,6 +498,8 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/vendors' && method === 'GET') return handleListVendors(request, env);
   if (path === '/api/vendors/merge' && method === 'POST') return handleMergeVendors(request, env);
   if (path === '/api/vendors/suggest-dates' && method === 'GET') return handleSuggestDates(request, env);
+  // Before the bare vendor match, so the longer path is not swallowed by it.
+  if (vendorStarMatch && method === 'POST') return handleFavouriteVendor(request, env, vendorStarMatch[1]);
   if (vendorMatch && method === 'PUT') return handleUpdateVendor(request, env, vendorMatch[1]);
 
   if (path === '/api/catalog/lines' && method === 'GET') return handleCatalogLines(request, env);

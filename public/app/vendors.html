@@ -3,17 +3,47 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vendors | Trip Vara Portal</title>
+<title>Vendors Hub | Trip Vara Portal</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/app.css">
+<style>
+  /* The directory: shelves of suppliers, read by eye rather than by row. */
+  .hub-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1.25rem;
+    align-items: start;
+  }
+  .shelf { border: 1px solid var(--navy-100); border-radius: 6px; overflow: hidden; background: #fff; }
+  .shelf > h3 {
+    margin: 0; padding: .7rem .9rem; font-size: .92rem;
+    background: var(--navy-50, #f4f6f9); border-bottom: 1px solid var(--navy-100);
+  }
+  .shelf > h3 .count { float: right; font-weight: 400; color: var(--navy-400, #7b8798); }
+  .shelf ul { list-style: none; margin: 0; padding: 0; }
+  .shelf li { display: flex; align-items: center; gap: .5rem; padding: .5rem .9rem; border-bottom: 1px solid var(--navy-50, #eef1f5); }
+  .shelf li:last-child { border-bottom: 0; }
+  .shelf li .who { flex: 1; min-width: 0; }
+  .shelf li .who .nm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shelf li .who .sub { font-size: .72rem; color: var(--navy-400, #7b8798); }
+  /* The star is a control, so it reads as one: a real button with a focus ring. */
+  .star {
+    background: none; border: 0; cursor: pointer; font-size: 1.05rem; line-height: 1;
+    padding: .15rem .25rem; border-radius: 4px; color: var(--navy-200, #c3ccd8);
+  }
+  .star[aria-pressed="true"] { color: var(--amber-600, #b7791f); }
+  .star:hover { color: var(--amber-600, #b7791f); }
+  .star:focus-visible { outline: 2px solid var(--navy-600); outline-offset: 1px; }
+  .hub-tabs { display: flex; gap: .35rem; }
+</style>
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Vendors</h1><p class="sub">Who you sell, how they spell their name, and when they want the balance.</p></div>
+      <div><h1>Vendors Hub</h1><p class="sub">Suppliers, their people, and how to sign up, in one place.</p></div>
       <span id="scope"></span>
     </header>
     <div class="content">
@@ -32,7 +62,20 @@
       </section>
 
       <section class="card" style="margin-top:1.25rem;">
-        <div class="card-head"><h2>All vendors</h2></div>
+        <div class="card-head">
+          <div class="hub-tabs">
+            <button class="btn btn-secondary btn-sm" id="tab-all" aria-pressed="true">All vendors</button>
+            <button class="btn btn-ghost btn-sm" id="tab-fav" aria-pressed="false">My favourites</button>
+          </div>
+          <div class="toolbar" style="margin:0;padding:0;">
+            <input id="search" type="search" placeholder="Search vendors" aria-label="Search vendors"
+              style="width:16rem;">
+            <select id="view" aria-label="Layout" style="width:auto;">
+              <option value="hub">By category</option>
+              <option value="table">As a table</option>
+            </select>
+          </div>
+        </div>
         <div id="panel"><p class="spinner">Loading...</p></div>
       </section>
     </div>
@@ -63,8 +106,34 @@
         <div class="field"><label for="email">Agent email</label>
           <input id="email" name="email" type="email" maxlength="160"></div>
       </div>
-      <div class="field"><label for="portalUrl">Booking portal</label>
-        <input id="portalUrl" name="portalUrl" type="url" placeholder="https://..."></div>
+      <div class="field"><label for="category">Category</label>
+        <select id="category" name="category"></select>
+        <p class="field-hint">What shelf they sit on in the hub. Uncategorised vendors gather
+          under Other rather than disappearing.</p></div>
+      <div class="field-row">
+        <div class="field"><label for="portalUrl">Booking portal</label>
+          <input id="portalUrl" name="portalUrl" type="url" placeholder="https://..."></div>
+        <div class="field"><label for="website">Website</label>
+          <input id="website" name="website" type="url" placeholder="https://..."></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="signupUrl">Where to register</label>
+          <input id="signupUrl" name="signupUrl" type="url" placeholder="https://..."></div>
+        <div class="field"><label for="accountNumber">Agency account number</label>
+          <input id="accountNumber" name="accountNumber" maxlength="60"></div>
+      </div>
+
+      <p class="label" style="margin:1.4rem 0 .2rem;">Business development manager</p>
+      <p class="field-hint" style="margin:0 0 .6rem;">The person to ring when a booking needs
+        a human. Worth keeping current: it is the reason to open this page at all.</p>
+      <div class="field-row">
+        <div class="field"><label for="bdmName">Name</label>
+          <input id="bdmName" name="bdmName" maxlength="120"></div>
+        <div class="field"><label for="bdmEmail">Email</label>
+          <input id="bdmEmail" name="bdmEmail" type="email" maxlength="160"></div>
+        <div class="field"><label for="bdmPhone">Phone</label>
+          <input id="bdmPhone" name="bdmPhone" type="tel" maxlength="40"></div>
+      </div>
       <div class="field"><label for="notes">Notes</label>
         <textarea id="notes" name="notes" maxlength="2000"></textarea></div>
 
@@ -100,6 +169,27 @@ const err = document.getElementById('err');
 const dlg = document.getElementById('dlg');
 const form = document.getElementById('vendor-form');
 let cache = [];
+let categories = [];
+let favouritesOnly = false;
+
+const search = document.getElementById('search');
+const view = document.getElementById('view');
+const tabAll = document.getElementById('tab-all');
+const tabFav = document.getElementById('tab-fav');
+
+function setTab(fav) {
+  favouritesOnly = fav;
+  tabAll.setAttribute('aria-pressed', String(!fav));
+  tabFav.setAttribute('aria-pressed', String(fav));
+  tabAll.className = `btn btn-sm ${fav ? 'btn-ghost' : 'btn-secondary'}`;
+  tabFav.className = `btn btn-sm ${fav ? 'btn-secondary' : 'btn-ghost'}`;
+  drawList();
+}
+
+tabAll.addEventListener('click', () => setTab(false));
+tabFav.addEventListener('click', () => setTab(true));
+search.addEventListener('input', () => drawList());
+view.addEventListener('change', () => drawList());
 
 function render(d) {
   cache = d.vendors;
@@ -146,30 +236,148 @@ function render(d) {
     });
   }
 
-  panel.innerHTML = d.vendors.length
-    ? `<div class="table-wrap"><table>
-        <thead><tr><th>Vendor</th><th>Terms</th><th class="num">Trips</th>
-          <th class="num">Volume</th><th class="num">Commission</th><th></th></tr></thead>
-        <tbody>${d.vendors.map((v) => `<tr>
-          <td><span class="name">${esc(v.name)}</span>
-            ${v.portal_url ? `<div><a class="muted" href="${esc(v.portal_url)}"
-              target="_blank" rel="noopener noreferrer">booking portal</a></div>` : ''}</td>
-          <td>${v.final_days
-            ? `balance ${v.final_days}d before departure`
-            : '<span class="muted">not recorded</span>'}
-            ${v.undated ? `<div class="muted">${v.undated} trip${v.undated === 1 ? '' : 's'} with no date</div>` : ''}</td>
-          <td class="num">${v.trips}</td>
-          <td class="num">${money(v.gross_cents)}</td>
-          <td class="num">${money(v.commission_cents)}</td>
-          <td class="num">${v.user_id === ME
-            ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(v.id)}">Edit</button>`
-            : '<span class="muted">view only</span>'}</td>
-        </tr>`).join('')}</tbody></table></div>`
-    : `<div class="empty"><h3>No vendors yet</h3>
-        <p>A vendor record appears the first time you book one.</p></div>`;
+  drawList();
+}
 
+/** What the tabs and the search box leave showing. */
+function visible() {
+  const q = search.value.trim().toLowerCase();
+  return cache.filter((v) => {
+    if (favouritesOnly && !v.favourite) return false;
+    if (!q) return true;
+    // Searched across the things somebody would actually recall: the name,
+    // who their manager is, and the account number on the paperwork.
+    return [v.name, v.bdm_name, v.account_number, v.category]
+      .some((x) => String(x || '').toLowerCase().includes(q));
+  });
+}
+
+function contactLine(v) {
+  const bits = [];
+  if (v.bdm_name) bits.push(esc(v.bdm_name));
+  if (v.trips) bits.push(`${v.trips} trip${v.trips === 1 ? '' : 's'}`);
+  if (!bits.length && v.final_days) bits.push(`balance ${v.final_days}d out`);
+  return bits.join(' · ');
+}
+
+function starButton(v) {
+  return `<button class="star" data-star="${esc(v.id)}" aria-pressed="${v.favourite ? 'true' : 'false'}"
+    title="${v.favourite ? 'Remove from favourites' : 'Add to favourites'}"
+    aria-label="${v.favourite ? 'Remove' : 'Add'} ${esc(v.name)} ${v.favourite ? 'from' : 'to'} favourites"
+    >${v.favourite ? '\u2605' : '\u2606'}</button>`;
+}
+
+function drawList() {
+  const rows = visible();
+
+  if (!rows.length) {
+    panel.innerHTML = favouritesOnly
+      ? `<div class="empty"><h3>No favourites yet</h3>
+          <p>Star a vendor and it will be waiting here.</p></div>`
+      : cache.length
+        ? `<div class="empty"><h3>Nothing matches</h3><p>No vendor by that name.</p></div>`
+        : `<div class="empty"><h3>No vendors yet</h3>
+            <p>A vendor record appears the first time you book one.</p></div>`;
+    return;
+  }
+
+  panel.innerHTML = view.value === 'table' ? tableView(rows) : hubView(rows);
+  wireRows();
+}
+
+function hubView(rows) {
+  // Grouped onto shelves. A vendor with no category is not hidden; it lands in
+  // Other, because a directory that quietly omits things is worse than untidy.
+  const groups = new Map();
+  for (const v of rows) {
+    const key = v.category || 'Other';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(v);
+  }
+  const order = [...groups.keys()].sort((a, b) => (
+    a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)));
+
+  return `<div class="card-pad"><div class="hub-grid">${order.map((cat) => `
+    <div class="shelf">
+      <h3>${esc(cat)}<span class="count">${groups.get(cat).length}</span></h3>
+      <ul>${groups.get(cat)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((v) => `<li>
+          <span class="who">
+            <a class="nm name" href="${v.portal_url ? esc(v.portal_url) : '#'}"${
+              v.portal_url ? ' target="_blank" rel="noopener noreferrer"' : ''}
+              data-open="${esc(v.id)}">${esc(v.name)}</a>
+            ${contactLine(v) ? `<span class="sub">${contactLine(v)}</span>` : ''}
+          </span>
+          ${starButton(v)}
+          ${v.user_id === ME
+            ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(v.id)}">Edit</button>` : ''}
+        </li>`).join('')}</ul>
+    </div>`).join('')}</div></div>`;
+}
+
+function tableView(rows) {
+  return `<div class="table-wrap"><table>
+    <thead><tr><th style="width:2rem;"></th><th>Vendor</th><th>Category</th><th>Manager</th>
+      <th>Terms</th><th class="num">Trips</th><th class="num">Volume</th>
+      <th class="num">Commission</th><th></th></tr></thead>
+    <tbody>${rows.map((v) => `<tr>
+      <td>${starButton(v)}</td>
+      <td><span class="name">${esc(v.name)}</span>
+        ${v.portal_url ? `<div><a class="muted" href="${esc(v.portal_url)}"
+          target="_blank" rel="noopener noreferrer">booking portal</a></div>` : ''}</td>
+      <td>${esc(v.category || '')}</td>
+      <td>${esc(v.bdm_name || '')}${v.bdm_email
+        ? `<div><a class="muted" href="mailto:${esc(v.bdm_email)}">${esc(v.bdm_email)}</a></div>` : ''}</td>
+      <td>${v.final_days
+        ? `balance ${v.final_days}d before departure`
+        : '<span class="muted">not recorded</span>'}
+        ${v.undated ? `<div class="muted">${v.undated} trip${v.undated === 1 ? '' : 's'} with no date</div>` : ''}</td>
+      <td class="num">${v.trips}</td>
+      <td class="num">${money(v.gross_cents)}</td>
+      <td class="num">${money(v.commission_cents)}</td>
+      <td class="num">${v.user_id === ME
+        ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(v.id)}">Edit</button>`
+        : '<span class="muted">view only</span>'}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function wireRows() {
   panel.querySelectorAll('[data-edit]').forEach((btn) => {
     btn.addEventListener('click', () => openEdit(cache.find((v) => v.id === btn.dataset.edit)));
+  });
+
+  // A vendor with no portal link has nothing to open, so the name opens the
+  // record instead of following a dead href.
+  panel.querySelectorAll('[data-open]').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      if (a.getAttribute('href') !== '#') return;
+      e.preventDefault();
+      openEdit(cache.find((v) => v.id === a.dataset.open));
+    });
+  });
+
+  panel.querySelectorAll('[data-star]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const v = cache.find((x) => x.id === btn.dataset.star);
+      if (!v) return;
+      const next = !v.favourite;
+      // Moved before the request so the star answers the click straight away,
+      // and put back if the save fails rather than lying about what is stored.
+      v.favourite = next ? 1 : 0;
+      btn.setAttribute('aria-pressed', next ? 'true' : 'false');
+      btn.textContent = next ? '\u2605' : '\u2606';
+      try {
+        await api(`/api/vendors/${encodeURIComponent(v.id)}/favourite`,
+          { method: 'POST', body: { favourite: next } });
+        if (favouritesOnly && !next) drawList();
+      } catch (e) {
+        v.favourite = next ? 0 : 1;
+        btn.setAttribute('aria-pressed', next ? 'false' : 'true');
+        btn.textContent = next ? '\u2606' : '\u2605';
+        showError(err, e);
+      }
+    });
   });
 }
 
@@ -182,6 +390,13 @@ function openEdit(v) {
   set('name', v.name); set('finalDays', v.final_days); set('depositDays', v.deposit_days);
   set('commissionPct', v.commission_pct); set('phone', v.phone); set('email', v.email);
   set('portalUrl', v.portal_url); set('notes', v.notes);
+  const catSel = form.elements.category;
+  catSel.innerHTML = `<option value="">Uncategorised</option>${
+    categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}`;
+  catSel.value = v.category || '';
+  set('website', v.website); set('signupUrl', v.signup_url);
+  set('accountNumber', v.account_number);
+  set('bdmName', v.bdm_name); set('bdmEmail', v.bdm_email); set('bdmPhone', v.bdm_phone);
   drawTiers(v.id);
   dlg.showModal();
 }
@@ -283,6 +498,7 @@ async function offerDates() {
 async function load() {
   try {
     const d = await api(`/api/vendors${advisorParam() ? '?' + advisorParam() : ''}`);
+    categories = d.categories || [];
     mountScopePicker(document.getElementById('scope'), d, load);
     render(d);
     await offerDates();
