@@ -164,8 +164,8 @@ document.getElementById('fields').innerHTML = [
 
   group('Who is going'),
   `<p class="field-hint" style="margin:-.2rem 0 .6rem;">Named here, they get a column each in
-    the pricing grid, and their passports get checked against the return date. Leave the first
-    one blank and the client is assumed to be travelling.</p>
+    the pricing grid, and their passports get checked against the return date. The client is
+    filled in as the first traveller; change it if the person who booked is not going.</p>
    <div id="traveller-rows"></div>
    <button class="btn btn-ghost btn-sm" type="button" id="add-traveller">Add another traveller</button>`,
 
@@ -199,6 +199,28 @@ function addTravellerRow(value = '') {
 }
 addTravellerRow();
 document.getElementById('add-traveller').addEventListener('click', () => addTravellerRow());
+
+/**
+ * The client is the first traveller until somebody says otherwise.
+ *
+ * On most reservations the person who booked is one of the people going, so
+ * typing their name twice is a keystroke tax on the common case.
+ *
+ * It mirrors only while the box is untouched. Once the advisor edits the first
+ * traveller, it stops following: somebody booking a trip for their parents
+ * types the client, corrects the traveller to their mother, and must not have
+ * that undone by going back to fix a typo in the client's surname.
+ */
+const firstTraveller = () => document.querySelector('.traveller-name');
+let mirrored = '';
+form.elements.clientName.addEventListener('input', () => {
+  const box = firstTraveller();
+  if (!box) return;
+  const typed = box.value.trim();
+  if (typed && typed !== mirrored) return;
+  box.value = form.elements.clientName.value;
+  mirrored = box.value.trim();
+});
 
 /**
  * The sailing picker: line, then ship, then departure.
