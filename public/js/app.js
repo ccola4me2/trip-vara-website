@@ -134,6 +134,7 @@ const NAV = [
   // a hub it takes two clicks and reads as a setting for reservations rather
   // than the place you go to find a manager's phone number.
   { href: '/app/vendors', label: 'Vendors', icon: I.handshake },
+  { href: '/app/cruise-search', label: 'Cruise search', icon: I.ship },
   {
     hub: 'Client', icon: I.people, items: [
       { href: '/app/tasks', label: 'To do' },

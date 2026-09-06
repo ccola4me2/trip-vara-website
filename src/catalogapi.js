@@ -10,13 +10,37 @@ import { requireUser, requireAdmin } from './auth.js';
 import * as db from './db.js';
 import {
   catalogLines, catalogShips, catalogDates, matchSailing,
-  importCatalogStep, importStatus, catalogReady,
+  importCatalogStep, importStatus, catalogReady, catalogSearch, catalogFacets,
 } from './catalog.js';
 
 export async function handleCatalogLines(request, env) {
   const { response } = await requireUser(request, env);
   if (response) return response;
   return json({ knownCruiseLines: await knownCruiseLines(env), lines: await catalogLines(env), ready: await catalogReady(env) });
+}
+
+export async function handleCatalogSearch(request, env) {
+  const { response } = await requireUser(request, env);
+  if (response) return response;
+
+  const p = new URL(request.url).searchParams;
+  const [result, facets] = await Promise.all([
+    catalogSearch(env, {
+      q: clean(p.get('q'), 80),
+      line: clean(p.get('line'), 120),
+      destination: clean(p.get('destination'), 80),
+      port: clean(p.get('port'), 80),
+      from: clean(p.get('from'), 10),
+      to: clean(p.get('to'), 10),
+      minNights: Number(p.get('minNights')) || 0,
+      maxNights: Number(p.get('maxNights')) || 0,
+      limit: Number(p.get('limit')) || 60,
+      offset: Number(p.get('offset')) || 0,
+    }),
+    catalogFacets(env),
+  ]);
+
+  return json({ ...result, ...facets, lines: await catalogLines(env), ready: await catalogReady(env) });
 }
 
 export async function handleCatalogShips(request, env) {

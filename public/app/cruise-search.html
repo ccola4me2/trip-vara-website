@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cruise search | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  /* Filters across the top, results beneath. A client asks for a region and a
+     month, not for a ship, so the region and the month come first. */
+  .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; }
+  .sail-row { display: flex; align-items: baseline; gap: .9rem; padding: .7rem .9rem;
+    border-bottom: 1px solid var(--navy-50, #eef1f5); }
+  .sail-row:last-child { border-bottom: 0; }
+  .sail-row:hover { background: var(--navy-50, #eef1f5); }
+  .sail-when { width: 6.5rem; flex: none; font-variant-numeric: tabular-nums; font-size: .86rem; }
+  .sail-what { flex: 1; min-width: 0; }
+  .sail-what .t { display: block; font-size: .95rem; }
+  .sail-what .m { display: block; font-size: .76rem; color: var(--navy-400, #7b8798); }
+  .sail-n { width: 4rem; flex: none; text-align: right; font-size: .82rem;
+    color: var(--navy-400, #7b8798); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Cruise search</h1><p class="sub">Every sailing in the catalog, searched the way a
+        client asks for one.</p></div>
+      <span class="muted" id="count"></span>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+
+      <section class="card">
+        <div class="card-pad">
+          <div class="filters">
+            <div class="field" style="margin:0;"><label for="q">Anything</label>
+              <input id="q" type="search" placeholder="Ship, itinerary, port"></div>
+            <div class="field" style="margin:0;"><label for="line">Cruise line</label>
+              <select id="line"><option value="">Any line</option></select></div>
+            <div class="field" style="margin:0;"><label for="destination">Region</label>
+              <select id="destination"><option value="">Anywhere</option></select></div>
+            <div class="field" style="margin:0;"><label for="port">Leaves from</label>
+              <select id="port"><option value="">Any port</option></select></div>
+            <div class="field" style="margin:0;"><label for="from">Departs after</label>
+              <input id="from" type="date"></div>
+            <div class="field" style="margin:0;"><label for="to">Departs before</label>
+              <input id="to" type="date"></div>
+            <div class="field" style="margin:0;"><label for="nights">Length</label>
+              <select id="nights">
+                <option value="">Any length</option>
+                <option value="1-4">Up to 4 nights</option>
+                <option value="5-7">5 to 7 nights</option>
+                <option value="8-12">8 to 12 nights</option>
+                <option value="13-99">13 nights or more</option>
+              </select></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:1.25rem;">
+        <div class="card-head"><h2>Sailings</h2>
+          <button class="btn btn-ghost btn-sm" id="clear">Clear filters</button></div>
+        <div id="results"><p class="spinner">Loading...</p></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, dateFmt, showError } from '/js/app.js';
+await mountShell();
+
+const err = document.getElementById('err');
+const results = document.getElementById('results');
+const els = {
+  q: document.getElementById('q'),
+  line: document.getElementById('line'),
+  destination: document.getElementById('destination'),
+  port: document.getElementById('port'),
+  from: document.getElementById('from'),
+  to: document.getElementById('to'),
+  nights: document.getElementById('nights'),
+};
+
+let timer;
+let filled = false;
+
+function query() {
+  const p = new URLSearchParams();
+  if (els.q.value.trim()) p.set('q', els.q.value.trim());
+  if (els.line.value) p.set('line', els.line.value);
+  if (els.destination.value) p.set('destination', els.destination.value);
+  if (els.port.value) p.set('port', els.port.value);
+  if (els.from.value) p.set('from', els.from.value);
+  if (els.to.value) p.set('to', els.to.value);
+  if (els.nights.value) {
+    const [a, b] = els.nights.value.split('-');
+    p.set('minNights', a);
+    p.set('maxNights', b);
+  }
+  p.set('limit', '80');
+  return p.toString();
+}
+
+const short = (iso) => (iso ? dateFmt(iso) : '');
+
+function draw(d) {
+  document.getElementById('count').textContent = d.total
+    ? `${d.total.toLocaleString()} sailing${d.total === 1 ? '' : 's'}`
+    : '';
+
+  // The filters are filled from what is actually in the catalog, once, so a
+  // region with no sailings is never offered.
+  if (!filled) {
+    els.line.innerHTML = '<option value="">Any line</option>'
+      + (d.lines || []).map((l) => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
+    els.destination.innerHTML = '<option value="">Anywhere</option>'
+      + (d.destinations || []).map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
+    els.port.innerHTML = '<option value="">Any port</option>'
+      + (d.ports || []).map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
+    filled = true;
+  }
+
+  if (!d.ready) {
+    results.innerHTML = `<div class="empty"><h3>The catalog is still filling</h3>
+      <p>Sailings are imported in the background. Come back shortly, or ask an owner to
+        run the import from the admin page.</p></div>`;
+    return;
+  }
+
+  results.innerHTML = d.sailings.length
+    ? `<ul class="rows" style="list-style:none;margin:0;padding:0;">${d.sailings.map((s) => `
+        <li class="sail-row">
+          <span class="sail-when">${esc(short(s.depart_date))}</span>
+          <span class="sail-what">
+            <span class="t">${esc(s.name || 'Sailing')}</span>
+            <span class="m">${esc(s.cruise_line || '')}${s.ship ? ` · ${esc(s.ship)}` : ''}${
+              s.departure_port ? ` · from ${esc(s.departure_port)}` : ''}${
+              s.destination ? ` · ${esc(s.destination)}` : ''}</span>
+          </span>
+          <span class="sail-n">${s.nights ? `${s.nights} nights` : ''}</span>
+          <a class="btn btn-ghost btn-sm" href="/app/new?sailing=${encodeURIComponent(s.id)}">Book it</a>
+        </li>`).join('')}</ul>`
+    : `<div class="empty"><h3>Nothing matches</h3>
+        <p>No sailing in the catalog fits those filters. Widen the dates or the region.</p></div>`;
+}
+
+async function load() {
+  try {
+    draw(await api(`/api/catalog/search?${query()}`));
+  } catch (e) { showError(err, e); }
+}
+
+// Both events on every control, debounced. A select fires change and a text
+// box fires input, and asking each element which it is was a way to be clever
+// about something that does not need it.
+for (const el of Object.values(els)) {
+  for (const evt of ['input', 'change']) {
+    el.addEventListener(evt, () => {
+      clearTimeout(timer);
+      timer = setTimeout(load, 200);
+    });
+  }
+}
+
+document.getElementById('clear').addEventListener('click', () => {
+  for (const el of Object.values(els)) el.value = '';
+  load();
+});
+
+await load();
+</script>
+</body></html>

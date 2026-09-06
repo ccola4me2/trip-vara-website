@@ -40,22 +40,6 @@
     <div class="content">
       <div id="err"></div>
 
-      <section class="card" style="margin-bottom:1.5rem;" id="picker-card">
-        <div class="card-head"><h2>Start from the catalog</h2></div>
-        <div class="card-pad">
-          <p class="field-hint" style="margin:0 0 .8rem;" id="picker-hint">
-            Pick the sailing and the vendor, ship, dates and itinerary fill themselves in.
-            Everything it sets can be typed over.</p>
-          <div class="field-row" id="picker">
-            <div class="field"><label for="pick-line">Cruise line</label>
-              <select id="pick-line"><option value="">Pick a cruise line</option></select></div>
-            <div class="field"><label for="pick-ship">Ship</label>
-              <select id="pick-ship" disabled><option value="">Ship</option></select></div>
-            <div class="field"><label for="pick-date">Departure</label>
-              <select id="pick-date" disabled><option value="">Departure</option></select></div>
-          </div>
-        </div>
-      </section>
 
       <section class="card">
         <div class="card-head"><h2>Reservation information</h2></div>
@@ -239,9 +223,14 @@ document.getElementById('fields').innerHTML = [
   `<div class="field" id="vendor-pick-field" hidden>
     <label for="vendor-pick">Choose from your vendors</label>
     <select id="vendor-pick"></select>
-    <p class="field-hint">Everything your vendor record knows fills itself in. Cruise lines are
-      not here: pick those from the catalog above, where the ship and the sailing dates come
-      with them.</p>
+    <p class="field-hint">Everything your vendor record knows fills itself in.</p>
+    <div class="field-row" id="sailing-pick" hidden style="margin-top:.6rem;">
+      <div class="field"><label for="pick-ship">Ship</label>
+        <select id="pick-ship" disabled><option value="">Ship</option></select></div>
+      <div class="field"><label for="pick-date">Departure</label>
+        <select id="pick-date" disabled><option value="">Departure</option></select></div>
+    </div>
+    <p class="field-hint" id="picker-hint" hidden></p>
   </div>`,
   row(text('supplier', 'Vendor'), text('productName', 'Ship, hotel or product')),
   row(text('confirmationNumber', 'Confirmation number'),
@@ -378,6 +367,8 @@ const UNSHELVED = 'Not categorised yet';
     // records. It is the same list the sailing picker above uses, so choosing
     // a line here loads its ships rather than leaving two pickers that know
     // different things.
+    if (want !== 'cruise' && sailingPick) { sailingPick.hidden = true; pickerHint.hidden = true; }
+
     if (want === 'cruise') {
       const lines = (catalogRows || []).map((l) => l.name);
       sel.innerHTML = '<option value="">Type the name, or pick a cruise line</option>'
@@ -445,12 +436,9 @@ const UNSHELVED = 'Not categorised yet';
     if (sel.value.startsWith('line:')) {
       const line = sel.value.slice(5);
       form.elements.supplier.value = line;
-      // Drive the sailing picker above, so the ship and the dates follow from
-      // the same choice instead of being asked for twice.
-      if (pickLine && [...pickLine.options].some((o) => o.value === line)) {
-        pickLine.value = line;
-        pickLine.dispatchEvent(new Event('change'));
-      }
+      // The ship and the departure follow from the same choice, rather than
+      // being asked for twice in two places that can disagree.
+      loadShips(line);
       return;
     }
 
@@ -540,33 +528,38 @@ form.elements.clientName.addEventListener('input', () => {
  * return date right without looking it up. Everything it sets can still be
  * typed over: a chartered sailing or a private group will not be in a feed.
  */
-const pickLine = document.getElementById('pick-line');
+// The line is chosen in the vendor box, which only offers cruise lines when
+// the type is Cruise. This is the rest of it: the ship and the departure,
+// shown next to that box rather than in a card of their own above the form.
 const pickShip = document.getElementById('pick-ship');
 const pickDate = document.getElementById('pick-date');
 const pickerHint = document.getElementById('picker-hint');
+const sailingPick = document.getElementById('sailing-pick');
 let dateRows = [];
+let pickedLine = '';
 
-let cat;
-try { cat = await api('/api/catalog/lines'); } catch { cat = null; }
-if (!cat || !cat.ready || !cat.lines.length) {
-  document.getElementById('picker-card').hidden = true;
-} else {
-  pickLine.innerHTML = '<option value="">Pick a cruise line</option>'
-    + cat.lines.map((l) => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
-}
-
-pickLine.addEventListener('change', async () => {
+/** Load the ships for a line, or clear the pair if there is no line. */
+async function loadShips(line) {
+  pickedLine = line || '';
   pickShip.innerHTML = '<option value="">Ship</option>';
   pickDate.innerHTML = '<option value="">Departure</option>';
   pickShip.disabled = true;
   pickDate.disabled = true;
-  if (!pickLine.value) return;
-  const d = await api(`/api/catalog/ships?line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
-  if (!d || !d.ships.length) return;
+  dateRows = [];
+  sailingPick.hidden = !line;
+  if (!line) return;
+
+  const d = await api(`/api/catalog/ships?line=${encodeURIComponent(line)}`).catch(() => null);
+  if (!d || !d.ships.length) {
+    pickerHint.hidden = false;
+    pickerHint.textContent = `No sailings imported for ${line} yet. Type the ship and dates in.`;
+    return;
+  }
+  pickerHint.hidden = true;
   pickShip.innerHTML = '<option value="">Ship</option>'
     + d.ships.map((sh) => `<option value="${esc(sh.name)}">${esc(sh.name)}</option>`).join('');
   pickShip.disabled = false;
-});
+}
 
 pickShip.addEventListener('change', async () => {
   pickDate.innerHTML = '<option value="">Departure</option>';
@@ -574,7 +567,7 @@ pickShip.addEventListener('change', async () => {
   dateRows = [];
   if (!pickShip.value) return;
   const d = await api(`/api/catalog/dates?ship=${encodeURIComponent(pickShip.value)}`
-    + `&line=${encodeURIComponent(pickLine.value)}`).catch(() => null);
+    + `&line=${encodeURIComponent(pickedLine)}`).catch(() => null);
   if (!d || !d.dates.length) return;
   dateRows = d.dates;
   pickDate.innerHTML = '<option value="">Departure</option>'

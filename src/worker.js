@@ -84,7 +84,7 @@ import {
 import { handleClientRecord, handleListClients, handleUpdateClient } from './clients.js';
 import { handlePreviewImport, handleRunImport } from './importer.js';
 import {
-  handleCatalogLines, handleCatalogShips, handleCatalogDates, handleCatalogStatus,
+  handleCatalogLines, handleCatalogSearch, handleCatalogShips, handleCatalogDates, handleCatalogStatus,
   handleCatalogImport, handleCatalogSuggest, handleCatalogApply,
 } from './catalogapi.js';
 import { importCatalogStep } from './catalog.js';
@@ -169,6 +169,7 @@ const PAGE_FILES = {
   '/app/complete': '/app/complete.html',
   '/app/vendors': '/app/vendors.html',
   '/app/vendor': '/app/vendor.html',
+  '/app/cruise-search': '/app/cruise-search.html',
   '/app/form': '/app/form.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
@@ -523,6 +524,7 @@ async function routeApi(request, env, path, method) {
   if (vendorMatch && method === 'PUT') return handleUpdateVendor(request, env, vendorMatch[1]);
   if (vendorMatch && method === 'DELETE') return handleDeleteVendor(request, env, vendorMatch[1]);
 
+  if (path === '/api/catalog/search' && method === 'GET') return handleCatalogSearch(request, env);
   if (path === '/api/catalog/lines' && method === 'GET') return handleCatalogLines(request, env);
   if (path === '/api/catalog/ships' && method === 'GET') return handleCatalogShips(request, env);
   if (path === '/api/catalog/dates' && method === 'GET') return handleCatalogDates(request, env);

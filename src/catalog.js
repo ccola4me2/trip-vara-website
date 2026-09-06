@@ -221,6 +221,67 @@ export async function catalogShips(env, line) {
 }
 
 /** Every upcoming departure for one ship. */
+/**
+ * The catalog searched the way somebody actually looks for a sailing.
+ *
+ * Not by line and ship, which is the picker on a reservation and assumes you
+ * already know what you are booking. This is the other question: a client
+ * wants the Caribbean in March for about a week, and the answer is a list of
+ * sailings across every line.
+ */
+export async function catalogSearch(env, {
+  q = '', line = '', destination = '', port = '',
+  from = '', to = '', minNights = 0, maxNights = 0, limit = 60, offset = 0,
+} = {}) {
+  const where = ['depart_date IS NOT NULL'];
+  const binds = [];
+
+  if (q) {
+    where.push('(name LIKE ? OR ship LIKE ? OR destination LIKE ? OR departure_port LIKE ?)');
+    const like = `%${q}%`;
+    binds.push(like, like, like, like);
+  }
+  if (line) { where.push('line_norm = ?'); binds.push(normKey(line)); }
+  if (destination) { where.push('destination LIKE ?'); binds.push(`%${destination}%`); }
+  if (port) { where.push('departure_port LIKE ?'); binds.push(`%${port}%`); }
+  if (from) { where.push('depart_date >= ?'); binds.push(from); }
+  if (to) { where.push('depart_date <= ?'); binds.push(to); }
+  if (minNights) { where.push('nights >= ?'); binds.push(Number(minNights)); }
+  if (maxNights) { where.push('nights <= ?'); binds.push(Number(maxNights)); }
+
+  const cap = Math.min(Math.max(Number(limit) || 60, 1), 200);
+  const { results } = await env.DB.prepare(
+    `SELECT id, cruise_line, ship, name, depart_date, return_date, nights,
+            departure_port, disembark_port, destination
+       FROM sailings WHERE ${where.join(' AND ')}
+      ORDER BY depart_date ASC, cruise_line ASC
+      LIMIT ? OFFSET ?`
+  ).bind(...binds, cap, Number(offset) || 0).all();
+
+  const countRow = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM sailings WHERE ${where.join(' AND ')}`
+  ).bind(...binds).first();
+
+  return { sailings: results || [], total: countRow?.n || 0 };
+}
+
+/** The destinations and ports worth offering as filters. */
+export async function catalogFacets(env) {
+  const [dest, ports] = await Promise.all([
+    env.DB.prepare(
+      `SELECT destination AS name, COUNT(*) AS n FROM sailings
+        WHERE destination IS NOT NULL AND destination != ''
+        GROUP BY destination ORDER BY n DESC LIMIT 40`
+    ).all(),
+    env.DB.prepare(
+      `SELECT departure_port AS name, COUNT(*) AS n FROM sailings
+        WHERE departure_port IS NOT NULL AND departure_port != ''
+        GROUP BY departure_port ORDER BY n DESC LIMIT 60`
+    ).all(),
+  ]);
+  return { destinations: dest.results || [], ports: ports.results || [] };
+}
+
 export async function catalogDates(env, ship, line) {
   const shipNorm = normKey(ship);
   if (!shipNorm) return [];
