@@ -8,6 +8,7 @@ import { requireAdmin, publicUser } from './auth.js';
 import * as db from './db.js';
 import { sendAdvisorApprovedEmail, checkResend, sendTestEmail } from './email.js';
 import { schemaDrift } from './schema-drift.js';
+import { mirrorCatalogStep, mirrorStatus } from './catalogmirror.js';
 
 const STATUSES = ['pending', 'active', 'suspended'];
 
@@ -125,6 +126,26 @@ export async function handleRunLifecycle(request, env) {
  * Deliberately reports presence only, never a value, so it is safe to call
  * from the browser and safe to paste into a support thread.
  */
+/** Pull the sailing catalog from the copy CruiseShoppers already holds. */
+export async function handleMirrorCatalog(request, env) {
+  const { user, response } = await requireAdmin(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const result = await mirrorCatalogStep(env, {
+    maxShips: Math.min(Math.max(Number(body.ships) || 25, 1), 60),
+    force: body.force === true,
+  });
+  await db.logActivity(env, user.id, 'catalog.mirror', 'Imported sailings', result);
+  return json({ ...result, status: await mirrorStatus(env) });
+}
+
+export async function handleMirrorStatus(request, env) {
+  const { response } = await requireAdmin(request, env);
+  if (response) return response;
+  return json(await mirrorStatus(env));
+}
+
 export async function handleHealth(request, env) {
   const { response } = await requireAdmin(request, env);
   if (response) return response;

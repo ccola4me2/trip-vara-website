@@ -26,6 +26,7 @@ import {
   handleUpdateBooking, handleQuickUpdate, handleDeleteBooking, handleWelcomed,
 } from './bookings.js';
 import { markReturnedTripsTravelled } from './db.js';
+import { mirrorCatalogStep } from './catalogmirror.js';
 import { handleReadConfirmation } from './confirm.js';
 import { migrationHint } from './schema-drift.js';
 import {
@@ -112,7 +113,7 @@ import { handleDashboard, handleProduction, handleMonth } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleSetAdvisorSplit,
   handleRunLifecycle,
-  handleHealth, handleTestEmail,
+  handleHealth, handleTestEmail, handleMirrorCatalog, handleMirrorStatus,
   handleSyncStatus, handleRunSync,
 } from './admin.js';
 import { purgeExpiredSessions } from './db.js';
@@ -217,6 +218,12 @@ export default {
     // catalog is never more than five minutes behind a new snapshot.
     ctx.waitUntil(
       importCatalogStep(env, { maxPages: 8 }).catch((e) => console.error('catalog import', e))
+    );
+    // Without a feed key of its own, the catalog is mirrored from the copy
+    // CruiseShoppers already holds. A finished pass costs one request, so this
+    // is cheap on the ticks where there is nothing to do.
+    ctx.waitUntil(
+      mirrorCatalogStep(env, { maxShips: 8 }).catch((e) => console.error('catalog mirror', e))
     );
     // A trip whose return date has passed has been travelled. Nothing else
     // ever set that status, so the reports said nobody had been anywhere.
@@ -544,6 +551,8 @@ async function routeApi(request, env, path, method) {
 
   // ---- admin ------------------------------------------------------------
   if (path === '/api/admin/health' && method === 'GET') return handleHealth(request, env);
+  if (path === '/api/admin/catalog-mirror' && method === 'GET') return handleMirrorStatus(request, env);
+  if (path === '/api/admin/catalog-mirror' && method === 'POST') return handleMirrorCatalog(request, env);
   if (path === '/api/admin/test-email' && method === 'POST') return handleTestEmail(request, env);
   if (path === '/api/admin/sync' && method === 'GET') return handleSyncStatus(request, env);
   if (path === '/api/admin/sync' && method === 'POST') return handleRunSync(request, env);

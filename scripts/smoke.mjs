@@ -1618,6 +1618,23 @@ async function main() {
   const dates = travel.map((e) => e.date);
   check(dates.join() === [...dates].sort().join(), 'in date order');
 
+  // ------------------------------------------------ the mirrored catalog --
+  step('Sailings borrowed from CruiseShoppers');
+
+  // The fetch itself is not exercised here: it reaches another site, and a
+  // check that fails when somebody else's Worker is slow is a check people
+  // learn to ignore. What is checked is that it is an owner's job and that it
+  // reports itself.
+  const mirrorForbidden = await call(advisor, 'GET', '/api/admin/catalog-mirror');
+  check(mirrorForbidden.status === 403, 'an advisor cannot drive the catalog import',
+    `status ${mirrorForbidden.status}`);
+
+  const mirror = await call(admin, 'GET', '/api/admin/catalog-mirror');
+  check(mirror.status === 200 && mirror.data?.source?.includes('cruiseshoppers'),
+    'the owner can see where the catalog comes from', mirror.data?.source);
+  check(typeof mirror.data?.sailingsStored === 'number',
+    'and how many sailings are actually stored', `${mirror.data?.sailingsStored}`);
+
   // ------------------------------------------- suggesting who to book for --
   step('The CRM knows them already');
 
