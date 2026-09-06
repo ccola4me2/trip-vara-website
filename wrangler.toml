@@ -30,6 +30,19 @@ binding = "DB"
 database_name = "trip-vara"
 database_id = "f7a1657b-4129-484c-9841-200416f8da8a"
 
+# R2: the documents attached to a reservation. Vendor confirmations, insurance
+# policies, air tickets. The bucket is private and stays private: every
+# download goes through the Worker, which checks the session and the advisor
+# who owns the row before streaming a byte. Making the bucket public would put
+# client paperwork on the open internet behind guessable keys.
+#
+# Added only after the bucket existed. A binding pointing at a bucket that does
+# not exist fails `wrangler deploy`, which would have blocked every release
+# until somebody noticed why.
+[[r2_buckets]]
+binding = "DOCS"
+bucket_name = "trip-vara-docs"
+
 # Non-secret config. Secrets (GHL_API_TOKEN, RESEND_API_KEY) are set in the
 # dashboard under Settings > Variables and Secrets. Never committed.
 [vars]
