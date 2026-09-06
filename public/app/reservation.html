@@ -46,6 +46,11 @@
               <span id="pricing-actions"></span></div>
             <div id="pricing"></div>
           </section>
+          <section class="card" style="margin-bottom:1.5rem;" id="components-card">
+            <div class="card-head" id="sec-components"><h2>Also on this trip</h2>
+              <span id="component-actions"></span></div>
+            <div id="components"></div>
+          </section>
           <section class="card" style="margin-bottom:1.5rem;" id="options-card" hidden>
             <div class="card-head" id="sec-options"><h2>Choices offered</h2>
               <span id="option-actions"></span></div>
@@ -126,6 +131,42 @@
     <div class="card-foot">
       <button class="btn btn-danger btn-sm" type="button" id="ti-delete" hidden>Remove</button>
       <button class="btn btn-primary" type="submit">Save tier</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="component-dlg">
+  <form id="component-form" method="dialog">
+    <div class="card-head"><h2>Another vendor on this trip</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-component>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <div class="field-row">
+        <div class="field"><label for="c-kind">What it is</label>
+          <select id="c-kind" name="kind"></select></div>
+        <div class="field"><label for="c-supplier">Booked with</label>
+          <input id="c-supplier" name="supplier" maxlength="120" required placeholder="Delta"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="c-product">What they are providing</label>
+          <input id="c-product" name="productName" maxlength="160" placeholder="ATL to SEA, return"></div>
+        <div class="field"><label for="c-conf">Confirmation number</label>
+          <input id="c-conf" name="confirmationNumber" maxlength="80"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="c-start">Starts</label>
+          <input id="c-start" name="startDate" type="date"></div>
+        <div class="field"><label for="c-end">Ends</label>
+          <input id="c-end" name="endDate" type="date"></div>
+      </div>
+      <div class="field"><label for="c-notes">Notes</label>
+        <textarea id="c-notes" name="notes" maxlength="1000"></textarea></div>
+      <p class="field-hint">What it costs goes in the pricing grid above, where you can pick
+        this vendor from the list. Removing a component here leaves its charges on the trip.</p>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="c-delete" hidden>Remove</button>
+      <button class="btn btn-primary" type="submit">Save</button>
     </div>
   </form>
 </dialog>
@@ -577,6 +618,53 @@ function drawDetail() {
   document.getElementById('detail-state').textContent = ro ? 'Read only' : '';
 }
 
+const KIND_WORD = {
+  air: 'Air', insurance: 'Travel insurance', lodging: 'Lodging',
+  excursion: 'Excursion', transfer: 'Transfer', car: 'Car hire', other: 'Something else',
+};
+
+/**
+ * The other vendors on this trip.
+ *
+ * A cruise with air on it is two bookings with two vendors, two confirmation
+ * numbers and two commission cheques, and it is one holiday. It used to go in
+ * as a second reservation that duplicated the client and the dates, or it went
+ * in nowhere and the commission was never chased.
+ */
+function drawComponents() {
+  const rows = d.components || [];
+  document.getElementById('component-actions').innerHTML = d.editable
+    ? '<button class="btn btn-ghost btn-sm" id="add-component">Add a vendor</button>' : '';
+  const add = document.getElementById('add-component');
+  if (add) add.addEventListener('click', () => openComponent(null));
+
+  const spend = (componentId) => (d.pricing || [])
+    .filter((l) => (l.component_id || null) === componentId)
+    .reduce((n, l) => n + (l.amount_cents || 0), 0);
+
+  document.getElementById('components').innerHTML = rows.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>What</th><th>Vendor</th><th>Dates</th><th class="num">Charges</th><th></th></tr></thead>
+        <tbody>${rows.map((c) => `<tr>
+          <td><span class="name">${esc(KIND_WORD[c.kind] || c.kind)}</span>
+            ${c.product_name ? `<div class="muted">${esc(c.product_name)}</div>` : ''}</td>
+          <td>${esc(c.supplier || '-')}
+            ${c.confirmation_number ? `<div class="muted">${esc(c.confirmation_number)}</div>` : ''}</td>
+          <td>${esc(c.start_date ? short(c.start_date) : '-')}${
+            c.end_date ? ` to ${esc(short(c.end_date))}` : ''}</td>
+          <td class="num">${spend(c.id) ? money(spend(c.id)) : '<span class="muted">not priced</span>'}</td>
+          <td class="num">${d.editable
+            ? `<button class="btn btn-ghost btn-sm" data-component="${esc(c.id)}">Edit</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>One vendor so far</h3>
+        <p>Air, insurance, a hotel either side of the cruise. Each keeps its own
+          confirmation number and its own commission, on this trip rather than a second one.</p></div>`;
+
+  document.querySelectorAll('[data-component]').forEach((btn) => {
+    btn.addEventListener('click', () => openComponent(rows.find((c) => c.id === btn.dataset.component)));
+  });
+}
+
 function drawOptions() {
   const rows = d.options || [];
   const quoting = d.booking.status === 'quoted';
@@ -637,18 +725,26 @@ function drawOptions() {
  * grid nobody reads.
  */
 let showAllRows = false;
+// Which vendor's charges the grid is showing. Null is the reservation's own.
+let pricingComponent = null;
 
 function drawPricing() {
   const kinds = d.priceKinds || [];
+  const parts = d.components || [];
+  // The grid shows one vendor at a time, because a cruise and its air have
+  // different charge rows and putting both in one table gives you a column of
+  // blanks for every row that belongs to the other one.
+  if (pricingComponent && !parts.some((c) => c.id === pricingComponent)) pricingComponent = null;
   const people = (d.travellers || []).map((t) => ({ id: t.id, name: t.name }));
   // The reservation itself is always a column: a transfer for the cabin or a
   // discount on the booking belongs to nobody in particular.
   const columns = [...people, { id: null, name: people.length ? 'Whole booking' : 'This trip' }];
 
-  const at = (kind, travellerId) => (d.pricing || [])
+  const forHere = (d.pricing || []).filter((l) => (l.component_id || null) === pricingComponent);
+  const at = (kind, travellerId) => forHere
     .find((l) => l.kind === kind && (l.traveller_id || null) === travellerId);
   const commissionAt = (travellerId) => {
-    const line = (d.pricing || []).find((l) => (l.traveller_id || null) === travellerId && l.commission_cents);
+    const line = forHere.find((l) => (l.traveller_id || null) === travellerId && l.commission_cents);
     return line ? line.commission_cents : 0;
   };
   const used = (k) => columns.some((c) => at(k.kind, c.id));
@@ -657,7 +753,13 @@ function drawPricing() {
   const cash = (cents) => (cents ? (cents / 100).toFixed(2) : '');
 
   document.getElementById('pricing-actions').innerHTML = d.editable
-    ? `<button class="btn btn-ghost btn-sm" id="toggle-rows">${
+    ? `${parts.length ? `<select id="price-for" style="width:auto;display:inline-block;margin-right:.4rem;">
+        <option value=""${pricingComponent ? '' : ' selected'}>${
+          esc(d.booking.supplier || 'The main booking')}</option>
+        ${parts.map((c) => `<option value="${esc(c.id)}"${c.id === pricingComponent ? ' selected' : ''}>${
+          esc([KIND_WORD[c.kind] || c.kind, c.supplier].filter(Boolean).join(' with '))}</option>`).join('')}
+       </select>` : ''}
+       <button class="btn btn-ghost btn-sm" id="toggle-rows">${
         showAllRows ? 'Only what is used' : 'All charge types'}</button>
        ${people.length > 1 ? '<button class="btn btn-ghost btn-sm" id="copy-across">Copy first column across</button>' : ''}`
     : '';
@@ -746,6 +848,12 @@ function drawPricing() {
   const toggle = document.getElementById('toggle-rows');
   if (toggle) toggle.addEventListener('click', () => { showAllRows = !showAllRows; drawPricing(); });
 
+  const forWhich = document.getElementById('price-for');
+  if (forWhich) forWhich.addEventListener('change', () => {
+    pricingComponent = forWhich.value || null;
+    drawPricing();
+  });
+
   const copy = document.getElementById('copy-across');
   if (copy) copy.addEventListener('click', () => {
     const first = columns[0].id || '';
@@ -765,7 +873,7 @@ function drawPricing() {
   const save = document.getElementById('save-pricing');
   if (save) save.addEventListener('click', async () => {
     save.disabled = true;
-    const body = { cells: [], commissions: [] };
+    const body = { componentId: pricingComponent, cells: [], commissions: [] };
     for (const el of cells()) {
       if (!el.value.trim()) continue;
       const box = document.querySelector(`[data-comm="${el.dataset.cell}"]`);
@@ -992,6 +1100,7 @@ function render() {
   const sections = [
     ['sec-detail', 'Reservation'],
     ['sec-pricing', 'Pricing'],
+    ['sec-components', 'Other vendors'],
     ['sec-options', 'Choices'],
     ['sec-travellers', 'Travellers'],
     ['sec-payments', 'Payments'],
@@ -1012,6 +1121,7 @@ function render() {
 
   drawDetail();
 
+  drawComponents();
   drawOptions();
   drawDocuments();
   drawPenalty();
@@ -1287,6 +1397,49 @@ onSubmit(detailForm, async (values) => {
   await api(`/api/bookings/${encodeURIComponent(id)}`, { method: 'PUT', body: values });
   await load();
   err.innerHTML = '<div class="notice notice-ok">Saved.</div>';
+});
+
+const componentDlg = document.getElementById('component-dlg');
+const componentForm = document.getElementById('component-form');
+let editingComponent = null;
+
+function openComponent(c) {
+  editingComponent = c ? c.id : null;
+  componentForm.reset();
+  componentForm.querySelector('.notice-error').hidden = true;
+  document.getElementById('c-delete').hidden = !c;
+  document.getElementById('c-kind').innerHTML = (d.componentKinds || [])
+    .map((k) => `<option value="${esc(k)}">${esc(KIND_WORD[k] || k)}</option>`).join('');
+  if (c) {
+    componentForm.elements.kind.value = c.kind;
+    componentForm.elements.supplier.value = c.supplier || '';
+    componentForm.elements.productName.value = c.product_name || '';
+    componentForm.elements.confirmationNumber.value = c.confirmation_number || '';
+    componentForm.elements.startDate.value = c.start_date || '';
+    componentForm.elements.endDate.value = c.end_date || '';
+    componentForm.elements.notes.value = c.notes || '';
+  } else {
+    // Air is the one people add, so it is the one already chosen.
+    componentForm.elements.kind.value = 'air';
+  }
+  componentDlg.showModal();
+}
+
+document.querySelector('[data-close-component]').addEventListener('click', () => componentDlg.close());
+document.getElementById('c-delete').addEventListener('click', async () => {
+  if (!editingComponent) return;
+  if (!confirm('Remove this vendor from the trip? What it cost stays on the reservation.')) return;
+  await api(`/api/components/${encodeURIComponent(editingComponent)}`, { method: 'DELETE' });
+  componentDlg.close();
+  await load();
+});
+onSubmit(componentForm, async (values) => {
+  const path = editingComponent
+    ? `/api/components/${encodeURIComponent(editingComponent)}`
+    : `/api/bookings/${encodeURIComponent(id)}/components`;
+  await api(path, { method: editingComponent ? 'PUT' : 'POST', body: values });
+  componentDlg.close();
+  await load();
 });
 
 const optionDlg = document.getElementById('option-dlg');

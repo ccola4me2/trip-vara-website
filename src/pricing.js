@@ -51,8 +51,8 @@ const KINDS = PRICE_KINDS.map((k) => k.kind);
 export async function listPricing(env, bookingId, scope) {
   const scoped = db.scopeWhere(scope, 'user_id');
   const { results } = await env.DB.prepare(
-    `SELECT id, booking_id, user_id, traveller_id, kind, label, amount_cents,
-            commissionable, commission_cents, sort_order
+    `SELECT id, booking_id, user_id, traveller_id, component_id, kind, label,
+            amount_cents, commissionable, commission_cents, sort_order
        FROM booking_pricing WHERE booking_id = ? AND ${scoped.sql}
       ORDER BY sort_order ASC, rowid ASC`
   ).bind(bookingId, ...scoped.binds).all().catch(() => ({ results: [] }));
@@ -156,6 +156,18 @@ export async function handleSavePricingGrid(request, env, bookingId) {
     return id && mine.has(id) ? id : null;
   };
 
+  // Which component a charge belongs to, checked the same way. A component id
+  // from another reservation would put this trip's air under somebody else's
+  // vendor.
+  const { results: parts } = await env.DB.prepare(
+    'SELECT id FROM components WHERE booking_id = ? AND user_id = ?'
+  ).bind(bookingId, user.id).all().catch(() => ({ results: [] }));
+  const ours = new Set((parts || []).map((p) => p.id));
+  const component = (v) => {
+    const id = clean(v, 64);
+    return id && ours.has(id) ? id : null;
+  };
+
   const order = new Map(PRICE_KINDS.map((k, i) => [k.kind, i]));
   const rows = [];
   for (const cell of cells) {
@@ -164,6 +176,7 @@ export async function handleSavePricingGrid(request, env, bookingId) {
     if (amountCents <= 0) continue;
     rows.push({
       travellerId: column(cell.travellerId),
+      componentId: component(cell.componentId),
       kind,
       commissionable: cell.commissionable ? 1 : 0,
       amountCents,
@@ -176,24 +189,38 @@ export async function handleSavePricingGrid(request, env, bookingId) {
     const cents = toCents(c.amount);
     if (cents <= 0) continue;
     const travellerId = column(c.travellerId);
-    const fare = rows.find((r) => r.kind === 'fare' && r.travellerId === travellerId);
+    const componentId = component(c.componentId);
+    const fare = rows.find((r) => r.kind === 'fare'
+      && r.travellerId === travellerId && r.componentId === componentId);
     if (fare) { fare.commissionCents = cents; continue; }
     rows.push({
-      travellerId, kind: 'fare', commissionable: 1,
+      travellerId, componentId, kind: 'fare', commissionable: 1,
       amountCents: 0, commissionCents: cents, sortOrder: 0,
     });
   }
 
-  await env.DB.prepare('DELETE FROM booking_pricing WHERE booking_id = ? AND user_id = ?')
-    .bind(bookingId, user.id).run();
+  // Only the component being priced. The grid shows one vendor at a time, so
+  // saving the air must not take the cruise's pricing with it.
+  const scopeId = component(body.componentId);
+  if (scopeId) {
+    await env.DB.prepare(
+      'DELETE FROM booking_pricing WHERE booking_id = ? AND user_id = ? AND component_id = ?'
+    ).bind(bookingId, user.id, scopeId).run();
+  } else {
+    await env.DB.prepare(
+      'DELETE FROM booking_pricing WHERE booking_id = ? AND user_id = ? AND component_id IS NULL'
+    ).bind(bookingId, user.id).run();
+  }
+  for (const r of rows) r.componentId = scopeId;
 
   const ts = now();
   for (const r of rows) {
     await env.DB.prepare(
-      `INSERT INTO booking_pricing (id, booking_id, user_id, traveller_id, kind, label,
-         amount_cents, commissionable, commission_cents, sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
-    ).bind(uid(), bookingId, user.id, r.travellerId, r.kind, r.amountCents,
+      `INSERT INTO booking_pricing (id, booking_id, user_id, traveller_id, component_id,
+         kind, label, amount_cents, commissionable, commission_cents, sort_order,
+         created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+    ).bind(uid(), bookingId, user.id, r.travellerId, r.componentId, r.kind, r.amountCents,
            r.commissionable, r.commissionCents, r.sortOrder, ts, ts).run();
   }
 

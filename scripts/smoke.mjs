@@ -1877,6 +1877,84 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // -------------------------------------------------------- components -----
+  {
+  step('One trip, several vendors');
+
+  const trip = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Multi ${stamp}`, supplier: 'Celebrity Cruises', status: 'booked',
+    productName: 'Celebrity Ascent', departDate: isoDay(200), returnDate: isoDay(207),
+  });
+  const tripId = trip.data?.booking?.id;
+  if (tripId) cleanup('the multi vendor trip', () => call(advisor, 'DELETE', `/api/bookings/${tripId}`));
+
+  const nameless = await call(advisor, 'POST', `/api/bookings/${tripId}/components`, { kind: 'air' });
+  check(nameless.status === 400, 'a component needs a vendor', `status ${nameless.status}`);
+
+  const backwards = await call(advisor, 'POST', `/api/bookings/${tripId}/components`, {
+    kind: 'air', supplier: 'Delta', startDate: isoDay(200), endDate: isoDay(190),
+  });
+  check(backwards.status === 400, 'and cannot end before it starts', `status ${backwards.status}`);
+
+  const air = await call(advisor, 'POST', `/api/bookings/${tripId}/components`, {
+    kind: 'air', supplier: `Delta ${stamp}`, productName: 'ATL to FLL, return',
+    confirmationNumber: `DL${stamp}`, startDate: isoDay(199), endDate: isoDay(208),
+  });
+  check(air.status === 201, 'air goes on the trip rather than beside it', `status ${air.status}`);
+
+  const rec = await call(advisor, 'GET', `/api/bookings/${tripId}/record`);
+  const parts = rec.data?.components || [];
+  check(parts.length === 1 && parts[0].confirmation_number === `DL${stamp}`,
+    'with its own confirmation number', parts[0]?.confirmation_number);
+
+  // Through the same vendor list as everything else, so air booked with a
+  // consolidator lands under one spelling in the reports rather than three.
+  check(parts[0].vendor_id, 'and its own vendor record');
+
+  // Pricing one vendor must not disturb the other. The grid shows one at a
+  // time, so a save that replaced everything would wipe the cruise.
+  await call(advisor, 'PUT', `/api/bookings/${tripId}/pricing`, {
+    componentId: null,
+    cells: [{ kind: 'fare', amount: '2000', commissionable: true }],
+    commissions: [{ amount: '320' }],
+  });
+  await call(advisor, 'PUT', `/api/bookings/${tripId}/pricing`, {
+    componentId: air.data.id,
+    cells: [{ kind: 'air', amount: '640' }],
+  });
+
+  const priced = await call(advisor, 'GET', `/api/bookings/${tripId}/record`);
+  const lines = priced.data?.pricing || [];
+  check(lines.some((l) => l.kind === 'fare' && !l.component_id),
+    'the cruise keeps its pricing when the air is saved',
+    JSON.stringify(lines.map((l) => l.kind)));
+  check(lines.some((l) => l.kind === 'air' && l.component_id === air.data.id),
+    'and the air is charged against the vendor that provided it');
+
+  // One money model: the trip total does not know components exist.
+  check(priced.data?.booking?.gross_cents === 264000,
+    'the trip total is everything, whoever it was booked with',
+    priced.data?.booking?.gross_cents);
+  check(priced.data?.booking?.commission_cents === 32000,
+    'and so is the commission', priced.data?.booking?.commission_cents);
+
+  // The money was real. Tidying away a vendor row must not quietly remove a
+  // charge from the trip.
+  await call(advisor, 'DELETE', `/api/components/${air.data.id}`);
+  const after = await call(advisor, 'GET', `/api/bookings/${tripId}/record`);
+  check((after.data?.components || []).length === 0, 'a component can be removed');
+  check(after.data?.booking?.gross_cents === 264000,
+    'and what it cost stays on the trip rather than vanishing with it',
+    after.data?.booking?.gross_cents);
+  check((after.data?.pricing || []).some((l) => l.kind === 'air' && !l.component_id),
+    'its charges are detached rather than deleted');
+
+  const notYours = await call(admin, 'POST', `/api/bookings/${tripId}/components`,
+    { kind: 'air', supplier: 'Intruder' });
+  check(notYours.status === 404, 'an owner cannot add a vendor to an associate\'s trip',
+    `status ${notYours.status}`);
+  }
+
   // ---------------------------------------------------- pricing grid -------
   {
   step('Pricing a cabin per traveller');

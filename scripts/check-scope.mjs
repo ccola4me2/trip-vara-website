@@ -37,7 +37,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA = schemaFromMigrations(ROOT);
 
 const OWNED = new Set([
-  'bookings', 'booking_payments', 'booking_pricing', 'quote_options', 'penalty_tiers', 'documents', 'travellers',
+  'bookings', 'booking_payments', 'booking_pricing', 'quote_options', 'penalty_tiers', 'documents', 'components', 'travellers',
   'amenities', 'tasks', 'client_credits', 'clients', 'travel_groups', 'vendors',
   'goals', 'user_prefs',
 ]);

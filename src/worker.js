@@ -28,6 +28,9 @@ import {
 import { markReturnedTripsTravelled } from './db.js';
 import { handleReadConfirmation } from './confirm.js';
 import {
+  handleAddComponent, handleUpdateComponent, handleDeleteComponent,
+} from './components.js';
+import {
   handleUploadDocument, handleGetDocument, handleDeleteDocument,
 } from './documents.js';
 import { handleStatement } from './statement.js';
@@ -231,6 +234,8 @@ async function routeApi(request, env, path, method) {
   const statementMatch = path.match(/^\/api\/bookings\/([^/]+)\/statement$/);
   const welcomedMatch = path.match(/^\/api\/bookings\/([^/]+)\/welcomed$/);
   const docsMatch = path.match(/^\/api\/bookings\/([^/]+)\/documents$/);
+  const componentsMatch = path.match(/^\/api\/bookings\/([^/]+)\/components$/);
+  const componentMatch = path.match(/^\/api\/components\/([^/]+)$/);
   const docMatch = path.match(/^\/api\/documents\/([^/]+)$/);
   const travellersMatch = path.match(/^\/api\/bookings\/([^/]+)\/travellers$/);
   const amenitiesMatch = path.match(/^\/api\/bookings\/([^/]+)\/amenities$/);
@@ -316,6 +321,11 @@ async function routeApi(request, env, path, method) {
   if (welcomedMatch && method === 'POST') return handleWelcomed(request, env, welcomedMatch[1]);
 
   // The paperwork a trip generates. Inert until an R2 bucket is bound.
+  // One trip, several vendors: air, insurance, lodging, a transfer.
+  if (componentsMatch && method === 'POST') return handleAddComponent(request, env, componentsMatch[1]);
+  if (componentMatch && method === 'PUT') return handleUpdateComponent(request, env, componentMatch[1]);
+  if (componentMatch && method === 'DELETE') return handleDeleteComponent(request, env, componentMatch[1]);
+
   if (docsMatch && method === 'POST') return handleUploadDocument(request, env, docsMatch[1]);
   if (docMatch && method === 'GET') return handleGetDocument(request, env, docMatch[1]);
   if (docMatch && method === 'DELETE') return handleDeleteDocument(request, env, docMatch[1]);
