@@ -236,6 +236,13 @@ document.getElementById('fields').innerHTML = [
       select('bookingMethod', 'Booked through', o.bookingMethods, 'direct')),
 
   group('Vendor'),
+  `<div class="field" id="vendor-pick-field" hidden>
+    <label for="vendor-pick">Choose from your vendors</label>
+    <select id="vendor-pick"></select>
+    <p class="field-hint">Everything your vendor record knows fills itself in. Cruise lines are
+      not here: pick those from the catalog above, where the ship and the sailing dates come
+      with them.</p>
+  </div>`,
   row(text('supplier', 'Vendor'), text('productName', 'Ship, hotel or product')),
   row(text('confirmationNumber', 'Confirmation number'),
       select('insuranceStatus', 'Insurance', o.insuranceStatuses, 'unknown')),
@@ -263,6 +270,139 @@ document.getElementById('fields').innerHTML = [
 ].join('');
 
 suggestClients(form.elements.clientName);
+
+/**
+ * The vendors you already sell, offered on the form that starts a reservation.
+ *
+ * A vendor record holds the terms, the manager and how to book, and none of it
+ * reached the reservation unless somebody typed the name identically. Picking
+ * one fills the name exactly, which is what joins the trip to the record, and
+ * carries across what that record already knows.
+ *
+ * Cruise lines are deliberately absent. The catalog above holds the line, the
+ * ship and the sailing dates together, and offering the line twice from two
+ * sources is how the two come to disagree.
+ */
+const VENDOR_TYPE = {
+  'All-Inclusive Resorts': 'resort',
+  'All-Inclusive Brands': 'resort',
+  'Hotels & Resorts': 'hotel',
+  'Rentals & Villas': 'hotel',
+  'Escorted Tours': 'tour',
+  'Package Providers': 'package',
+  FIT: 'package',
+  'River Cruises': 'cruise',
+  'Expedition Experiences & Yacht': 'cruise',
+  'Air Consolidator': 'air',
+  'Car & Transfer Services': 'transfer',
+  'Rail Vacations': 'rail',
+  Attractions: 'attraction',
+  Excursions: 'excursion',
+  Insurance: 'insurance',
+};
+
+const CATALOG_CATEGORY = 'Cruise Lines';
+
+// Names differing only in spacing or punctuation are the same supplier.
+const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+(async () => {
+  let vendors = [];
+  try { vendors = (await api('/api/vendors')).vendors || []; } catch { return; }
+
+  const shelvesOf = (v) => {
+    let list = [];
+    try { const a = JSON.parse(v.categories_json || '[]'); if (Array.isArray(a)) list = a; }
+    catch { list = []; }
+    if (v.category && !list.includes(v.category)) list.unshift(v.category);
+    return list;
+  };
+
+  // Which vendors are cruise lines is a question the catalog answers, and the
+  // category does not: most of these records were created from a booking and
+  // have no category at all, so filtering on the shelf alone left Carnival,
+  // Royal Caribbean and Celebrity sitting in Other and being offered here.
+  let catalogLines = new Set();
+  try {
+    const c = await api('/api/catalog/lines');
+    // knownCruiseLines is every line the source knows; lines is only what has
+    // been imported so far. Both, so a part-finished import still keeps cruise
+    // lines out of a list they do not belong in.
+    catalogLines = new Set([
+      ...(c.knownCruiseLines || []).map(norm),
+      ...(c.lines || []).map((l) => norm(l.name)),
+    ]);
+  } catch { catalogLines = new Set(); }
+
+  // A supplier that only sells cruises comes from the catalog. One that sits
+  // on another shelf as well is still worth offering, filed under that shelf.
+  // Vendor records are named the way an advisor says them and the catalog uses
+  // the supplier's full legal name: "Oceania" against "Oceania Cruises",
+  // "Holland America" against "Holland America Line". An exact match left
+  // those three in a list of tour operators, so one name being the start of
+  // the other counts. Six characters minimum, so a short word cannot swallow
+  // an unrelated supplier.
+  const lineList = [...catalogLines];
+  const isCruiseLine = (name) => {
+    const n = norm(name);
+    if (!n) return false;
+    if (catalogLines.has(n)) return true;
+    return lineList.some((l) => (
+      (l.startsWith(n) && n.length >= 6) || (n.startsWith(l) && l.length >= 6)
+    ));
+  };
+
+  const offered = vendors
+    .map((v) => ({ v, shelves: shelvesOf(v).filter((c) => c !== CATALOG_CATEGORY) }))
+    .filter((x) => !isCruiseLine(x.v.name))
+    .filter((x) => x.shelves.length || !shelvesOf(x.v).length);
+
+  if (!offered.length) return;
+
+  const byShelf = new Map();
+  for (const { v, shelves } of offered) {
+    const key = shelves[0] || 'Other';
+    if (!byShelf.has(key)) byShelf.set(key, []);
+    byShelf.get(key).push(v);
+  }
+
+  const sel = document.getElementById('vendor-pick');
+  const order = [...byShelf.keys()].sort((a, b) => (
+    a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)));
+
+  sel.innerHTML = '<option value="">Type the name, or pick one</option>'
+    + order.map((shelf) => `<optgroup label="${esc(shelf)}">${
+      byShelf.get(shelf)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((v) => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('')
+    }</optgroup>`).join('');
+
+  document.getElementById('vendor-pick-field').hidden = false;
+
+  sel.addEventListener('change', () => {
+    const v = vendors.find((x) => x.id === sel.value);
+    if (!v) return;
+
+    // The name has to match the vendor record exactly: that string is what
+    // joins the reservation to the vendor, and every report groups by it.
+    form.elements.supplier.value = v.name;
+
+    const shelf = shelvesOf(v).find((c) => c !== CATALOG_CATEGORY);
+    const type = VENDOR_TYPE[shelf];
+    if (type) form.elements.productType.value = type;
+
+    // Booking through a vendor you have a record for is a direct booking.
+    if (form.elements.bookingMethod && !form.elements.bookingMethod.value) {
+      form.elements.bookingMethod.value = 'direct';
+    }
+  });
+
+  // Typing a name by hand should not leave the picker claiming somebody else.
+  form.elements.supplier.addEventListener('input', () => {
+    const match = vendors.find((x) => x.name === form.elements.supplier.value.trim());
+    sel.value = match ? match.id : '';
+  });
+})();
 
 // The client box means something different on a personal booking, so the
 // label says so rather than asking for a "client" who is the advisor.

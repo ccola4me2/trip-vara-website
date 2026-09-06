@@ -1,3 +1,4 @@
+import { knownCruiseLines } from './catalogmirror.js';
 // The catalog, as the portal uses it.
 //
 // Read endpoints for the sailing picker, an admin view of the import, and the
@@ -15,7 +16,7 @@ import {
 export async function handleCatalogLines(request, env) {
   const { response } = await requireUser(request, env);
   if (response) return response;
-  return json({ lines: await catalogLines(env), ready: await catalogReady(env) });
+  return json({ knownCruiseLines: await knownCruiseLines(env), lines: await catalogLines(env), ready: await catalogReady(env) });
 }
 
 export async function handleCatalogShips(request, env) {

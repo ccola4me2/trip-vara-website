@@ -147,6 +147,11 @@ export async function mirrorCatalogStep(env, { maxShips = 6, force = false } = {
     await stateSet(env, 'rows', '0');
     await stateSet(env, 'done', '0');
     await stateSet(env, 'lines', String(lines.length));
+    // Kept whole, not just counted. Which suppliers are cruise lines is a
+    // question the reservation form asks, and answering it from the sailings
+    // imported so far means a half-finished import leaves Royal Caribbean
+    // looking like a tour operator.
+    await stateSet(env, 'all_lines', JSON.stringify(lines));
     return { ok: true, started: true, ships: queue.length, lines: lines.length };
   }
 
@@ -190,6 +195,12 @@ export async function mirrorCatalogStep(env, { maxShips = 6, force = false } = {
 }
 
 /** What the mirror has, for the admin screen. */
+/** Every cruise line the source knows, however much has been imported yet. */
+export async function knownCruiseLines(env) {
+  try { return JSON.parse((await stateGet(env, 'all_lines')) || '[]'); }
+  catch { return []; }
+}
+
 export async function mirrorStatus(env) {
   const [queue, at, rows, done, finishedAt, lines, lastError] = await Promise.all([
     stateGet(env, 'queue'), stateGet(env, 'at'), stateGet(env, 'rows'),
