@@ -168,6 +168,7 @@ const PAGE_FILES = {
   '/app/complete': '/app/complete.html',
   '/app/vendors': '/app/vendors.html',
   '/app/vendor': '/app/vendor.html',
+  '/app/form': '/app/form.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
   '/app/settings': '/app/settings.html',

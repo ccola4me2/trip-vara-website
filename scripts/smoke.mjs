@@ -367,6 +367,37 @@ async function main() {
   check(templates.every((t) => t.fields.some((f) => f.type === 'email')),
     'and every one asks for an email, since a lead you cannot reach is not one');
 
+  const fieldCatalogue = listed.data?.catalogue || [];
+  check(fieldCatalogue.length >= 5, 'the builder offers a catalogue of known client fields',
+    `${fieldCatalogue.length} group(s)`);
+  const catKeys = new Set(fieldCatalogue.flatMap((g) => g.fields.map((f) => f.key)));
+  check(catKeys.has('mobile_phone') && catKeys.has('passport_number'),
+    'covering contact details through to travel documents');
+  check(fieldCatalogue.some((g) => g.sensitive),
+    'with the sensitive group marked, so a passport number is a deliberate choice');
+  // One key per question, or the same answer arrives under two names and the
+  // catalogue was pointless. A template using `phone` while the catalogue used
+  // `mobile_phone` put "Mobile" on a form twice.
+  const templateKeys = templates.flatMap((t) => t.fields.map((f) => f.key));
+  const strays = [...new Set(templateKeys)].filter((k) => !catKeys.has(k));
+  check(strays.every((k) => ['wedding_date', 'sailing', 'sailed_before', 'best_time'].includes(k)),
+    'and the templates draw their questions from it', `outside it: ${strays.join(', ')}`);
+
+  // A form that closes before it opens is a form nobody can fill in.
+  const formBackwards = await call(advisor, 'POST', '/api/myforms', {
+    name: `Backwards ${stamp}`, startsOn: isoDay(30), endsOn: isoDay(10),
+    fields: [{ label: 'Email', key: 'email', type: 'email', required: true }],
+  });
+  check(formBackwards.status === 400, 'a form cannot close before it opens',
+    `status ${formBackwards.status}`);
+
+  const formBadNotify = await call(advisor, 'POST', '/api/myforms', {
+    name: `Bad notify ${stamp}`, notifyEmail: 'not-an-address',
+    fields: [{ label: 'Email', key: 'email', type: 'email', required: true }],
+  });
+  check(formBadNotify.status === 400, 'and a notification address has to look like one',
+    `status ${formBadNotify.status}`);
+
   const leadReport = await call(advisor, 'GET', '/api/myforms/report?days=90');
   check(leadReport.status === 200, 'the lead report loads', `status ${leadReport.status}`);
   const myLead = (leadReport.data?.submissions || []).find((x) => x.email === `anna-${stamp}@test.dev`);

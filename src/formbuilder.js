@@ -9,7 +9,7 @@
 // API was rate limiting would be much worse than a contact arriving late.
 
 import {
-  json, badRequest, notFound, forbidden, uid, now, clean, oneOf,
+  json, badRequest, notFound, forbidden, uid, now, clean, cleanDate, oneOf,
   isValidEmail, normalizeEmail, readJson,
 } from './util.js';
 import { requireUser } from './auth.js';
@@ -68,6 +68,10 @@ function hydrate(row) {
     submitLabel: row.submit_label || 'Send',
     successMessage: row.success_message || '',
     redirectUrl: row.redirect_url || '',
+    startsOn: row.starts_on || '',
+    endsOn: row.ends_on || '',
+    notifyEmail: row.notify_email || '',
+    source: row.source || '',
     active: row.active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -77,6 +81,118 @@ function hydrate(row) {
 // ---------------------------------------------------------------------------
 // Portal side
 // ---------------------------------------------------------------------------
+/**
+ * The fields a travel client record actually holds, to tick rather than type.
+ *
+ * Typing a label for every question is fine for one form and tiresome by the
+ * third, and it produces "Mobile" on one form and "Cell phone" on another,
+ * which then arrive as two different answers to the same question. A fixed
+ * catalogue keeps the keys stable, so a phone number is always `mobile_phone`
+ * whichever form collected it.
+ *
+ * Custom fields still exist for anything not here. This is a starting set, not
+ * a fence.
+ */
+export const FIELD_CATALOGUE = [
+  {
+    group: 'Who they are',
+    fields: [
+      { key: 'full_name', label: 'Your name', type: 'text' },
+      { key: 'first_name', label: 'First name', type: 'text' },
+      { key: 'last_name', label: 'Last name', type: 'text' },
+      { key: 'nickname', label: 'Goes by', type: 'text' },
+      { key: 'email', label: 'Email', type: 'email' },
+      { key: 'secondary_email', label: 'Second email', type: 'email' },
+      { key: 'date_of_birth', label: 'Date of birth', type: 'date' },
+      { key: 'business_name', label: 'Company', type: 'text' },
+      { key: 'preferred_contact', label: 'Best way to reach you', type: 'select',
+        options: ['Email', 'Phone', 'Text message'] },
+    ],
+  },
+  {
+    group: 'Phone and address',
+    fields: [
+      { key: 'mobile_phone', label: 'Mobile', type: 'tel' },
+      { key: 'home_phone', label: 'Home phone', type: 'tel' },
+      { key: 'work_phone', label: 'Work phone', type: 'tel' },
+      { key: 'address', label: 'Address', type: 'textarea' },
+    ],
+  },
+  {
+    group: 'The trip',
+    fields: [
+      { key: 'destination', label: 'Where you want to go', type: 'text' },
+      { key: 'travel_date', label: 'Roughly when', type: 'date' },
+      { key: 'party_size', label: 'How many travelling', type: 'number' },
+      { key: 'nights', label: 'How long', type: 'select',
+        options: ['A long weekend', 'About a week', 'Ten days or so', 'Two weeks or more'] },
+      { key: 'budget', label: 'Budget you are working to', type: 'select',
+        options: ['Under 5,000', '5,000 to 10,000', '10,000 to 20,000', 'Over 20,000', 'Not sure yet'] },
+      { key: 'travel_type', label: 'What kind of trip', type: 'select',
+        options: ['Cruise', 'All-inclusive resort', 'Escorted tour', 'Independent travel',
+                  'River cruise', 'Expedition', 'Not sure yet'] },
+      { key: 'occasion', label: 'Special occasion', type: 'text' },
+      { key: 'flying_from', label: 'Flying from', type: 'text' },
+      { key: 'follow_up_date', label: 'When to follow up', type: 'date' },
+    ],
+  },
+  {
+    group: 'Preferences',
+    fields: [
+      { key: 'dining_preference', label: 'Dining preference', type: 'select',
+        options: ['Early', 'Late', 'Anytime', 'No preference'] },
+      { key: 'bed_preference', label: 'Bed preference', type: 'select',
+        options: ['One bed', 'Two beds', 'No preference'] },
+      { key: 'seating_preference', label: 'Airline seat', type: 'select',
+        options: ['Window', 'Aisle', 'No preference'] },
+      { key: 'loyalty_program', label: 'Loyalty programme', type: 'text' },
+      { key: 'loyalty_number', label: 'Loyalty number', type: 'text' },
+      { key: 'smoker', label: 'Smoker', type: 'checkbox' },
+      { key: 'special_needs', label: 'Access needs or dietary requirements', type: 'textarea' },
+    ],
+  },
+  {
+    group: 'Travel documents',
+    // Held back from the ready-made forms on purpose. These belong on a form
+    // sent to somebody who has already booked, not on one handed out at a
+    // stand, and a passport number in particular is worth asking for only when
+    // a vendor actually needs it.
+    sensitive: true,
+    fields: [
+      { key: 'passport_name', label: 'Name exactly as printed in the passport', type: 'text' },
+      { key: 'citizenship', label: 'Citizenship', type: 'text' },
+      { key: 'place_of_birth', label: 'Place of birth', type: 'text' },
+      { key: 'passport_number', label: 'Passport number', type: 'text' },
+      { key: 'passport_issued', label: 'Passport issued', type: 'date' },
+      { key: 'passport_expiry', label: 'Passport expires', type: 'date' },
+      { key: 'known_traveler_number', label: 'Known traveller number', type: 'text' },
+      { key: 'global_entry', label: 'Global Entry number', type: 'text' },
+    ],
+  },
+  {
+    group: 'Emergency contact',
+    fields: [
+      { key: 'emergency_name', label: 'Emergency contact', type: 'text' },
+      { key: 'emergency_phone', label: 'Their phone', type: 'tel' },
+      { key: 'emergency_relationship', label: 'Relationship to you', type: 'text' },
+      { key: 'emergency_email', label: 'Their email', type: 'email' },
+    ],
+  },
+  {
+    group: 'Consent and notes',
+    fields: [
+      { key: 'email_opt_in', label: 'Yes, send me travel offers by email', type: 'checkbox' },
+      { key: 'sms_opt_in', label: 'Yes, send me trip updates by text', type: 'checkbox' },
+      { key: 'notes', label: 'Anything else we should know', type: 'textarea' },
+    ],
+  },
+];
+
+/** Every catalogue field by key, for validating what a form asks for. */
+export const CATALOGUE_BY_KEY = new Map(
+  FIELD_CATALOGUE.flatMap((g) => g.fields.map((f) => [f.key, { ...f, group: g.group }]))
+);
+
 /**
  * Ready-made lead forms, for the places advisors actually meet people.
  *
@@ -89,9 +205,9 @@ function hydrate(row) {
  * a way to reach them is not a lead.
  */
 const REACH = [
-  { label: 'Your name', key: 'name', type: 'text', required: true },
+  { label: 'Your name', key: 'full_name', type: 'text', required: true },
   { label: 'Email', key: 'email', type: 'email', required: true },
-  { label: 'Mobile', key: 'phone', type: 'tel', required: false },
+  { label: 'Mobile', key: 'mobile_phone', type: 'tel', required: false },
 ];
 
 export const FORM_TEMPLATES = [
@@ -121,8 +237,8 @@ export const FORM_TEMPLATES = [
     fields: [
       ...REACH,
       { label: 'Where do you want to go', key: 'destination', type: 'text', required: false },
-      { label: 'Roughly when', key: 'when', type: 'text', required: false },
-      { label: 'How should we reach you', key: 'contact_preference', type: 'select',
+      { label: 'Roughly when', key: 'travel_date', type: 'date', required: false },
+      { label: 'How should we reach you', key: 'preferred_contact', type: 'select',
         required: false, options: ['Email', 'Phone', 'Either'] },
     ],
   },
@@ -171,7 +287,7 @@ export const FORM_TEMPLATES = [
       { label: 'Passport expires', key: 'passport_expiry', type: 'date', required: false },
       // Deliberately not the passport number. A public form is not the place
       // to collect one, and an advisor does not need it to hold a booking.
-      { label: 'Any access needs or dietary requirements', key: 'needs', type: 'textarea',
+      { label: 'Any access needs or dietary requirements', key: 'special_needs', type: 'textarea',
         required: false },
     ],
   },
@@ -192,6 +308,7 @@ export async function handleListForms(request, env) {
     // Sent with the list so the builder can offer a starting point without a
     // second round trip before anybody has typed anything.
     templates: FORM_TEMPLATES,
+    catalogue: FIELD_CATALOGUE,
   });
 }
 
@@ -212,6 +329,8 @@ export async function handleGetForm(request, env, id) {
 
   return json({
     form: hydrate(row),
+    catalogue: FIELD_CATALOGUE,
+    templates: FORM_TEMPLATES,
     submissions: (results || []).map((s) => {
       let data = {};
       try { data = JSON.parse(s.data_json); } catch { data = {}; }
@@ -325,17 +444,30 @@ export async function handleSaveForm(request, env, id = null) {
   const ts = now();
   const slug = await uniqueSlug(env, clean(body.slug, 60) || name, id);
 
+  const startsOn = cleanDate(body.startsOn);
+  const endsOn = cleanDate(body.endsOn);
+  if (startsOn && endsOn && endsOn < startsOn) {
+    return badRequest('The form closes before it opens.');
+  }
+
+  const notifyEmail = clean(body.notifyEmail, 254);
+  if (notifyEmail && !isValidEmail(notifyEmail)) {
+    return badRequest('That notification address does not look right.');
+  }
+
   const shared = [
     slug, name, clean(body.headline, 160), clean(body.description, 600),
     JSON.stringify(fields), clean(body.submitLabel, 40) || 'Send',
     clean(body.successMessage, 400), clean(body.redirectUrl, 300),
-    body.active === false ? 0 : 1, ts,
+    body.active === false ? 0 : 1,
+    startsOn, endsOn, notifyEmail || null, clean(body.source, 80) || null, ts,
   ];
 
   if (id) {
     const res = await env.DB.prepare(
       `UPDATE forms SET slug=?, name=?, headline=?, description=?, fields_json=?,
-         submit_label=?, success_message=?, redirect_url=?, active=?, updated_at=?
+         submit_label=?, success_message=?, redirect_url=?, active=?,
+         starts_on=?, ends_on=?, notify_email=?, source=?, updated_at=?
        WHERE id = ? AND location_id = ?`
     ).bind(...shared, id, locationId).run();
     if (!res.meta || res.meta.changes === 0) return notFound('Form not found.');
@@ -344,9 +476,10 @@ export async function handleSaveForm(request, env, id = null) {
     id = uid();
     await env.DB.prepare(
       `INSERT INTO forms (id, location_id, slug, name, headline, description, fields_json,
-         submit_label, success_message, redirect_url, active, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, locationId, ...shared.slice(0, 9), user.id, ts, ts).run();
+         submit_label, success_message, redirect_url, active,
+         starts_on, ends_on, notify_email, source, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, locationId, ...shared.slice(0, 13), user.id, ts, ts).run();
     await db.logActivity(env, user.id, 'form.create', `Created form ${name}`, { id });
   }
 

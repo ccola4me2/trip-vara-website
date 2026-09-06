@@ -34,6 +34,7 @@ const PAGES = [
   ['public/app/credits.html', ['/api/credits?state=all', '/api/bookings']],
   ['public/app/goals.html', ['/api/goals']],
   ['public/app/commissions.html', ['/api/commissions', '/api/commissions/statements']],
+  ['public/app/form.html', ['/api/myforms', 'detail:/api/myforms/{formId}']],
   ['public/app/vendor.html', ['/api/vendors', 'detail:/api/vendors/{id}',
     'detail:/api/penalties?vendor={id}']],
   ['public/app/client.html', ['detail-client:/api/bookings']],

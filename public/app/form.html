@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead form | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  /* A page, not a dialog. Building a form means going back and forth between
+     the questions and the settings, and a modal that has to be dismissed to
+     see anything else makes that worse the longer the form gets. */
+  .build { display: grid; grid-template-columns: 1fr 320px; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .build { grid-template-columns: 1fr; } }
+
+  .pick { border: 1px solid var(--navy-100); border-radius: 6px; overflow: hidden; }
+  .pick > h4 {
+    margin: 0; padding: .55rem .8rem; font-size: .8rem;
+    background: var(--navy-50, #eef1f5); border-bottom: 1px solid var(--navy-100);
+  }
+  .pick ul { list-style: none; margin: 0; padding: 0; }
+  .pick li {
+    display: flex; align-items: center; gap: .55rem;
+    padding: .4rem .8rem; border-bottom: 1px solid var(--navy-50, #eef1f5); font-size: .88rem;
+  }
+  .pick li:last-child { border-bottom: 0; }
+  .pick li label { margin: 0; flex: 1; cursor: pointer; font-weight: 400; }
+  .warn { color: var(--amber-600, #b7791f); font-size: .72rem; }
+
+  .chosen li {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .5rem .2rem; border-bottom: 1px solid var(--navy-50, #eef1f5);
+  }
+  .chosen li:last-child { border-bottom: 0; }
+  .chosen .grip { color: var(--navy-300, #9aa8b8); cursor: grab; font-size: .9rem; }
+  .chosen .what { flex: 1; min-width: 0; }
+  .chosen .what .k { font-size: .72rem; color: var(--navy-400, #7b8798); }
+  .chosen li[draggable="true"]:hover { background: var(--navy-50, #eef1f5); }
+  .chosen li.dragging { opacity: .4; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <p class="sub" style="margin:0 0 .2rem;"><a href="/app/formbuilder">Lead forms</a></p>
+        <h1 id="crumb">New lead form</h1>
+      </div>
+      <span class="toolbar" style="margin:0;padding:0;">
+        <a class="btn btn-ghost btn-sm" id="view-live" target="_blank" rel="noopener" hidden>View it</a>
+        <button class="btn btn-primary btn-sm" id="save">Save form</button>
+      </span>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <form id="builder">
+        <div class="build">
+          <div>
+            <section class="card">
+              <div class="card-head"><h2>The form</h2></div>
+              <div class="card-pad">
+                <div class="field" id="template-field">
+                  <label for="template">Start from</label>
+                  <select id="template" name="template"></select>
+                  <p class="field-hint">A set of questions that kind of form usually needs.
+                    Everything can be changed afterwards.</p>
+                </div>
+                <div class="field-row">
+                  <div class="field"><label for="name">Form name</label>
+                    <input id="name" name="name" required maxlength="120"
+                      placeholder="Bridal show, March">
+                    <p class="field-hint">For your list. The public never sees it.</p></div>
+                  <div class="field"><label for="slug">Web address</label>
+                    <input id="slug" name="slug" maxlength="60" placeholder="bridal-show-march">
+                    <p class="field-hint" id="slug-hint">Left blank, it is made from the name.</p></div>
+                </div>
+                <div class="field"><label for="headline">Headline</label>
+                  <input id="headline" name="headline" maxlength="160"
+                    placeholder="Tell us about the honeymoon"></div>
+                <div class="field"><label for="description">Introduction</label>
+                  <textarea id="description" name="description" maxlength="600"
+                    placeholder="A line or two before the questions."></textarea></div>
+              </div>
+            </section>
+
+            <section class="card" style="margin-top:1.25rem;">
+              <div class="card-head"><h2>Questions</h2>
+                <span class="muted" id="chosen-count"></span></div>
+              <div class="card-pad">
+                <p class="field-hint" style="margin-top:0;">Drag to reorder. Tick <em>must
+                  answer</em> sparingly: every required field on a form at a stand is somebody
+                  who walks away.</p>
+                <div class="notice notice-info" id="dupe-warn" hidden></div>
+                <ul class="chosen" id="chosen"></ul>
+                <div class="toolbar" style="padding:.6rem 0 0;">
+                  <button class="btn btn-ghost btn-sm" type="button" id="add-custom">Add a question of your own</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="card" style="margin-top:1.25rem;">
+              <div class="card-head"><h2>What happens on submit</h2></div>
+              <div class="card-pad">
+                <div class="field-row">
+                  <div class="field"><label for="submitLabel">Button says</label>
+                    <input id="submitLabel" name="submitLabel" maxlength="40" placeholder="Send"></div>
+                  <div class="field"><label for="notifyEmail">Tell this address</label>
+                    <input id="notifyEmail" name="notifyEmail" type="email" maxlength="254"
+                      placeholder="you@example.com">
+                    <p class="field-hint">A lead nobody is told about is a lead nobody rings.</p></div>
+                </div>
+                <div class="field"><label for="successMessage">Thank you message</label>
+                  <textarea id="successMessage" name="successMessage" maxlength="400"
+                    placeholder="Thanks, we have got it. We will be in touch shortly."></textarea></div>
+                <div class="field"><label for="redirectUrl">Or send them to a page</label>
+                  <input id="redirectUrl" name="redirectUrl" type="url" maxlength="300"
+                    placeholder="https://..."></div>
+              </div>
+            </section>
+          </div>
+
+          <div>
+            <section class="card">
+              <div class="card-head"><h2>Settings</h2></div>
+              <div class="card-pad">
+                <div class="field"><label for="source">Where it is used</label>
+                  <input id="source" name="source" maxlength="80" placeholder="Bridal show 2027">
+                  <p class="field-hint">Stamped on every lead, so you can tell which event
+                    brought them in.</p></div>
+                <div class="field-row">
+                  <div class="field"><label for="startsOn">Opens</label>
+                    <input id="startsOn" name="startsOn" type="date"></div>
+                  <div class="field"><label for="endsOn">Closes</label>
+                    <input id="endsOn" name="endsOn" type="date"></div>
+                </div>
+                <p class="field-hint" style="margin-top:-.4rem;">A show form should stop taking
+                  answers when the show is over, rather than being remembered about in March.</p>
+                <div class="field">
+                  <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;">
+                    <input type="checkbox" id="active" name="active" checked>
+                    Accepting submissions
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="card" style="margin-top:1.25rem;">
+              <div class="card-head"><h2>Add questions</h2></div>
+              <div class="card-pad" id="catalogue"><p class="spinner">Loading...</p></div>
+            </section>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, mountShell, esc, showError } from '/js/app.js';
+await mountShell();
+
+const params = new URLSearchParams(location.search);
+const id = params.get('id');
+const err = document.getElementById('err');
+const chosenEl = document.getElementById('chosen');
+const catalogueEl = document.getElementById('catalogue');
+
+let catalogue = [];
+let templates = [];
+let chosen = [];          // the questions on the form, in order
+let dragKey = null;
+
+const TYPES = ['text', 'email', 'tel', 'textarea', 'select', 'date', 'number', 'checkbox'];
+
+function count() {
+  document.getElementById('chosen-count').textContent =
+    `${chosen.length} question${chosen.length === 1 ? '' : 's'}`;
+
+  // Two questions reading the same thing is confusing to fill in and worse to
+  // read back: the answers arrive under different keys and look like two
+  // different facts. Warned rather than blocked, because a form might well
+  // ask for two phone numbers on purpose.
+  const seen = new Map();
+  const dupes = [];
+  for (const f of chosen) {
+    const k = f.label.trim().toLowerCase();
+    if (seen.has(k)) dupes.push(f.label); else seen.set(k, f.key);
+  }
+  const warn = document.getElementById('dupe-warn');
+  warn.hidden = !dupes.length;
+  if (dupes.length) {
+    warn.textContent = `Two questions both say "${dupes[0]}". Rename one, or remove it.`;
+  }
+}
+
+function drawChosen() {
+  chosenEl.innerHTML = chosen.length
+    ? chosen.map((f) => `<li draggable="true" data-key="${esc(f.key)}">
+        <span class="grip" aria-hidden="true">⠿</span>
+        <span class="what">
+          <input class="lab" value="${esc(f.label)}" maxlength="120" aria-label="Label">
+          <span class="k">${esc(f.key)}${f.custom ? ' · your own' : ''}</span>
+        </span>
+        <label style="display:flex;align-items:center;gap:.35rem;font-weight:400;font-size:.78rem;margin:0;">
+          <input type="checkbox" class="req"${f.required ? ' checked' : ''}>
+          must answer
+        </label>
+        <button class="btn btn-ghost btn-sm" type="button" data-drop="${esc(f.key)}">Remove</button>
+      </li>`).join('')
+    : '<li class="muted" style="padding:.6rem 0;">No questions yet. Pick some from the right.</li>';
+
+  chosenEl.querySelectorAll('[data-drop]').forEach((b) => {
+    b.addEventListener('click', () => {
+      chosen = chosen.filter((f) => f.key !== b.dataset.drop);
+      drawChosen(); drawCatalogue(); count();
+    });
+  });
+  chosenEl.querySelectorAll('li[data-key]').forEach((li) => {
+    const key = li.dataset.key;
+    li.querySelector('.lab').addEventListener('input', (e) => {
+      const f = chosen.find((x) => x.key === key);
+      if (f) f.label = e.target.value;
+    });
+    li.querySelector('.req').addEventListener('change', (e) => {
+      const f = chosen.find((x) => x.key === key);
+      if (f) f.required = e.target.checked;
+    });
+
+    // Reordering matters: the order here is the order somebody answers them.
+    li.addEventListener('dragstart', () => { dragKey = key; li.classList.add('dragging'); });
+    li.addEventListener('dragend', () => { dragKey = null; li.classList.remove('dragging'); });
+    li.addEventListener('dragover', (e) => e.preventDefault());
+    li.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!dragKey || dragKey === key) return;
+      const from = chosen.findIndex((x) => x.key === dragKey);
+      const to = chosen.findIndex((x) => x.key === key);
+      if (from < 0 || to < 0) return;
+      const [moved] = chosen.splice(from, 1);
+      chosen.splice(to, 0, moved);
+      drawChosen();
+    });
+  });
+  count();
+}
+
+function drawCatalogue() {
+  const has = new Set(chosen.map((f) => f.key));
+  catalogueEl.innerHTML = catalogue.map((g) => `
+    <div class="pick" style="margin-bottom:.8rem;">
+      <h4>${esc(g.group)}${g.sensitive
+        ? ' <span class="warn">ask only when needed</span>' : ''}</h4>
+      <ul>${g.fields.map((f) => `<li>
+        <input type="checkbox" id="cat-${esc(f.key)}" data-add="${esc(f.key)}"${
+          has.has(f.key) ? ' checked' : ''}>
+        <label for="cat-${esc(f.key)}">${esc(f.label)}</label>
+      </li>`).join('')}</ul>
+    </div>`).join('');
+
+  catalogueEl.querySelectorAll('[data-add]').forEach((box) => {
+    box.addEventListener('change', () => {
+      const key = box.dataset.add;
+      if (box.checked) {
+        const found = catalogue.flatMap((g) => g.fields).find((f) => f.key === key);
+        if (found && !chosen.some((f) => f.key === key)) {
+          chosen.push({ ...found, required: false });
+        }
+      } else {
+        chosen = chosen.filter((f) => f.key !== key);
+      }
+      drawChosen();
+    });
+  });
+}
+
+document.getElementById('add-custom').addEventListener('click', () => {
+  const label = prompt('What should the question say?');
+  if (!label || !label.trim()) return;
+  const type = prompt(`What kind of answer? One of: ${TYPES.join(', ')}`, 'text');
+  const key = `custom_${label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40)}`;
+  if (chosen.some((f) => f.key === key)) { showError(err, new Error('You already ask that.')); return; }
+  chosen.push({
+    key, label: label.trim(), type: TYPES.includes(type) ? type : 'text',
+    required: false, custom: true,
+  });
+  drawChosen();
+});
+
+document.getElementById('template').addEventListener('change', (e) => {
+  const t = templates.find((x) => x.key === e.target.value);
+  if (!t) return;
+  const form = document.getElementById('builder');
+  form.elements.name.value = t.label;
+  form.elements.headline.value = t.headline;
+  form.elements.description.value = t.description;
+  chosen = t.fields.map((f) => ({ ...f }));
+  drawChosen(); drawCatalogue();
+});
+
+document.getElementById('save').addEventListener('click', async () => {
+  const form = document.getElementById('builder');
+  if (!form.reportValidity()) return;
+  if (!chosen.length) { showError(err, new Error('Add at least one question.')); return; }
+
+  const f = form.elements;
+  const body = {
+    name: f.name.value, slug: f.slug.value, headline: f.headline.value,
+    description: f.description.value, submitLabel: f.submitLabel.value,
+    successMessage: f.successMessage.value, redirectUrl: f.redirectUrl.value,
+    notifyEmail: f.notifyEmail.value, source: f.source.value,
+    startsOn: f.startsOn.value, endsOn: f.endsOn.value,
+    active: f.active.checked,
+    fields: chosen.map((x) => ({
+      key: x.key, label: x.label, type: x.type,
+      required: Boolean(x.required), options: x.options || [],
+    })),
+  };
+
+  try {
+    const saved = await api(id ? `/api/myforms/${encodeURIComponent(id)}` : '/api/myforms',
+      { method: id ? 'PUT' : 'POST', body });
+    location.href = `/app/form?id=${encodeURIComponent(saved.form?.id || id)}&saved=1`;
+  } catch (e) { showError(err, e); }
+});
+
+async function load() {
+  try {
+    if (id) {
+      const d = await api(`/api/myforms/${encodeURIComponent(id)}`);
+      catalogue = d.catalogue || [];
+      templates = d.templates || [];
+      const form = document.getElementById('builder');
+      const f = d.form;
+      document.getElementById('crumb').textContent = f.name;
+      document.title = `${f.name} | Trip Vara Portal`;
+      document.getElementById('template-field').hidden = true;
+      const live = document.getElementById('view-live');
+      live.href = `/f/${f.slug}`;
+      live.hidden = false;
+      form.elements.name.value = f.name || '';
+      form.elements.slug.value = f.slug || '';
+      form.elements.headline.value = f.headline || '';
+      form.elements.description.value = f.description || '';
+      form.elements.submitLabel.value = f.submitLabel || '';
+      form.elements.successMessage.value = f.successMessage || '';
+      form.elements.redirectUrl.value = f.redirectUrl || '';
+      form.elements.notifyEmail.value = f.notifyEmail || '';
+      form.elements.source.value = f.source || '';
+      form.elements.startsOn.value = f.startsOn || '';
+      form.elements.endsOn.value = f.endsOn || '';
+      form.elements.active.checked = f.active;
+      chosen = (f.fields || []).map((x) => ({ ...x }));
+      if (params.get('saved')) {
+        err.innerHTML = '<div class="notice notice-ok">Saved.</div>';
+      }
+    } else {
+      const d = await api('/api/myforms');
+      catalogue = d.catalogue || [];
+      templates = d.templates || [];
+    }
+
+    document.getElementById('template').innerHTML = `<option value="">A blank form</option>${
+      templates.map((t) => `<option value="${esc(t.key)}">${esc(t.label)} - ${esc(t.blurb)}</option>`).join('')}`;
+
+    drawCatalogue();
+    drawChosen();
+  } catch (e) { showError(err, e); }
+}
+
+await load();
+</script>
+</body></html>
