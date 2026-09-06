@@ -16,6 +16,7 @@ import { PAYMENT_TYPES, releaseCredit } from './payments.js';
 import { splitPct, shareOf } from './split.js';
 import { listOptions } from './options.js';
 import { listTiers, penaltyToday } from './penalties.js';
+import { listDocuments, docsReady, CATEGORIES as DOC_CATEGORIES } from './documents.js';
 import { listPricing, summarise, PRICE_KINDS } from './pricing.js';
 
 // The taxonomy a travel agency actually reports on. Five buckets could not
@@ -156,7 +157,7 @@ export async function handleBookingRecord(request, env, id) {
   const creditScope = db.scopeWhere(scope, 'c.user_id');
 
   const [payments, tasks, credits, spendable, group, people, extras, priceLines,
-         options, tiers] = await Promise.all([
+         options, tiers, docs] = await Promise.all([
     // Joined rather than looked up in the page, so a payment made with a
     // credit can show the credit's own amount beside it. A $250 credit against
     // a $1,000 payment is a difference worth seeing, not one worth hiding.
@@ -208,6 +209,7 @@ export async function handleBookingRecord(request, env, id) {
     listPricing(env, id, scope),
     listOptions(env, id, scope),
     listTiers(env, scope, { bookingId: id }),
+    listDocuments(env, id, scope),
   ]);
 
   // The vendor's own rate, so an expected commission can be worked out and
@@ -240,6 +242,11 @@ export async function handleBookingRecord(request, env, id) {
     // from. Null when nobody has recorded terms, which is a different answer
     // from nothing to pay.
     penaltyTiers: tiers,
+    // The paperwork, and whether there is anywhere to put any. Said plainly
+    // rather than showing an upload button that fails.
+    documents: docs,
+    documentCategories: DOC_CATEGORIES,
+    documentsReady: docsReady(env),
     penalty: penaltyToday(booking, tiers, new Date().toISOString().slice(0, 10)),
     pricing: priceLines,
     priceKinds: PRICE_KINDS,

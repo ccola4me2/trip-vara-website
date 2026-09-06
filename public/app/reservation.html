@@ -72,6 +72,11 @@
               <span id="amenity-actions"></span></div>
             <div id="amenities"></div>
           </section>
+          <section class="card" style="margin-top:1.5rem;" id="docs-card">
+            <div class="card-head"><h2>Documents</h2>
+              <span id="doc-actions"></span></div>
+            <div id="docs"></div>
+          </section>
           <section class="card" style="margin-top:1.5rem;" id="penalty-card">
             <div class="card-head"><h2>If they cancel</h2>
               <span id="penalty-actions"></span></div>
@@ -419,6 +424,78 @@ function drawPenalty() {
   });
 }
 
+const KB = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/**
+ * The paperwork this trip generates.
+ *
+ * Downloads rather than previews. A file the advisor uploaded is served from
+ * the portal's own origin, and an HTML or SVG document rendered inline would
+ * run its own script against a signed in session.
+ */
+function drawDocuments() {
+  const rows = d.documents || [];
+  const box = document.getElementById('docs');
+
+  if (!d.documentsReady) {
+    document.getElementById('doc-actions').innerHTML = '';
+    box.innerHTML = `<div class="card-pad"><p class="muted">File storage is not set up yet.
+      Create an R2 bucket in Cloudflare and bind it as DOCS, and this holds the vendor
+      confirmation, the insurance policy and the air tickets for each trip.</p></div>`;
+    return;
+  }
+
+  document.getElementById('doc-actions').innerHTML = d.editable
+    ? `<label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0;">
+         Attach a file<input type="file" id="doc-file" hidden></label>
+       <select id="doc-category" class="btn-sm" style="width:auto;display:inline-block;margin-left:.4rem;">
+         ${(d.documentCategories || []).map((c) =>
+           `<option value="${esc(c)}">${esc(c === 'other' ? 'Unfiled' : c[0].toUpperCase() + c.slice(1))}</option>`).join('')}
+       </select>` : '';
+
+  box.innerHTML = rows.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>File</th><th>What it is</th><th class="num">Size</th><th></th></tr></thead>
+        <tbody>${rows.map((f) => `<tr>
+          <td><a class="name" href="/api/documents/${esc(f.id)}">${esc(f.filename)}</a>
+            <div class="muted">${esc(timeAgo(f.created_at))}</div></td>
+          <td><span class="badge badge-navy">${esc(f.category || 'other')}</span></td>
+          <td class="num">${esc(KB(f.size_bytes || 0))}</td>
+          <td class="num">${d.editable
+            ? `<button class="btn btn-ghost btn-sm" data-doc="${esc(f.id)}">Remove</button>` : ''}</td>
+        </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>Nothing attached</h3>
+        <p>The vendor confirmation, the insurance policy, the air tickets. Ten megabytes each.</p></div>`;
+
+  const input = document.getElementById('doc-file');
+  if (input) input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const body = new FormData();
+    body.append('file', file);
+    body.append('category', document.getElementById('doc-category').value);
+    input.disabled = true;
+    try {
+      // Sent as a form rather than through api(), which sends JSON: a file is
+      // the one thing in this portal that is not a JSON body.
+      const res = await fetch(`/api/bookings/${encodeURIComponent(id)}/documents`,
+        { method: 'POST', body });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Upload failed (${res.status})`);
+      await load();
+    } catch (e) { showError(err, e); input.disabled = false; }
+  });
+
+  document.querySelectorAll('[data-doc]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove this document? The file is deleted too.')) return;
+      btn.disabled = true;
+      try { await api(`/api/documents/${encodeURIComponent(btn.dataset.doc)}`, { method: 'DELETE' });
+        await load(); }
+      catch (e) { showError(err, e); btn.disabled = false; }
+    });
+  });
+}
+
 function drawOptions() {
   const rows = d.options || [];
   const quoting = d.booking.status === 'quoted';
@@ -720,6 +797,7 @@ function render() {
   </dl>`;
 
   drawOptions();
+  drawDocuments();
   drawPenalty();
   drawPricing();
   drawTravellers();

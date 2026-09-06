@@ -1868,6 +1868,67 @@ async function main() {
     'as a panel that can be arranged like any other');
   }
 
+  // ------------------------------------------------------- documents -------
+  {
+  step('The paperwork a trip generates');
+
+  const paper = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Paperwork ${stamp}`, supplier: 'Cunard', status: 'booked',
+    departDate: isoDay(120),
+  });
+  const paperId = paper.data?.booking?.id;
+  if (paperId) cleanup('the paperwork reservation',
+    () => call(advisor, 'DELETE', `/api/bookings/${paperId}`));
+
+  const rec = await call(advisor, 'GET', `/api/bookings/${paperId}/record`);
+  check(Array.isArray(rec.data?.documents), 'a reservation carries its documents');
+
+  if (!rec.data?.documentsReady) {
+    // The feature ships before the bucket exists, so the useful thing to check
+    // is that it says so rather than throwing on undefined.
+    const refused = await call(advisor, 'POST', `/api/bookings/${paperId}/documents`, {});
+    check(refused.status === 400 && /R2 bucket/i.test(refused.data?.error || ''),
+      'and says storage is not set up rather than failing on undefined',
+      refused.data?.error);
+    skip('document upload and download',
+      'no R2 bucket bound here; bind one as DOCS to exercise it');
+  } else {
+    const body = new FormData();
+    body.append('file', new Blob(['Confirmation Number: TEST'], { type: 'text/plain' }), 'conf.txt');
+    body.append('category', 'confirmation');
+    const up = await fetch(`${BASE}/api/bookings/${paperId}/documents`,
+      { method: 'POST', headers: { cookie: advisor.header() }, body });
+    const upJson = await up.json().catch(() => ({}));
+    check(up.status === 201 && upJson.filename === 'conf.txt', 'a file can be attached',
+      `status ${up.status}`);
+
+    const listed = await call(advisor, 'GET', `/api/bookings/${paperId}/record`);
+    const doc = (listed.data?.documents || [])[0];
+    check(doc && doc.category === 'confirmation' && doc.size_bytes > 0,
+      'and comes back on the record with what it is and how big',
+      JSON.stringify(doc && { c: doc.category, n: doc.size_bytes }));
+
+    // A file the advisor uploaded is served from the portal's own origin, so
+    // an HTML or SVG document rendered inline would run its own script against
+    // a signed in session. Downloading it cannot.
+    const got = await fetch(`${BASE}/api/documents/${doc.id}`, { headers: { cookie: advisor.header() } });
+    check(got.status === 200 && /attachment/.test(got.headers.get('content-disposition') || ''),
+      'a document downloads rather than rendering in the page',
+      got.headers.get('content-disposition'));
+    check(got.headers.get('x-content-type-options') === 'nosniff',
+      'and the browser is told not to sniff a type it might render anyway');
+
+    const anon = await fetch(`${BASE}/api/documents/${doc.id}`);
+    check(anon.status === 401, 'and nobody without a session gets it', `status ${anon.status}`);
+
+    const dropped = await call(advisor, 'DELETE', `/api/documents/${doc.id}`);
+    check(dropped.status === 200, 'a document can be removed');
+    const after = await fetch(`${BASE}/api/documents/${doc.id}`, { headers: { cookie: advisor.header() } });
+    check(after.status === 404, 'and the file goes with the row, not just the row',
+      `status ${after.status}`);
+  }
+  }
+
   // ------------------------------------------- reading a confirmation ------
   {
   step('Reading a vendor confirmation instead of retyping it');

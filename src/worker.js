@@ -27,6 +27,9 @@ import {
 } from './bookings.js';
 import { markReturnedTripsTravelled } from './db.js';
 import { handleReadConfirmation } from './confirm.js';
+import {
+  handleUploadDocument, handleGetDocument, handleDeleteDocument,
+} from './documents.js';
 import { handleStatement } from './statement.js';
 import {
   handleAddOption, handleUpdateOption, handleDeleteOption, handleChooseOption,
@@ -226,6 +229,8 @@ async function routeApi(request, env, path, method) {
   const quickMatch = path.match(/^\/api\/bookings\/([^/]+)\/quick$/);
   const statementMatch = path.match(/^\/api\/bookings\/([^/]+)\/statement$/);
   const welcomedMatch = path.match(/^\/api\/bookings\/([^/]+)\/welcomed$/);
+  const docsMatch = path.match(/^\/api\/bookings\/([^/]+)\/documents$/);
+  const docMatch = path.match(/^\/api\/documents\/([^/]+)$/);
   const travellersMatch = path.match(/^\/api\/bookings\/([^/]+)\/travellers$/);
   const amenitiesMatch = path.match(/^\/api\/bookings\/([^/]+)\/amenities$/);
   const travellerMatch = path.match(/^\/api\/travellers\/([^/]+)$/);
@@ -308,6 +313,11 @@ async function routeApi(request, env, path, method) {
   // What the client is told, which is a narrow subset of what the record holds.
   if (statementMatch && method === 'POST') return handleStatement(request, env, statementMatch[1]);
   if (welcomedMatch && method === 'POST') return handleWelcomed(request, env, welcomedMatch[1]);
+
+  // The paperwork a trip generates. Inert until an R2 bucket is bound.
+  if (docsMatch && method === 'POST') return handleUploadDocument(request, env, docsMatch[1]);
+  if (docMatch && method === 'GET') return handleGetDocument(request, env, docMatch[1]);
+  if (docMatch && method === 'DELETE') return handleDeleteDocument(request, env, docMatch[1]);
 
   // The two or three choices a quote offers, and which one the client took.
   if (optionsMatch && method === 'POST') return handleAddOption(request, env, optionsMatch[1]);
