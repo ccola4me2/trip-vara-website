@@ -63,6 +63,49 @@ async function agencyNames(env) {
   return results || [];
 }
 
+/**
+ * How one reservation's commission divides.
+ *
+ * Its own endpoint rather than a guard on the advisor's, because the advisor's
+ * is scoped to whoever is signed in: an admin cannot reach somebody else's
+ * booking through it at all. Guarding it there would leave this settable by
+ * nobody.
+ *
+ * Reached by user rather than by booking: the fence is which agency the
+ * advisor who owns it belongs to, which is the question reachable() already
+ * answers everywhere else in this file.
+ */
+export async function handleSetBookingSplit(request, env, bookingId) {
+  const { user: admin, response } = await requireAdmin(request, env);
+  if (response) return response;
+
+  const booking = await db.getBookingUnscoped(env, bookingId);
+  if (!booking) return notFound('Reservation not found.');
+  const reach = await reachable(env, admin, booking.user_id);
+  if (reach.error) return notFound('Reservation not found.');
+
+  const body = await readJson(request);
+
+  // Blank is not nought. Clearing puts the trip back on the standing
+  // agreement; a deliberate 0 means the agency keeps everything, which is a
+  // real arrangement for a house account.
+  let pct = null;
+  const raw = body.advisorSplitPct;
+  if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      return badRequest('A share is a number between 0 and 100, or blank to follow the agreement.');
+    }
+    pct = Math.round(n * 10) / 10;
+  }
+
+  const updated = await db.setBookingSplit(env, bookingId, pct);
+  await db.logActivity(env, admin.id, 'admin.booking.split',
+    `${booking.client_name}: ${pct === null ? 'follows the agreement' : `${pct}%`}`,
+    { bookingId, pct });
+  return json({ ok: true, booking: updated });
+}
+
 export async function handleSetAdvisorStatus(request, env, userId) {
   const { user: admin, response } = await requireAdmin(request, env);
   if (response) return response;

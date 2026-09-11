@@ -462,6 +462,32 @@ export async function getBooking(env, id, userId) {
   ).bind(id, userId).first();
 }
 
+/**
+ * A reservation without asking whose it is.
+ *
+ * Only for the admin path that has to reach an advisor's booking. The caller
+ * is responsible for the agency fence, which is why this is named for what it
+ * skips rather than sitting quietly behind the ordinary getBooking.
+ *
+ * The LIMIT is not for the database, which is looking up a primary key. It
+ * makes this statement distinguishable from the scoped lookup above, whose SQL
+ * this would otherwise be a prefix of, so the line excusing it in
+ * check-scope.mjs cannot silently excuse some future unscoped lookup too.
+ */
+export async function getBookingUnscoped(env, id) {
+  return env.DB.prepare(
+    `SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = ? LIMIT 1`
+  ).bind(id).first();
+}
+
+/** The figure that decides how a commission divides. Admin path only. */
+export async function setBookingSplit(env, id, advisorSplitPct) {
+  await env.DB.prepare(
+    'UPDATE bookings SET advisor_split_pct = ?, updated_at = ? WHERE id = ?'
+  ).bind(advisorSplitPct, now(), id).run();
+  return getBookingUnscoped(env, id);
+}
+
 export async function createBooking(env, userId, f) {
   const ts = now();
   const id = uid();

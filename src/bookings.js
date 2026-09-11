@@ -6,7 +6,7 @@
 // opportunity it came from.
 
 import { json, badRequest, notFound, clean, cleanDate, toCents, oneOf, readJson, now } from './util.js';
-import { requireUser } from './auth.js';
+import { requireUser, isAdmin } from './auth.js';
 import * as db from './db.js';
 import * as ghl from './ghl.js';
 import { fireTrigger } from './automations.js';
@@ -342,6 +342,9 @@ export async function handleBookingRecord(request, env, id) {
         overridden: booking.advisor_split_pct !== null && booking.advisor_split_pct !== undefined,
         defaultPct: booking.default_split_pct === null || booking.default_split_pct === undefined
           ? null : Number(booking.default_split_pct),
+        // Only an owner may write a figure over the standing agreement, so the
+        // page does not offer a button that would be refused.
+        canChange: isAdmin(user),
         ...shareOf(booking.commission_cents, pct, unsplit),
       };
     })(),
@@ -384,6 +387,11 @@ export async function handleCreateBooking(request, env) {
 
   const { fields, error } = parseBooking(await readJson(request));
   if (error) return badRequest(error);
+
+  // A new reservation follows the standing agreement, whatever was posted.
+  // Accepting a share here would let an advisor set their own by filing the
+  // booking with one attached, which is the same hole as editing it after.
+  fields.advisorSplitPct = null;
 
   // The client record is created as a side effect of booking, so nobody has
   // to maintain a separate list of people before they can take a reservation.
@@ -443,12 +451,20 @@ const QUICK_FIELDS = {
   commissionStatus: ['commission_status', (v) => oneOf(v, COMMISSION_STATUSES)],
   invoiceNotes: ['invoice_notes', (v) => clean(v, 1000)],
   personal: ['personal', (v) => (v ? 1 : 0)],
-  // Blank clears the override and puts the trip back on the advisor's standing
-  // agreement, which is why this cannot go through toCents or oneOf: both turn
-  // "nothing set" into a value.
-  advisorSplitPct: ['advisor_split_pct', (v) => (v === '' || v === null || v === undefined
-    || !Number.isFinite(Number(v)) ? null : Math.max(0, Math.min(Number(v), 100)))],
 };
+
+// advisor_split_pct used to live here and no longer does.
+//
+// It decides how a commission divides, and this endpoint is scoped to the
+// signed-in advisor, which made the person it pays the person who set it: any
+// advisor could POST advisorSplitPct 100 against their own reservation and
+// keep the lot, one booking at a time. The standing agreement was admin-only
+// from the start and the smoke suite checked it; the per-trip override that
+// outranks it was not, so the lock was on the wrong door.
+//
+// Guarding it here does not work either: this endpoint is scoped by user_id,
+// so an admin cannot reach an advisor's booking through it at all. It lives on
+// handleSetBookingSplit in admin.js, which the right person can reach.
 
 export async function handleQuickUpdate(request, env, id) {
   const { user, response } = await requireUser(request, env);
@@ -500,6 +516,15 @@ export async function handleUpdateBooking(request, env, id) {
 
   const { fields, error } = parseBooking(await readJson(request));
   if (error) return badRequest(error);
+
+  // Whatever share the reservation already carries, it keeps. updateBooking
+  // writes this column from the parsed fields, so leaving it to the request
+  // would let an advisor clear an agreed override simply by saving the page,
+  // and set one by posting it.
+  const before = await db.getBooking(env, id, user.id);
+  if (!before) return notFound('Booking not found.');
+  fields.advisorSplitPct = before.advisor_split_pct === null
+    || before.advisor_split_pct === undefined ? null : Number(before.advisor_split_pct);
 
   fields.clientId = await db.resolveClient(env, user.id, fields.clientName,
     { ghlContactId: fields.ghlContactId });

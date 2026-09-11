@@ -145,6 +145,7 @@ import {
 import { handleDashboard, handleProduction, handleMonth } from './reports.js';
 import {
   handleListAdvisors, handleSetAdvisorStatus, handleSetAdvisorGhl, handleSetAdvisorSplit,
+  handleSetBookingSplit,
   handleRunLifecycle,
   handleHealth, handleTestEmail, handleRunTaskReminders, handleRunPaymentReminders,
   handleRunCallLists, handleMirrorCatalog, handleMirrorStatus,
@@ -354,6 +355,7 @@ async function routeApi(request, env, path, method) {
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
   const bookingStatusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl|split)$/);
+  const bookingSplitMatch = path.match(/^\/api\/admin\/bookings\/([^/]+)\/split$/);
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   // Checklist steps hang off a task; the steps themselves are addressed by
   // their own id, so ticking one off does not need to name its task twice.
@@ -716,6 +718,11 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/admin/sync' && method === 'POST') return handleRunSync(request, env);
   if (path === '/api/admin/lifecycle' && method === 'POST') return handleRunLifecycle(request, env);
   if (path === '/api/admin/advisors' && method === 'GET') return handleListAdvisors(request, env);
+  // The only way a reservation's share is set. The advisor's own endpoints
+  // no longer know the field.
+  if (bookingSplitMatch && method === 'PUT') {
+    return handleSetBookingSplit(request, env, decodeURIComponent(bookingSplitMatch[1]));
+  }
   if (advisorMatch && method === 'PUT') {
     const id = decodeURIComponent(advisorMatch[1]);
     if (advisorMatch[2] === 'status') return handleSetAdvisorStatus(request, env, id);

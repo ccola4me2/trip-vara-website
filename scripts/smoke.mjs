@@ -4868,6 +4868,41 @@ async function main() {
   check(selfServe.status === 403 || selfServe.status === 404,
     'an advisor cannot set their own share', `status ${selfServe.status}`);
 
+  // ...nor through any of the other doors. The standing agreement was
+  // admin-only from the start and this suite checked it, which is why this
+  // looked covered. The per-trip override that outranks it was reachable by
+  // any advisor on their own reservation, three different ways.
+  await call(advisor, 'POST', `/api/bookings/${bookingId}/quick`, { advisorSplitPct: 100 });
+  const afterQuick = await call(advisor, 'GET', `/api/bookings/${bookingId}/record`);
+  check(afterQuick.data?.split?.overridden === false,
+    'nor write their own figure over a reservation',
+    JSON.stringify(afterQuick.data?.split));
+
+  const smuggled = await call(advisor, 'POST', '/api/bookings', {
+    clientName: `Smuggle ${stamp}`, supplier: 'Carnival', productType: 'cruise',
+    departDate: isoDay(210), gross: '1000', commission: '100', advisorSplitPct: 100,
+  });
+  check(smuggled.data?.booking?.advisor_split_pct === null,
+    'nor file a new one with a share already attached',
+    String(smuggled.data?.booking?.advisor_split_pct));
+  if (smuggled.data?.booking?.id) {
+    await call(advisor, 'DELETE', `/api/bookings/${smuggled.data.booking.id}`);
+  }
+
+  // Saving the reservation page must not quietly clear one an owner agreed.
+  await call(admin, 'PUT', `/api/admin/bookings/${bookingId}/split`, { advisorSplitPct: 60 });
+  const full = await call(advisor, 'GET', `/api/bookings/${bookingId}/record`);
+  const b = full.data?.booking || {};
+  await call(advisor, 'PUT', `/api/bookings/${bookingId}`, {
+    clientName: b.client_name, supplier: b.supplier, productType: b.product_type,
+    departDate: b.depart_date, gross: String((b.gross_cents || 0) / 100),
+    commission: String((b.commission_cents || 0) / 100), status: b.status,
+  });
+  const kept = await call(advisor, 'GET', `/api/bookings/${bookingId}/record`);
+  check(kept.data?.split?.pct === 60,
+    'and saving the page keeps the share the owner set', kept.data?.split?.pct);
+  await call(admin, 'PUT', `/api/admin/bookings/${bookingId}/split`, { advisorSplitPct: '' });
+
   const nonsense = await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`,
     { defaultSplitPct: 140 });
   check(nonsense.status === 400, 'and a share over 100% is refused', `status ${nonsense.status}`);
@@ -4896,11 +4931,12 @@ async function main() {
   check(comm.data?.anySplit === true, 'and the page knows there is a split to show');
 
   // A trip can carry its own figure, and blank puts it back on the agreement.
-  await call(advisor, 'POST', `/api/bookings/${halfId}/quick`, { advisorSplitPct: 80 });
+  // Through the admin endpoint: the advisor cannot set what they are paid.
+  await call(admin, 'PUT', `/api/admin/bookings/${halfId}/split`, { advisorSplitPct: 80 });
   const over = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
   check(over.data?.split?.pct === 80 && over.data?.split?.overridden === true,
     'one trip can be given its own share', JSON.stringify(over.data?.split));
-  await call(advisor, 'POST', `/api/bookings/${halfId}/quick`, { advisorSplitPct: '' });
+  await call(admin, 'PUT', `/api/admin/bookings/${halfId}/split`, { advisorSplitPct: '' });
   const back = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
   check(back.data?.split?.pct === 50 && back.data?.split?.overridden === false,
     'and clearing it puts the trip back on the agreement, not on nothing',
