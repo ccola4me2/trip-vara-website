@@ -26,6 +26,12 @@
  */
 export const UNSPLIT_COMMISSION_KINDS = ['bonus'];
 
+// The commission status that means nobody earns: not the advisor, not the
+// agency. Named rather than typed out, because it appears in SQL, in the
+// status list and in the totals, and a typo in any one of those pays somebody
+// money they are not owed.
+export const NO_COMMISSION = 'none';
+
 /** The percentage the advisor keeps, given a reservation's value and their standing one. */
 export function splitPct(bookingPct, advisorDefaultPct) {
   for (const v of [bookingPct, advisorDefaultPct]) {
@@ -66,6 +72,23 @@ export function shareOf(commissionCents, pct, unsplitCents = 0) {
 // disagree with the agreement it came from.
 export const SPLIT_PCT_SQL = (bookingPct, advisorPct) =>
   `COALESCE(${bookingPct}, ${advisorPct}, 100)`;
+
+/**
+ * The commission a reservation actually earns.
+ *
+ * "No commission" is not a workflow state like pending or invoiced; it is a
+ * statement that this trip pays nobody. A charity booking, a friend's cruise
+ * written at net, a group berth taken as a comp: the agency is not owed and
+ * so the advisor is not owed either. The figure typed in the commission box
+ * stays on the reservation, because a quoted commission that was then waived
+ * is worth being able to see, but every total reads through this and gets
+ * zero.
+ *
+ * Applied once, at the number, so the advisor's share and the agency's
+ * remainder both fall out of it rather than each needing to remember.
+ */
+export const EARNED_SQL = (centsExpr, statusExpr) =>
+  `(CASE WHEN ${statusExpr} = '${NO_COMMISSION}' THEN 0 ELSE COALESCE(${centsExpr}, 0) END)`;
 
 /**
  * The exempt commission on one reservation, summed from its pricing lines.

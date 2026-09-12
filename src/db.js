@@ -6,7 +6,7 @@
 // and are deliberately not mirrored here.
 
 import { uid, now } from './util.js';
-import { SPLIT_PCT_SQL, ADVISOR_SHARE_SQL, UNSPLIT_SQL } from './split.js';
+import { SPLIT_PCT_SQL, ADVISOR_SHARE_SQL, UNSPLIT_SQL, EARNED_SQL } from './split.js';
 
 const USER_COLUMNS = `
   id, email, first_name, last_name, phone, agency_name, role, status,
@@ -552,7 +552,10 @@ export async function bookingStats(env, scope) {
   // commission figure is what the vendor pays the agency; the share is what
   // the person reading the screen actually keeps, and for an associate on a
   // split those are not the same number.
-  const share = ADVISOR_SHARE_SQL('b.commission_cents',
+  // Read through EARNED_SQL, so a reservation marked "no commission" adds
+  // nothing to anybody's column, the agency's included.
+  const earned = EARNED_SQL('b.commission_cents', 'b.commission_status');
+  const share = ADVISOR_SHARE_SQL(earned,
     SPLIT_PCT_SQL('b.advisor_split_pct', 'u.default_split_pct'), UNSPLIT_SQL('b.id'));
   const row = await env.DB.prepare(
     `SELECT
@@ -561,9 +564,9 @@ export async function bookingStats(env, scope) {
        SUM(CASE WHEN b.status = 'quoted' THEN 1 ELSE 0 END) AS quoted,
        SUM(CASE WHEN b.status = 'travelled' THEN 1 ELSE 0 END) AS travelled,
        SUM(CASE WHEN b.status IN ('booked','travelled') THEN b.gross_cents ELSE 0 END) AS gross_cents,
-       SUM(CASE WHEN b.status IN ('booked','travelled') THEN b.commission_cents ELSE 0 END) AS commission_cents,
+       SUM(CASE WHEN b.status IN ('booked','travelled') THEN ${earned} ELSE 0 END) AS commission_cents,
        SUM(CASE WHEN b.status IN ('booked','travelled') THEN ${share} ELSE 0 END) AS commission_share_cents,
-       SUM(CASE WHEN b.commission_status = 'paid' THEN b.commission_cents ELSE 0 END) AS commission_paid_cents,
+       SUM(CASE WHEN b.commission_status = 'paid' THEN ${earned} ELSE 0 END) AS commission_paid_cents,
        SUM(CASE WHEN b.commission_status = 'paid' THEN ${share} ELSE 0 END) AS commission_paid_share_cents
      FROM bookings b LEFT JOIN users u ON u.id = b.user_id WHERE ${scoped.sql}`
   ).bind(...scoped.binds).first();
@@ -613,7 +616,7 @@ export async function productionByMonth(env, scope, sinceDate, { includePersonal
     `SELECT substr(depart_date, 1, 7) AS month,
             COUNT(*) AS bookings,
             SUM(gross_cents) AS gross_cents,
-            SUM(commission_cents) AS commission_cents
+            SUM(${EARNED_SQL('commission_cents', 'commission_status')}) AS commission_cents
        FROM bookings
       WHERE ${scoped.sql} AND depart_date IS NOT NULL AND depart_date >= ?
         AND status IN ('booked','travelled')${personalFilter(includePersonal)}
@@ -642,13 +645,14 @@ export async function productionByAdvisor(env, scope, sinceDate, { includePerson
     `SELECT u.id AS user_id, ${ADVISOR_NAME}, u.role, u.status,
             COUNT(b.id) AS bookings,
             COALESCE(SUM(b.gross_cents), 0) AS gross_cents,
-            COALESCE(SUM(b.commission_cents), 0) AS commission_cents,
-            COALESCE(SUM(CASE WHEN b.commission_status = 'paid' THEN b.commission_cents END), 0)
+            COALESCE(SUM(${EARNED_SQL('b.commission_cents', 'b.commission_status')}), 0) AS commission_cents,
+            COALESCE(SUM(CASE WHEN b.commission_status = 'paid'
+              THEN ${EARNED_SQL('b.commission_cents', 'b.commission_status')} END), 0)
               AS commission_paid_cents,
             -- What this advisor keeps, and what the agency keeps out of what
             -- they billed. An owner reading a combined report needs both: the
             -- agency is owed the whole commission and pays out only part of it.
-            COALESCE(SUM(${ADVISOR_SHARE_SQL('b.commission_cents',
+            COALESCE(SUM(${ADVISOR_SHARE_SQL(EARNED_SQL('b.commission_cents', 'b.commission_status'),
               SPLIT_PCT_SQL('b.advisor_split_pct', 'u.default_split_pct'), UNSPLIT_SQL('b.id'))}), 0)
               AS advisor_share_cents,
             u.default_split_pct
@@ -700,7 +704,7 @@ export async function productionBreakdown(env, scope, sinceDate, by = 'type') {
     `SELECT ${column} AS label,
             COUNT(*) AS bookings,
             SUM(gross_cents) AS gross_cents,
-            SUM(commission_cents) AS commission_cents
+            SUM(${EARNED_SQL('commission_cents', 'commission_status')}) AS commission_cents
        FROM bookings
       WHERE ${scoped.sql} AND depart_date IS NOT NULL AND depart_date >= ?
         AND status IN ('booked','travelled')
@@ -1102,7 +1106,7 @@ export async function periodTotals(env, scope, basis, from, to, { includePersona
   const row = await env.DB.prepare(
     `SELECT COUNT(*) AS bookings,
             COALESCE(SUM(gross_cents), 0) AS gross_cents,
-            COALESCE(SUM(commission_cents), 0) AS commission_cents
+            COALESCE(SUM(${EARNED_SQL('commission_cents', 'commission_status')}), 0) AS commission_cents
        FROM bookings
       WHERE ${scoped.sql} AND status IN ('booked','travelled')${personalFilter(includePersonal)}
         AND ${col} IS NOT NULL AND ${col} BETWEEN ? AND ?`
