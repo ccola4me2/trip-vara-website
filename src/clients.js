@@ -158,6 +158,125 @@ export async function handleClientRecord(request, env) {
   });
 }
 
+function travelFields(body) {
+  let loyalty = null;
+  if (Array.isArray(body.loyalty)) {
+    const rows = body.loyalty
+      .map((l) => ({ line: clean(l && l.line, 60), number: clean(l && l.number, 60) }))
+      .filter((l) => l.line || l.number)
+      .slice(0, 20);
+    loyalty = rows.length ? JSON.stringify(rows) : null;
+  }
+  return {
+    // What they are actually called, as opposed to what is on the passport.
+    nickname: clean(body.nickname, 80) || null,
+    // Where they came from. Free text on purpose: every back office spells
+    // these differently and an allowlist would drop the ones it had not met.
+    source: clean(body.source, 80) || null,
+    legalFirst: clean(body.legalFirst, 80) || null,
+    legalMiddle: clean(body.legalMiddle, 80) || null,
+    legalLast: clean(body.legalLast, 80) || null,
+    gender: clean(body.gender, 40) || null,
+    citizenship: clean(body.citizenship, 80) || null,
+    passportNumber: clean(body.passportNumber, 40) || null,
+    passportCountry: clean(body.passportCountry, 80) || null,
+    passportIssued: cleanDate(body.passportIssued),
+    passportExpiry: cleanDate(body.passportExpiry),
+    address1: clean(body.address1, 160) || null,
+    address2: clean(body.address2, 160) || null,
+    city: clean(body.city, 80) || null,
+    state: clean(body.state, 80) || null,
+    postcode: clean(body.postcode, 24) || null,
+    country: clean(body.country, 80) || null,
+    loyaltyJson: loyalty,
+    knownTraveler: clean(body.knownTraveler, 40) || null,
+    redress: clean(body.redress, 40) || null,
+  };
+}
+
+export async function upsertClient(env, user, body) {
+  const name = clean(body.name, 120);
+  if (!name) return { error: 'A client needs a name.' };
+
+  // Asked before creating, rather than worked out afterwards from how recent
+  // the row looks. resolveClient is happy either way; the caller wants to be
+  // told which happened.
+  const before = await db.getClient(env, db.selfScope(user), { name });
+  const existed = Boolean(before);
+
+  const existingId = await db.resolveClient(env, user.id, name);
+  if (!existingId) return { error: 'A client needs a name.' };
+
+  // Everything else is optional and written over the top, so adding somebody
+  // who turns out to be already known fills in what was missing rather than
+  // refusing, and never blanks what was already there.
+  const keep = (incoming, current) => (incoming === undefined || incoming === null
+    || String(incoming).trim() === '' ? (current || null) : incoming);
+
+  // Everything the record holds, not a subset. Somebody adding a client with
+  // the passport in front of them should not have to save, reopen and type the
+  // rest into a second form.
+  const t = travelFields(body);
+  await env.DB.prepare(
+    `UPDATE clients SET email = ?, phone = ?, notes = ?, birthday = ?, anniversary = ?,
+       legal_first = ?, legal_middle = ?, legal_last = ?, gender = ?, citizenship = ?,
+       passport_number = ?, passport_country = ?, passport_issued = ?, passport_expiry = ?,
+       address1 = ?, address2 = ?, city = ?, state = ?, postcode = ?, country = ?,
+       loyalty_json = ?, known_traveler = ?, redress = ?, ghl_contact_id = ?,
+       nickname = ?, source = ?,
+       updated_at = ? WHERE id = ? AND user_id = ?`
+  ).bind(
+    keep(clean(body.email, 160), before?.email),
+    keep(clean(body.phone, 40), before?.phone),
+    keep(clean(body.notes, 4000), before?.notes),
+    keep(cleanDate(body.birthday), before?.birthday),
+    keep(cleanDate(body.anniversary), before?.anniversary),
+    keep(t.legalFirst, before?.legal_first),
+    keep(t.legalMiddle, before?.legal_middle),
+    keep(t.legalLast, before?.legal_last),
+    keep(t.gender, before?.gender),
+    keep(t.citizenship, before?.citizenship),
+    keep(t.passportNumber, before?.passport_number),
+    keep(t.passportCountry, before?.passport_country),
+    keep(t.passportIssued, before?.passport_issued),
+    keep(t.passportExpiry, before?.passport_expiry),
+    keep(t.address1, before?.address1),
+    keep(t.address2, before?.address2),
+    keep(t.city, before?.city),
+    keep(t.state, before?.state),
+    keep(t.postcode, before?.postcode),
+    keep(t.country, before?.country),
+    keep(t.loyaltyJson, before?.loyalty_json),
+    keep(t.knownTraveler, before?.known_traveler),
+    keep(t.redress, before?.redress),
+    // Set when a CRM contact is being turned into a client, so the two stop
+    // being two people. keep() means an existing link is never cut by a
+    // create that did not mention one.
+    keep(clean(body.contactId, 60), before?.ghl_contact_id),
+    keep(t.nickname, before?.nickname),
+    keep(t.source, before?.source),
+    now(), existingId, user.id
+  ).run();
+
+  await db.logActivity(env, user.id, 'client.create', `Added ${name}`, { id: existingId });
+  return { id: existingId, existed };
+}
+
+export async function handleCreateClient(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const body = await readJson(request);
+  const out = await upsertClient(env, user, body);
+  if (out.error) return badRequest(out.error);
+
+  return json({
+    ok: true,
+    existing: out.existed,
+    client: await db.getClient(env, db.selfScope(user), { id: out.id }),
+  }, 201);
+}
+
 export async function handleUpdateClient(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;

@@ -120,8 +120,10 @@ import {
   handleListStatements, handleCreateStatement, handleUpdateStatement,
   handleDeleteStatement, handleStatementCandidates,
 } from './reconcile.js';
-import { handleClientRecord, handleListClients, handleUpdateClient } from './clients.js';
-import { handlePreviewImport, handleRunImport } from './importer.js';
+import { handleClientRecord, handleListClients, handleUpdateClient,
+  handleCreateClient } from './clients.js';
+import { handlePreviewImport, handleRunImport,
+  handlePreviewClientImport, handleRunClientImport } from './importer.js';
 import {
   handleCatalogLines, handleCatalogSearch, handleCatalogSailing, handleCatalogShips, handleCatalogDates, handleCatalogStatus,
   handleCatalogImport, handleCatalogSuggest, handleCatalogApply,
@@ -213,6 +215,7 @@ const PAGE_FILES = {
   '/app/client': '/app/client.html',
   '/app/clients': '/app/clients.html',
   '/app/import': '/app/import.html',
+  '/app/import-clients': '/app/import-clients.html',
   '/app/complete': '/app/complete.html',
   '/app/vendors': '/app/vendors.html',
   '/app/vendor': '/app/vendor.html',
@@ -680,6 +683,11 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/goals' && method === 'PUT') return handleSaveGoals(request, env);
   if (path === '/api/client' && method === 'GET') return handleClientRecord(request, env);
   if (path === '/api/clients' && method === 'GET') return handleListClients(request, env);
+  if (path === '/api/clients' && method === 'POST') return handleCreateClient(request, env);
+  if (path === '/api/import/clients/preview' && method === 'POST') {
+    return handlePreviewClientImport(request, env);
+  }
+  if (path === '/api/import/clients' && method === 'POST') return handleRunClientImport(request, env);
   if (path === '/api/import/preview' && method === 'POST') return handlePreviewImport(request, env);
   if (path === '/api/import/reservations' && method === 'POST') return handleRunImport(request, env);
 

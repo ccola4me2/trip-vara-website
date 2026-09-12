@@ -14,7 +14,11 @@
   <div class="main">
     <header class="topbar">
       <div><h1>Clients</h1><p class="sub">Everyone who has booked or holds a credit, built from your own records.</p></div>
-      <span id="scope"></span>
+      <span style="display:flex;align-items:center;gap:.6rem;">
+        <span id="scope"></span>
+        <a class="btn btn-sm" href="/app/import-clients">Import a list</a>
+        <button class="btn btn-primary btn-sm" id="add-client">Add a client</button>
+      </span>
     </header>
     <div class="content">
       <div id="err"></div>
@@ -29,6 +33,104 @@
     </div>
   </div>
 </div>
+
+<dialog id="client-dlg">
+  <form id="client-form" method="dialog">
+    <div class="card-head"><h2>Add a client</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-client>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <p class="muted" style="margin:0 0 .9rem;">Somebody you have met but not booked yet.
+        A reservation in their name will find them rather than making a second copy.</p>
+      <div class="field-row">
+        <div class="field"><label for="c-name">Name</label>
+          <input id="c-name" name="name" required></div>
+        <div class="field"><label for="c-nick">Goes by</label>
+          <input id="c-nick" name="nickname" maxlength="80" placeholder="Barb">
+          <p class="field-hint">What to call them, if it is not their first name.</p></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="c-email">Email</label>
+          <input id="c-email" name="email" type="email"></div>
+        <div class="field"><label for="c-phone">Phone</label>
+          <input id="c-phone" name="phone"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="c-birthday">Birthday</label>
+          <input id="c-birthday" name="birthday" type="date"></div>
+        <div class="field"><label for="c-anniversary">Anniversary</label>
+          <input id="c-anniversary" name="anniversary" type="date"></div>
+      </div>
+      <div class="field"><label for="c-source">Where they came from</label>
+        <input id="c-source" name="source" maxlength="80" placeholder="Referral">
+        <p class="field-hint">Referral, Facebook, a repeat client. The only field that
+          answers which of your marketing is working.</p></div>
+      <div class="field"><label for="c-notes">Notes</label>
+        <textarea id="c-notes" name="notes" rows="3"></textarea></div>
+
+      <!-- Shown, not hidden behind a disclosure. A field somebody has to go
+           looking for is a field that stays empty, and these are the ones a
+           vendor asks for at the worst moment. -->
+      <h3 style="margin:1.4rem 0 .3rem;font-size:.95rem;">What a vendor will ask for</h3>
+        <p class="muted" style="margin:.2rem 0 .9rem;font-size:.82rem;">All optional, and
+          all editable later on their record.</p>
+        <div class="field-row">
+          <div class="field"><label for="c-lf">First name on passport</label>
+            <input id="c-lf" name="legalFirst" maxlength="80"></div>
+          <div class="field"><label for="c-lm">Middle</label>
+            <input id="c-lm" name="legalMiddle" maxlength="80"></div>
+          <div class="field"><label for="c-ll">Last</label>
+            <input id="c-ll" name="legalLast" maxlength="80"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="c-gen">Gender</label>
+            <input id="c-gen" name="gender" maxlength="40" placeholder="As the document says"></div>
+          <div class="field"><label for="c-cit">Citizenship</label>
+            <input id="c-cit" name="citizenship" maxlength="80"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="c-pn">Passport number</label>
+            <input id="c-pn" name="passportNumber" maxlength="40"></div>
+          <div class="field"><label for="c-pc">Issuing country</label>
+            <input id="c-pc" name="passportCountry" maxlength="80"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="c-pi">Issued</label>
+            <input id="c-pi" name="passportIssued" type="date"></div>
+          <div class="field"><label for="c-pe">Expires</label>
+            <input id="c-pe" name="passportExpiry" type="date">
+            <p class="field-hint">Most lines want six months beyond the sailing.</p></div>
+        </div>
+        <div class="field"><label for="c-a1">Address</label>
+          <input id="c-a1" name="address1" maxlength="160"></div>
+        <div class="field"><label for="c-a2" class="sr-only">Address line two</label>
+          <input id="c-a2" name="address2" maxlength="160" placeholder="Apartment, suite"></div>
+        <div class="field-row">
+          <div class="field"><label for="c-city">City</label>
+            <input id="c-city" name="city" maxlength="80"></div>
+          <div class="field"><label for="c-state">State</label>
+            <input id="c-state" name="state" maxlength="80"></div>
+          <div class="field"><label for="c-zip">Postcode</label>
+            <input id="c-zip" name="postcode" maxlength="24"></div>
+          <div class="field"><label for="c-country">Country</label>
+            <input id="c-country" name="country" maxlength="80"></div>
+        </div>
+        <div class="field"><label for="c-loy">Past-guest numbers</label>
+          <textarea id="c-loy" name="loyaltyText" rows="2"
+            placeholder="Royal Caribbean 123456789"></textarea>
+          <p class="field-hint">One a line, cruise line then number.</p></div>
+        <div class="field-row">
+          <div class="field"><label for="c-kt">Known traveler</label>
+            <input id="c-kt" name="knownTraveler" maxlength="40"></div>
+          <div class="field"><label for="c-rd">Redress</label>
+            <input id="c-rd" name="redress" maxlength="40"></div>
+        </div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-primary" type="submit">Add client</button>
+    </div>
+  </form>
+</dialog>
 
 <script type="module">
 import { api, mountShell, esc, money, dateFmt, showError, mountScopePicker, advisorParam } from '/js/app.js';
@@ -173,6 +275,146 @@ async function load() {
     render(d);
   } catch (e) { showError(panel, e); }
 }
+
+// ------------------------------------------------------------ add a client
+// Until now a client existed only once a reservation had been taken, which is
+// right for the usual order of things and wrong for the one that comes first:
+// somebody rings, you take their details, and the trip is a fortnight of
+// conversation away.
+const clientDlg = document.getElementById('client-dlg');
+const clientForm = document.getElementById('client-form');
+
+const pickDlg = document.getElementById('pick-dlg');
+
+function openClientForm() {
+  clientForm.reset();
+  clientForm.querySelector('.notice-error').hidden = true;
+  clientDlg.showModal();
+}
+
+document.getElementById('add-client').addEventListener('click', () => pickDlg.showModal());
+
+pickDlg.querySelectorAll('[data-pick-kind]').forEach((b) => {
+  b.addEventListener('click', () => {
+    pickDlg.close();
+    if (b.dataset.pickKind === 'client') openClientForm();
+    else openHouseForm();
+  });
+});
+document.querySelector('[data-close-client]').addEventListener('click', () => clientDlg.close());
+
+clientForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errBox = clientForm.querySelector('.notice-error');
+  errBox.hidden = true;
+  const btn = clientForm.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const values = Object.fromEntries(new FormData(clientForm).entries());
+    // Typed a line at a time, stored as a list, same as on the client record.
+    const body = {
+      ...values,
+      loyalty: String(values.loyaltyText || '').split('\n')
+        .map((l) => l.trim()).filter(Boolean)
+        .map((l) => {
+          const m = l.match(/^(.*?)[\s:]+([A-Za-z0-9-]+)$/);
+          return m ? { line: m[1].trim(), number: m[2] } : { line: l, number: '' };
+        }).slice(0, 20),
+    };
+    delete body.loyaltyText;
+    const r = await api('/api/clients', { method: 'POST', body });
+    clientDlg.close();
+    // Said plainly rather than silently: adding somebody who is already on the
+    // list fills in what was blank, and somebody who typed a name twice
+    // deserves to know which of those happened.
+    if (r.existing) alert(`${values.name} was already on your list. Anything blank has been filled in.`);
+    await load();
+  } catch (e2) {
+    errBox.textContent = e2.message || 'Could not add that client.';
+    errBox.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------- add a household
+// Built out of the endpoints that already exist: each person is created as a
+// client, then the household is made from them. Doing it in that order means a
+// half-finished household is just a couple of clients, which is recoverable,
+// rather than a household with nobody in it, which is not.
+const houseDlg = document.getElementById('house-dlg');
+const houseForm = document.getElementById('house-form');
+const housePeople = document.getElementById('house-people');
+
+function personRow(n) {
+  const row = document.createElement('div');
+  row.className = 'field-row';
+  row.style.alignItems = 'end';
+  row.innerHTML = `
+    <div class="field"><label>Name${n < 2 ? ' *' : ''}</label>
+      <input data-p="name" ${n < 2 ? 'required' : ''} autocomplete="off"></div>
+    <div class="field"><label>Email</label><input data-p="email" type="email"></div>
+    <div class="field"><label>Phone</label><input data-p="phone"></div>`;
+  return row;
+}
+
+function openHouseForm() {
+  houseForm.reset();
+  houseForm.querySelector('.notice-error').hidden = true;
+  housePeople.innerHTML = '';
+  housePeople.append(personRow(0), personRow(1));
+  houseDlg.showModal();
+}
+
+document.getElementById('add-person').addEventListener('click', () => {
+  housePeople.append(personRow(housePeople.children.length));
+});
+document.querySelector('[data-close-house]').addEventListener('click', () => houseDlg.close());
+
+houseForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errBox = houseForm.querySelector('.notice-error');
+  errBox.hidden = true;
+  const btn = houseForm.querySelector('button[type=submit]');
+
+  const people = [...housePeople.children].map((row) => {
+    const get = (k) => row.querySelector(`[data-p="${k}"]`).value.trim();
+    return { name: get('name'), email: get('email'), phone: get('phone') };
+  }).filter((p) => p.name);
+
+  if (people.length < 2) {
+    errBox.textContent = 'A household needs at least two people. Add one client instead.';
+    errBox.hidden = false;
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const ids = [];
+    for (const p of people) {
+      const r = await api('/api/clients', { method: 'POST', body: p });
+      ids.push(r.client.id);
+    }
+    const v = Object.fromEntries(new FormData(houseForm).entries());
+    const out = await api('/api/households', {
+      method: 'POST',
+      body: { clientIds: ids, name: v.name, address: v.address, phone: v.phone, notes: v.notes },
+    });
+    houseDlg.close();
+    err.innerHTML = `<div class="notice notice-ok">${esc(out.name)} &middot; ${
+      out.members} people now live together.
+      <a href="/app/households">Open households</a></div>`;
+    await load();
+  } catch (e2) {
+    // Any client already created is on the list and keeps its details, so the
+    // way out of a failure here is to tick the people and use Make a household.
+    errBox.textContent = `${e2.message || 'Could not create that household.'
+      } Anyone already added is on your client list.`;
+    errBox.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
 pinnedOnly.addEventListener('change', load);
