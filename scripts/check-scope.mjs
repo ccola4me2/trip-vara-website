@@ -42,6 +42,7 @@ const OWNED = new Set([
   'goals', 'user_prefs', 'commission_statements', 'commission_receipts',
   'group_registrations', 'task_items', 'task_templates', 'trip_messages',
   'hotlist_actions', 'specials', 'special_leads', 'households', 'form_templates',
+  'itinerary_items',
 ]);
 
 // Shared by a whole agency through a GoHighLevel sub-account, so location_id
