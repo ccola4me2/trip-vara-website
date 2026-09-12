@@ -352,18 +352,96 @@ export async function handleUpdatePayment(request, env, id) {
   const payment = await db.updatePayment(env, id, user.id, fields);
   if (!payment) return notFound('Payment not found.');
   await settleCredit(env, user.id, payment, existing.credit_id || null);
+  // The same resync Mark paid does. Editing a row to fill in its paid date is
+  // the other way money gets recorded, and it left the reminder behind: the
+  // vendor's line was settled, its soft twin was not, and the balance went on
+  // reading as owed and overdue on a reservation that was paid in full.
+  await syncSoftReminder(env, user, existing.booking_id, existing.kind);
+  if (fields.kind !== existing.kind) {
+    // A row moved between kinds leaves the reminder for the kind it left.
+    await syncSoftReminder(env, user, existing.booking_id, fields.kind);
+  }
+
   await db.logActivity(env, user.id, 'payment.update', 'Updated a payment', { id });
   return json({ ok: true, payment });
 }
 
 /** The one-click action: this money arrived today. */
+/**
+ * Keep the reminder honest about what is still owed.
+ *
+ * A final balance is two rows: the vendor's deadline, and a soft line a week
+ * earlier that exists only to make somebody chase it in time. They are one
+ * obligation shown twice, which is why every money total counts the hard rows
+ * and ignores the soft ones.
+ *
+ * So once money has moved, the reminder has to be told. Left alone it goes on
+ * asking for the original figure after half of it has been paid, which is how
+ * a client gets chased for money they already sent.
+ */
+async function syncSoftReminder(env, user, bookingId, kind) {
+  const rows = await db.listPayments(env, db.selfScope(user), { bookingId });
+  const mine = rows.filter((r) => r.kind === kind);
+  const owed = mine
+    .filter((r) => r.payment_class === 'hard' && !r.paid_date)
+    .reduce((n, r) => n + (r.amount_cents || 0), 0);
+  const reminders = mine
+    .filter((r) => r.payment_class === 'soft' && !r.paid_date)
+    .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')));
+
+  if (owed <= 0) {
+    // Nothing left to chase, so there is nothing to be reminded about.
+    for (const r of reminders) await db.deletePayment(env, r.id, user.id);
+    return;
+  }
+  // One reminder, for what is actually left. Any others are leftovers from a
+  // schedule built more than once.
+  const [keep, ...extra] = reminders;
+  for (const r of extra) await db.deletePayment(env, r.id, user.id);
+  if (keep && (keep.amount_cents || 0) !== owed) {
+    await db.updatePayment(env, keep.id, user.id, {
+      kind: keep.kind,
+      paymentClass: keep.payment_class,
+      amountCents: owed,
+      dueDate: keep.due_date,
+      paidDate: null,
+      method: keep.method || null,
+      paymentType: keep.payment_type || null,
+      paidBy: keep.paid_by || null,
+      creditId: keep.credit_id || null,
+      cardLast4: keep.card_last4 || null,
+      reference: keep.reference,
+      notes: keep.notes,
+    });
+  }
+}
+
 export async function handleMarkPaid(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
   const body = await readJson(request);
-  const existing = await db.getPayment(env, id, user.id);
+  let existing = await db.getPayment(env, id, user.id);
   if (!existing) return notFound('Payment not found.');
+
+  // You cannot pay a reminder.
+  //
+  // The soft line is the same money as the vendor deadline it sits a week in
+  // front of, and only the hard rows are counted as paid. Posting against the
+  // reminder therefore recorded the payment somewhere no total looks at: the
+  // reservation still showed the whole balance outstanding, and the vendor
+  // deadline still asked for all of it. So the posting is moved to the row it
+  // was really about.
+  if (existing.payment_class === 'soft') {
+    const siblings = await db.listPayments(env, db.selfScope(user),
+      { bookingId: existing.booking_id });
+    const realOne = siblings.find((r) => r.kind === existing.kind
+      && r.payment_class === 'hard' && !r.paid_date);
+    if (realOne) {
+      id = realOne.id;
+      existing = realOne;
+    }
+  }
 
   // Everything not being posted right now is carried across. An update writes
   // every column, so leaving these out silently erased who paid and how from a
@@ -377,10 +455,29 @@ export async function handleMarkPaid(request, env, id) {
     || (await payerProblem(env, user.id, existing.booking_id, paidBy));
   if (problem) return badRequest(problem);
 
+  // How much actually arrived. Blank or absent means all of it, which is the
+  // ordinary case and the one the button posts.
+  //
+  // A part payment is recorded as two facts rather than one half-finished
+  // one: this row becomes what was received, and the remainder becomes its
+  // own scheduled line on the same date. Nothing else in the portal has to
+  // learn a new idea -- a paid row is paid and a scheduled row is due, which
+  // is what every report, reminder and client statement already reads. A
+  // "partly paid" column would have meant changing what outstanding means in
+  // forty-odd places, and the ledger would read less honestly for it.
+  const due = existing.amount_cents || 0;
+  // Dollars, like every other amount this module takes. Taking cents as well
+  // would mean guessing which one "1000" meant.
+  const received = body.amount === undefined || body.amount === null || body.amount === ''
+    ? due
+    : Math.max(0, Math.min(toCents(body.amount) || 0, due));
+  if (received <= 0) return badRequest('Enter how much was received.');
+  const remainder = due - received;
+
   const payment = await db.updatePayment(env, id, user.id, {
     kind: existing.kind,
     paymentClass: existing.payment_class,
-    amountCents: existing.amount_cents,
+    amountCents: received,
     dueDate: existing.due_date,
     paidDate: cleanDate(body.paidDate) || isoDay(0),
     method: body.method === undefined ? (existing.method || null) : oneOf(body.method, METHODS),
@@ -396,8 +493,36 @@ export async function handleMarkPaid(request, env, id) {
     notes: existing.notes,
   });
   await settleCredit(env, user.id, payment, existing.credit_id || null);
-  await db.logActivity(env, user.id, 'payment.paid', 'Marked a payment received', { id });
-  return json({ ok: true, payment });
+
+  // What is still owed, carried on its own line so the deadline it was due by
+  // is not quietly lost with the part that was paid.
+  let rest = null;
+  if (remainder > 0) {
+    rest = await db.createPayment(env, user.id, {
+      bookingId: existing.booking_id,
+      kind: existing.kind,
+      paymentClass: existing.payment_class,
+      amountCents: remainder,
+      dueDate: existing.due_date,
+      paidDate: null,
+      method: null,
+      reference: existing.reference,
+      notes: existing.notes,
+      paymentType: null,
+      paidBy: existing.paid_by || null,
+      creditId: null,
+      cardLast4: null,
+    });
+  }
+
+  await syncSoftReminder(env, user, existing.booking_id, existing.kind);
+
+  await db.logActivity(env, user.id, 'payment.paid',
+    remainder > 0
+      ? `Recorded a part payment, ${remainder} cents still due`
+      : 'Marked a payment received',
+    { id, received, remainder });
+  return json({ ok: true, payment, remainder: rest });
 }
 
 export async function handleDeletePayment(request, env, id) {
