@@ -360,6 +360,46 @@ function optionsBlock(trip, advisor) {
   </section>`;
 }
 
+/**
+ * What a phone needs to keep a trip on its home screen.
+ *
+ * Served per trip rather than once for the site, because the thing being kept
+ * is one trip: the icon opens that trip, the name under the icon is that trip,
+ * and `scope` keeps it there rather than turning the whole portal into an app
+ * the client was never given a login for.
+ *
+ * Public, like the page it belongs to, and it says nothing the page does not.
+ * A manifest is fetched by the browser without the session the page was opened
+ * with, so it cannot carry anything the share code does not already entitle
+ * somebody to see: a trip name, and the agency's colour.
+ */
+export async function renderTripManifest(request, env, code) {
+  const trip = await loadTrip(env, clean(code, 40));
+  if (!trip) return notFound('No such trip.');
+
+  const b = trip.booking;
+  const brand = await brandForUser(env, b.user_id);
+  const name = b.itinerary || b.product_name || 'Your trip';
+  const accent = HEX_COLOR.test(brand.color || '') ? brand.color : DEFAULT_BRAND.color;
+
+  return new Response(JSON.stringify({
+    name: `${name} | ${brand.name}`,
+    short_name: name.slice(0, 24),
+    start_url: `/t/${encodeURIComponent(code)}`,
+    scope: `/t/${encodeURIComponent(code)}`,
+    display: 'standalone',
+    orientation: 'portrait',
+    background_color: '#f7fafb',
+    theme_color: accent,
+    icons: [{ src: '/logo-mark.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+  }, null, 2), {
+    headers: {
+      'content-type': 'application/manifest+json; charset=utf-8',
+      'cache-control': 'public, max-age=300',
+    },
+  });
+}
+
 export async function renderTripPage(request, env, code) {
   const trip = await loadTrip(env, clean(code, 40));
   if (!trip) {
@@ -504,7 +544,7 @@ export async function renderTripPage(request, env, code) {
     ${PRINT_SCRIPT}`;
 
   return html(page(b.itinerary || b.product_name || 'Your trip', body,
-    await brandForUser(env, b.user_id)));
+    await brandForUser(env, b.user_id), b.share_code));
 }
 
 const PAYMENT_WORD = {
@@ -733,7 +773,20 @@ document.getElementById('say').addEventListener('submit', async (e) => {
 });
 </scr${''}ipt>`;
 
-function page(title, body, brand) {
+/**
+ * The shell every client-facing page is drawn in.
+ *
+ * `code` is the trip's share code where there is one. With it the page offers
+ * itself to the phone as something to keep: an icon on the home screen that
+ * opens straight to this trip, without an app store and without anything to
+ * install.
+ *
+ * Deliberately not a service worker, yet. This page says what somebody owes
+ * and when, and a cached copy of that is worse than no copy: the one time
+ * offline matters is at an airport, which is exactly when a stale balance or a
+ * superseded document would be believed.
+ */
+function page(title, body, brand, code) {
   const b = brand || DEFAULT_BRAND;
   const accent = HEX_COLOR.test(b.color || '') ? b.color : DEFAULT_BRAND.color;
   return `<!doctype html>
@@ -743,6 +796,12 @@ function page(title, body, brand) {
 <meta name="robots" content="noindex, nofollow">
 <title>${esc(title)} | ${esc(b.name)}</title>
 <link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<meta name="theme-color" content="${esc(accent)}">
+${code ? `<link rel="manifest" href="/t/${esc(code)}/app.webmanifest">` : ''}
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="${esc(title).slice(0, 24)}">
+<link rel="apple-touch-icon" href="/logo-mark.svg">
 <style>
   :root {
     --navy:${accent}; --navy-d:#12294a; --coral:#e55942; --ink:#2f4459;
