@@ -79,9 +79,19 @@ if (!slug) {
     if (d.brand.logoUrl) document.querySelector('#brand img').src = d.brand.logoUrl;
     // One accent, applied the way the portal's own is, so a page that is not
     // Trip Vara does not look like Trip Vara with a different name on it.
+    //
+    // --navy-900 as well as the other two. It paints the header band, the
+    // largest block of colour here, and leaving it out was most of why an
+    // agency's join link still looked like Trip Vara: the wordmark took the
+    // agency colour and the band above the form did not.
+    //
+    // No contrast test here. The colour arrives from brandOf, which has already
+    // refused anything too pale to read and substituted the portal's own, so a
+    // second opinion in the browser could only disagree with the server.
     if (d.brand.color) {
-      document.documentElement.style.setProperty('--navy-800', d.brand.color);
-      document.documentElement.style.setProperty('--navy-600', d.brand.color);
+      for (const v of ['--navy-900', '--navy-800', '--navy-600']) {
+        document.documentElement.style.setProperty(v, d.brand.color);
+      }
     }
     head.textContent = `Join ${name}`;
     lede.textContent = 'Somebody at the agency approves each account before it goes live.';
