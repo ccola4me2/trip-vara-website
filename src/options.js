@@ -16,7 +16,7 @@ import { requireUser } from './auth.js';
 import * as db from './db.js';
 
 const COLUMNS = `
-  id, booking_id, user_id, label, detail, amount_cents, chosen, sort_order,
+  id, booking_id, user_id, label, detail, amount_cents, chosen, recommended, sort_order,
   image_url, inclusions, chosen_at, chosen_by, created_at, updated_at
 `;
 
@@ -69,9 +69,9 @@ export async function handleAddOption(request, env, bookingId) {
   const ts = now();
   await env.DB.prepare(
     `INSERT INTO quote_options
-       (id, booking_id, user_id, label, detail, amount_cents, chosen, sort_order,
+       (id, booking_id, user_id, label, detail, amount_cents, chosen, recommended, sort_order,
         image_url, inclusions, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)`
   ).bind(id, bookingId, user.id, fields.label, fields.detail, fields.amountCents,
          fields.sortOrder, fields.imageUrl, fields.inclusions, ts, ts).run();
 
@@ -94,6 +94,53 @@ export async function handleUpdateOption(request, env, id) {
          fields.imageUrl, fields.inclusions, now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Option not found.');
   return json({ ok: true });
+}
+
+/**
+ * The one the advisor would pick.
+ *
+ * Its own endpoint rather than a field on the edit form, because it is a
+ * one-of-many state and the form saves one card at a time: saving a card with
+ * a "recommended" tickbox would need the form to know about the other cards,
+ * and the day it got that wrong there would be two.
+ *
+ * One at a time across the reservation, exactly as choosing is here. Options
+ * on this portal are all whole-trip alternatives, with no component to group
+ * them by, so a second suggestion replaces the first.
+ */
+export async function handleRecommendOption(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const option = await env.DB.prepare(
+    `SELECT ${COLUMNS} FROM quote_options WHERE id = ? AND user_id = ?`
+  ).bind(id, user.id).first();
+  if (!option) return notFound('Option not found.');
+
+  const booking = await db.getBooking(env, option.booking_id, user.id);
+  if (!booking) return notFound('Reservation not found.');
+
+  const body = await readJson(request);
+  // Sent as false to take a suggestion back, which is the same button again.
+  const on = body.recommended === false ? 0 : 1;
+
+  await env.DB.prepare(
+    `UPDATE quote_options SET recommended = 0, updated_at = ?
+      WHERE booking_id = ? AND user_id = ?`
+  ).bind(now(), option.booking_id, user.id).run();
+
+  if (on) {
+    await env.DB.prepare(
+      'UPDATE quote_options SET recommended = 1, updated_at = ? WHERE id = ? AND user_id = ?'
+    ).bind(now(), id, user.id).run();
+  }
+
+  await db.logActivity(env, user.id, 'option.recommend',
+    on ? `Suggested "${option.label}" on ${booking.client_name}'s quote`
+      : `Took back the suggestion on ${booking.client_name}'s quote`,
+    { bookingId: booking.id });
+
+  return json({ ok: true, recommended: on === 1 });
 }
 
 export async function handleDeleteOption(request, env, id) {
