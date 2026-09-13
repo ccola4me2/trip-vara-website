@@ -205,6 +205,7 @@ const NAV = [
 const ADMIN_NAV = [
   { href: '/admin/', label: 'Advisors', icon: I.people },
   { href: '/admin/agencies', label: 'Agencies', icon: I.handshake },
+  { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield },
   { href: '/app/', label: 'Back to portal', icon: I.back },
 ];
 

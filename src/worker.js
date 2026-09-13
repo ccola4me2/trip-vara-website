@@ -208,6 +208,7 @@ const PAGE_FILES = {
   '/app/hotlists': '/app/hotlists.html',
   '/join': '/join.html',
   '/admin/agencies': '/admin/agencies.html',
+  '/admin/onboarding': '/admin/onboarding.html',
   '/app/specials': '/app/specials.html',
   '/app/special': '/app/special.html',
   '/app/goals': '/app/goals.html',

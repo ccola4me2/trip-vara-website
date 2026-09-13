@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Putting an agency on | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .runbook { max-width: 46rem; }
+  .runbook h2 { font-size: 1.1rem; margin: 2.2rem 0 .5rem; color: var(--navy-800); }
+  .runbook h2:first-child { margin-top: 0; }
+  .runbook p, .runbook li { color: var(--ink-600); line-height: 1.65; }
+  .runbook p { margin: 0 0 .8rem; }
+  .runbook ol, .runbook ul { margin: 0 0 1rem; padding-left: 1.3rem; }
+  .runbook li { margin-bottom: .5rem; }
+  .runbook code { background: var(--navy-50); padding: .1rem .3rem; border-radius: 4px;
+    font-size: .85em; }
+  .step { display: flex; gap: .9rem; margin: 0 0 1.4rem; }
+  .step .n { flex: none; width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    background: var(--navy-800); color: #fff; font-size: .82rem; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; margin-top: .1rem; }
+  .step .what { min-width: 0; }
+  .step h3 { margin: .1rem 0 .35rem; font-size: .98rem; color: var(--navy-800); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Putting an agency on</h1>
+        <p class="sub">The whole sequence, in order, with what goes wrong at each step.</p></div>
+    </header>
+    <div class="content">
+      <div class="runbook">
+
+<p>Only the <strong>portal owner</strong> can do any of this. An agency owner runs their own
+  book and their own advisors; creating an agency, moving somebody between agencies and
+  making somebody an owner are all refused for them, on purpose. An owner who could promote
+  their own staff could hand out sight of every book in their agency without anybody outside
+  it knowing.</p>
+
+<p>Budget twenty minutes, most of it waiting for the other person.</p>
+
+<h2>Before you start</h2>
+<p>Two things have to exist that are not in this portal:</p>
+<ul>
+  <li>A <strong>Trip Vara Tools sub-account</strong> for the agency, with its location id
+    to hand. Each agency gets its own. Contacts, conversations and pipelines all live
+    against it, and two agencies sharing one would see each other's clients.</li>
+  <li>Somebody at the agency who will be its <strong>owner</strong>: the person who
+    approves their advisors, sets commission agreements and maintains the agency record.</li>
+</ul>
+
+<h2>The sequence</h2>
+
+<div class="step"><div class="n">1</div><div class="what">
+  <h3>Create the agency</h3>
+  <p><a href="/admin/agencies">Agencies</a> &rarr; <strong>Add an agency</strong>. The name
+    is what their clients see on a quote, a statement and a deal page, so it is the trading
+    name rather than anything internal.</p>
+  <p>Paste the <strong>Trip Vara Tools location id</strong> now rather than later. Every
+    advisor who signs up is stamped with their agency's location as they are created, so an
+    agency created without one puts its first advisors on no sub-account at all, and that is
+    fixed advisor by advisor afterwards.</p>
+  <p>Fill in the address, phone and seller-of-travel registration while you are there. They
+    appear on everything the agency's clients read.</p>
+</div></div>
+
+<div class="step"><div class="n">2</div><div class="what">
+  <h3>Turn on signups and send the link</h3>
+  <p>Tick <strong>open for signups</strong> and save. The agency's row then shows a link of
+    the form <code>/join/&lt;slug&gt;</code> with a <strong>Copy link</strong> button. That
+    page is branded as the agency and is the only way in.</p>
+  <p>With signups off, anybody following the link is told plainly that the agency is not
+    taking signups rather than being filed as pending and left waiting. Turn it off again
+    once their advisors are on, so the link stops accepting strangers.</p>
+</div></div>
+
+<div class="step"><div class="n">3</div><div class="what">
+  <h3>They sign up</h3>
+  <p>They choose their own password. Nobody, here or there, ever sees it or sets it for
+    them. The account arrives <strong>pending</strong> and cannot sign in.</p>
+  <p>If they say the link did not work, the usual cause is signups being switched off
+    again, or the wrong agency's link.</p>
+</div></div>
+
+<div class="step"><div class="n">4</div><div class="what">
+  <h3>Approve them</h3>
+  <p><a href="/admin/">Advisors</a>, filter to <strong>Pending approval</strong>, press
+    <strong>Approve</strong>. They can sign in from that moment.</p>
+</div></div>
+
+<div class="step"><div class="n">5</div><div class="what">
+  <h3>Make them their agency's owner</h3>
+  <p>On their row, set the <strong>agency</strong> to the one you created and the
+    <strong>role</strong> to owner. Leave the <strong>portal owner</strong> flag
+    <strong>off</strong>. That flag is the keys to the whole platform, not to their agency:
+    it lets somebody create agencies, move advisors between them and promote other owners.
+    An agency owner needs none of that.</p>
+  <p>Only the first person needs this. Everybody else at that agency signs up through the
+    same link and is approved by <em>them</em>.</p>
+</div></div>
+
+<div class="step"><div class="n">6</div><div class="what">
+  <h3>Hand over</h3>
+  <p>Tell them the three things that are theirs from now on: approving their own advisors,
+    setting each advisor's commission agreement, and keeping the agency record current.
+    Point them at <a href="/app/manual">How this works</a>, which covers the rest.</p>
+</div></div>
+
+<h2>What goes wrong</h2>
+<ul>
+  <li><strong>"The join link says they are not taking signups."</strong> Signups are off on
+    that agency, or the slug in the link is another agency's. Both are on the
+    <a href="/admin/agencies">Agencies</a> page.</li>
+  <li><strong>Their advisors' contacts go to the wrong sub-account.</strong> The agency was
+    created without a location id, or with the wrong one. An advisor is stamped with it as
+    they are created, so fixing the agency record does not move the advisors already on it.
+    Check the agency first, then each advisor.</li>
+  <li><strong>They cannot approve their own advisors.</strong> Their role is still advisor
+    rather than owner, or they are not attached to the agency. Step 5.</li>
+  <li><strong>They can see agencies that are not theirs.</strong> The portal owner flag is
+    on. Turn it off. Nobody outside this portal should ever have it.</li>
+  <li><strong>Nothing is emailing anybody.</strong> That is portal-wide rather than
+    per-agency: it needs <code>RESEND_API_KEY</code> on the Worker. The
+    <a href="/admin/">Advisors</a> page says whether it is set.</li>
+</ul>
+
+<h2>Taking an agency off</h2>
+<p>There is no delete, deliberately. Suspend each of its advisors on
+  <a href="/admin/">Advisors</a>, which ends their sessions immediately, and turn signups
+  off so the join link stops accepting anybody. Their reservations, clients and commission
+  history stay where they are, which is what you want if there is ever a question about what
+  was sold.</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { mountShell } from '/js/app.js';
+await mountShell({ admin: true });
+</script>
+</body></html>
