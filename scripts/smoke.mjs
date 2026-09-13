@@ -5424,6 +5424,48 @@ async function main() {
   await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`, { defaultSplitPct: '' });
   }
 
+  // A client record holds more than a phone number, and until now the edit
+  // saved six of its twenty-six columns. Nothing failed: the rest were simply
+  // never in the statement, so a passport expiry typed wrong when somebody was
+  // added could not be corrected. On a travel portal that is the worst field
+  // to have picked.
+  {
+  step('Correcting what a vendor will ask for');
+
+  const who = `Detail ${stamp}`;
+  const made = await call(advisor, 'POST', '/api/clients', { name: who });
+  const detailId = made.data?.client?.id;
+  if (!detailId) {
+    skip('the client detail edit', `creating the client answered ${made.status}`);
+  } else {
+    const saved = await call(advisor, 'PUT', `/api/clients/${detailId}`, {
+      name: who, nickname: 'Nick', source: 'Referral',
+      legalFirst: 'Jonathan', legalLast: 'Smythe',
+      passportNumber: 'X1234567', passportCountry: 'USA', passportExpiry: isoDay(400),
+      city: 'Tampa', state: 'FL', knownTraveler: 'TT1234',
+      loyalty: [{ line: 'Royal Caribbean', number: '123456789' }],
+    });
+    const back = saved.data?.client || {};
+    check(back.passport_number === 'X1234567' && back.passport_country === 'USA'
+      && back.legal_first === 'Jonathan' && back.city === 'Tampa'
+      && back.known_traveler === 'TT1234' && back.nickname === 'Nick'
+      && back.source === 'Referral' && (back.loyalty_json || '').includes('123456789'),
+      'every field on a client record survives an edit',
+      JSON.stringify(back));
+
+    // A save is the whole record, which is what the form sends. Asserted
+    // rather than assumed, because the other reading, that a save only touches
+    // the fields it names, is equally defensible and silently different: under
+    // it a half-filled form would leave the rest alone instead of clearing it.
+    // Whichever it is, it should be on purpose.
+    const again = await call(advisor, 'PUT', `/api/clients/${detailId}`,
+      { name: who, phone: '+1 555 0199' });
+    check(again.data?.client?.passport_number === null,
+      'a save is the whole record, so a field left out of one is cleared',
+      again.data?.client?.passport_number);
+  }
+  }
+
   // -------------------------------------------------------------- the cron -
   // wrangler dev --test-scheduled exposes /__scheduled. Without it the
   // scheduled handler is the one part of this Worker that nothing here ever

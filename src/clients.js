@@ -158,6 +158,22 @@ export async function handleClientRecord(request, env) {
   });
 }
 
+// Every column the create path writes, as one list, so the edit cannot quietly
+// write fewer of them. It did: 0058 added twenty columns to this table, the
+// create learned all of them and the edit learned none, so a passport number
+// typed wrong when somebody was added could never be corrected.
+const TRAVEL_SET = `legal_first = ?, legal_middle = ?, legal_last = ?, gender = ?,
+  citizenship = ?, passport_number = ?, passport_country = ?, passport_issued = ?,
+  passport_expiry = ?, address1 = ?, address2 = ?, city = ?, state = ?,
+  postcode = ?, country = ?, loyalty_json = ?, known_traveler = ?, redress = ?`;
+
+const travelBinds = (f) => [
+  f.legalFirst, f.legalMiddle, f.legalLast, f.gender, f.citizenship,
+  f.passportNumber, f.passportCountry, f.passportIssued, f.passportExpiry,
+  f.address1, f.address2, f.city, f.state, f.postcode, f.country,
+  f.loyaltyJson, f.knownTraveler, f.redress,
+];
+
 function travelFields(body) {
   let loyalty = null;
   if (Array.isArray(body.loyalty)) {
@@ -299,9 +315,25 @@ export async function handleUpdateClient(request, env, id) {
   // The name is the key reservations were matched on before this table
   // existed, so renaming has to carry them along or the trips would be
   // orphaned from the person who took them.
+  // Everything the record holds, not the six fields this used to save.
+  //
+  // A save is the whole record. The form sends every field, so a box somebody
+  // emptied is an instruction to clear it, and that is the behaviour the smoke
+  // suite pins down. The other reading, where a save only touches what it
+  // names, is equally defensible and would mean a caller sending half a client
+  // leaves the rest alone; it is not what happens here.
+  //
+  // The passport details, the address, the loyalty numbers, what somebody goes
+  // by and where they came from could all be entered when a client was created
+  // and none of them could be changed afterwards. Nothing failed: the columns
+  // were simply never in this statement, so the value came back unchanged and
+  // a passport expiry typed wrong was permanent. On a travel portal that is
+  // the worst field to have picked.
+  const travel = travelFields(body);
   const res = await env.DB.prepare(
     `UPDATE clients SET name = ?, email = ?, phone = ?, notes = ?,
-       birthday = ?, anniversary = ?, updated_at = ?
+       birthday = ?, anniversary = ?, nickname = ?, source = ?,
+       ${TRAVEL_SET}, updated_at = ?
       WHERE id = ? AND user_id = ?`
   ).bind(name, clean(body.email, 160) || null, clean(body.phone, 40) || null,
          clean(body.notes, 4000) || null,
@@ -309,6 +341,8 @@ export async function handleUpdateClient(request, env, id) {
          // birthday, but the field is a date input and half of these arrive
          // from a passport, so there is no reason to throw the year away.
          cleanDate(body.birthday), cleanDate(body.anniversary),
+         travel.nickname, travel.source,
+         ...travelBinds(travel),
          now(), id, user.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Client not found.');
 
