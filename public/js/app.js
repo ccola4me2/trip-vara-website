@@ -140,6 +140,7 @@ const NAV = [
       { href: '/app/tasks', label: 'To do' },
       { href: '/app/hotlists', label: 'Who to call' },
       { href: '/app/clients', label: 'Clients' },
+      { href: '/app/households', label: 'Households' },
       { href: '/app/import-clients', label: 'Import clients' },
       { href: '/app/leads', label: 'CRM contacts' },
       { href: '/app/credits', label: 'Client credits' },

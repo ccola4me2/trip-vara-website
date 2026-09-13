@@ -43,6 +43,7 @@ const PAGES = [
     'detail:/api/penalties?vendor={id}']],
   ['public/app/client.html', ['detail-client:/api/bookings']],
   ['public/app/clients.html', ['/api/clients']],
+  ['public/app/households.html', ['/api/households', '/api/households/suggestions']],
   ['public/app/vendors.html', ['/api/vendors', '/api/vendors/suggest-dates',
     'detail:/api/penalties?vendor={id}']],
   ['public/app/complete.html', ['/api/bookings', '/api/catalog/suggest']],

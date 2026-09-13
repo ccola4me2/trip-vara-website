@@ -107,6 +107,7 @@ import {
 import {
   handleListHouseholds, handleCreateHousehold, handleUpdateHousehold,
   handleAddMember, handleRemoveMember, handleDeleteHousehold, handleHouseholdTravellers,
+  handleSuggestHouseholds, handleHouseholdRecord,
 } from './households.js';
 import {
   handleListItinerary, handleSaveItem, handleDeleteItem, handleShareItinerary,
@@ -215,6 +216,7 @@ const PAGE_FILES = {
   '/app/reservation': '/app/reservation.html',
   '/app/client': '/app/client.html',
   '/app/clients': '/app/clients.html',
+  '/app/households': '/app/households.html',
   '/app/import': '/app/import.html',
   '/app/import-clients': '/app/import-clients.html',
   '/app/complete': '/app/complete.html',
@@ -658,14 +660,18 @@ async function routeApi(request, env, path, method) {
   // People who live at the same address, kept together.
   if (path === '/api/households' && method === 'GET') return handleListHouseholds(request, env);
   if (path === '/api/households' && method === 'POST') return handleCreateHousehold(request, env);
-  // Before the single-segment match, which would otherwise swallow it.
+  // Before the single-segment match, which would otherwise swallow them.
   if (path === '/api/households/travellers' && method === 'GET') {
     return handleHouseholdTravellers(request, env);
+  }
+  if (path === '/api/households/suggestions' && method === 'GET') {
+    return handleSuggestHouseholds(request, env);
   }
   if (houseMemberMatch && method === 'POST') return handleAddMember(request, env, houseMemberMatch[1]);
   if (houseDropMatch && method === 'DELETE') {
     return handleRemoveMember(request, env, houseDropMatch[1], houseDropMatch[2]);
   }
+  if (houseMatch && method === 'GET') return handleHouseholdRecord(request, env, houseMatch[1]);
   if (houseMatch && method === 'PUT') return handleUpdateHousehold(request, env, houseMatch[1]);
   if (houseMatch && method === 'DELETE') return handleDeleteHousehold(request, env, houseMatch[1]);
 

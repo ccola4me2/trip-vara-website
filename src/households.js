@@ -121,6 +121,69 @@ export async function handleListHouseholds(request, env) {
  * because a household of nobody is not a thing anybody wants and it is the
  * shape the clients list offers: tick two names, make them a household.
  */
+/**
+ * Put people in one house.
+ *
+ * Takes the clients rather than making an empty household and filling it,
+ * because a household of nobody is not a thing anybody wants and it is the
+ * shape the clients list offers: tick two names, make them a household.
+ */
+/**
+ * People who share an address and are in no household.
+ *
+ * A client list imported from a back office arrives one person at a time, so a
+ * couple who have travelled together for twenty years land as two unrelated
+ * rows. The address is already on both of them and says so; nobody was asked
+ * to read it. Fifty of the first seventy nine clients imported here were
+ * somebody's housemate.
+ *
+ * Matched on the street line and the postcode with the punctuation taken out,
+ * because "1560 SW 4TH Cir" and "1560 SW 4th Cir." are the same house and a
+ * plain comparison says they are not. The postcode is in the key so that two
+ * different towns with a Main Street are not proposed as one family.
+ *
+ * Only ever the reader's own clients: a household is made from them by
+ * user_id, so proposing a colleague's client would be proposing something the
+ * next step refuses.
+ */
+export async function suggestHouseholds(env, user) {
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, email, phone, address1, city, state, postcode
+       FROM clients
+      WHERE user_id = ? AND household_id IS NULL
+        AND address1 IS NOT NULL AND TRIM(address1) != ''
+      LIMIT 2000`
+  ).bind(user.id).all();
+
+  const flat = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const groups = new Map();
+  for (const c of results || []) {
+    const key = `${flat(c.address1)}|${flat(c.postcode).slice(0, 5)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+
+  return [...groups.values()]
+    .filter((people) => people.length > 1)
+    // Never silently. A group of nine at one address is a block of flats with
+    // no unit numbers, not a family, and an advisor should see the size before
+    // agreeing to it.
+    .map((people) => ({
+      name: suggestName(people.map((p) => p.name)),
+      address: [people[0].address1, people[0].city, people[0].state]
+        .filter(Boolean).join(', '),
+      members: people.map(({ id, name, email, phone }) => ({ id, name, email, phone })),
+    }))
+    .sort((a, b) => b.members.length - a.members.length || a.name.localeCompare(b.name));
+}
+
+export async function handleSuggestHouseholds(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+  const suggestions = await suggestHouseholds(env, user);
+  return json({ suggestions });
+}
+
 export async function handleCreateHousehold(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
@@ -172,6 +235,32 @@ export async function handleUpdateHousehold(request, env, id) {
   if (!res.meta || res.meta.changes === 0) return notFound('Household not found.');
 
   return json({ ok: true });
+}
+
+/**
+ * One household and everybody in it.
+ *
+ * The list gives a count, which is enough to pick one out and not enough to do
+ * anything with it. This is what the household screen reads.
+ */
+export async function handleHouseholdRecord(request, env, id) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const scope = db.scopeFor(env, user, request);
+  const scoped = db.scopeWhere(scope, 'h.user_id');
+  const house = await env.DB.prepare(
+    `SELECT ${COLUMNS} FROM households h WHERE h.id = ? AND ${scoped.sql}`
+  ).bind(id, ...scoped.binds).first();
+  if (!house) return notFound('Household not found.');
+
+  const members = await membersOf(env, house.id, scope);
+  return json({
+    household: house,
+    members,
+    lifetimeCents: members.reduce((n, m) => n + (m.lifetime_cents || 0), 0),
+    editable: house.user_id === user.id,
+  });
 }
 
 /** Move somebody in. */
