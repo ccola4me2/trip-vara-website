@@ -105,7 +105,13 @@ export function plainText(html) {
   return String(html || '')
     .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
     .replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
-      (_m, href, label) => `${label.replace(/<[^>]+>/g, '').trim()} (${href})`)
+      (_m, href, label) => {
+        const words = label.replace(/<[^>]+>/g, '').trim();
+        // A linkified URL is its own label, and "https://x (https://x)" reads
+        // as a mistake. Anything else keeps the address in brackets after it,
+        // since the text half of an email cannot be clicked.
+        return words === href ? href : `${words} (${href})`;
+      })
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|h1|h2|h3|li|table)>/gi, '\n\n')
     .replace(/<li\b[^>]*>/gi, '- ')
@@ -540,6 +546,30 @@ export async function sendTestEmail(env, to) {
  * know a send failed so it can retry, where a signup email failing must never
  * break the signup.
  */
+/**
+ * Turn a web address somebody typed into one they can click.
+ *
+ * The body of these is plain text, escaped, with newlines turned into breaks.
+ * A link pasted into it therefore arrived as grey text. Some mail clients
+ * quietly linkify a bare URL in an HTML part and some do not, and the one that
+ * does not is always the one the client you most wanted to reach is using.
+ *
+ * Runs on the already-escaped string, so the URL it matches cannot contain a
+ * bracket or a quote and cannot close the attribute it is going into. Trailing
+ * punctuation is left outside the link, because "see example.com/deal." should
+ * not send anybody to a path with a full stop on the end.
+ */
+export function linkify(escaped) {
+  return String(escaped).replace(
+    /\bhttps?:\/\/[^\s<>"']+/g,
+    (url) => {
+      const trimmed = url.replace(/[.,;:!?)\]]+$/, '');
+      const tail = url.slice(trimmed.length);
+      return `<a href="${trimmed}" style="color:#12315e;">${trimmed}</a>${tail}`;
+    },
+  );
+}
+
 export async function sendAutomationEmail(env, to, subject, body) {
   // Neither of these improves by waiting five minutes and asking again.
   if (!env.RESEND_API_KEY) {
@@ -549,7 +579,7 @@ export async function sendAutomationEmail(env, to, subject, body) {
 
   const html = layout(env, {
     heading: subject,
-    body: `<p style="margin:0;">${escapeHtml(body).replace(/\n/g, '<br>')}</p>`,
+    body: `<p style="margin:0;">${linkify(escapeHtml(body)).replace(/\n/g, '<br>')}</p>`,
   });
 
   const res = await fetch('https://api.resend.com/emails', {
