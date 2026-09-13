@@ -43,6 +43,14 @@ jobs:
       - name: Migration numbers
         run: npm run check:migrations
 
+      # Cheap too, and guards the one class of bug the other checks are all
+      # blind to: a route in the wrong half of the router. routeApi only ever
+      # runs for /api/, so a route defined in there under any other prefix is
+      # dead code that looks exactly like working code. It cost the fork a
+      # public link that answered a static 404 for as long as it existed.
+      - name: Routes somewhere they can be reached
+        run: npm run check:wiring
+
       # Also cheap, and guards a rule broken on five screens across this
       # codebase and its fork: a soft payment row is the same balance as its
       # hard twin, so a total counting both counts the money twice.
@@ -66,7 +74,10 @@ jobs:
 
       - name: Start the Worker
         run: |
-          nohup npx wrangler dev --port 8787 --ip 127.0.0.1 > /tmp/dev.log 2>&1 &
+          # --test-scheduled exposes /__scheduled, so the smoke suite can run
+          # the cron rather than leaving the whole scheduled handler as the one
+          # part of this Worker nothing ever executes.
+          nohup npx wrangler dev --port 8787 --ip 127.0.0.1 --test-scheduled > /tmp/dev.log 2>&1 &
           for i in $(seq 1 90); do
             if curl -sf -o /dev/null http://127.0.0.1:8787/login; then
               echo "up after ${i}s"

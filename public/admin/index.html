@@ -40,6 +40,17 @@
         </div>
         <div id="mail-body" class="card-pad"><p class="spinner">Loading...</p></div>
       </section>
+      <!-- The cron runs a dozen jobs, each wrapped in a catch so one cannot
+           stop the others. That is right and it has a cost: a job that has
+           been throwing since March looks exactly like a job with nothing to
+           do, and nobody reads a Worker's console. The pair of dates below is
+           the whole point. Ran recently and last worked three weeks ago is a
+           job that is quietly broken, and reminders nobody is getting. -->
+      <section class="card" id="jobs">
+        <div class="card-head"><h2>Background jobs</h2>
+          <span class="muted" id="jobs-sum"></span></div>
+        <div id="jobs-body" class="card-pad"><p class="spinner">Loading...</p></div>
+      </section>
       <section id="stats" class="stat-grid"></section>
       <section class="card" id="panel"><p class="spinner">Loading advisors...</p></section>
     </div>
@@ -65,10 +76,65 @@ function mailRow(label, value, tone) {
     <strong${tone ? ` style="color:var(--${tone});"` : ''}> ${esc(value)}</strong></p>`;
 }
 
+function drawJobs(j) {
+  const box = document.getElementById('jobs-body');
+  const sum = document.getElementById('jobs-sum');
+
+  if (!j || !j.ok) {
+    sum.textContent = '';
+    box.innerHTML = `<p class="field-hint" style="margin:0;">Nothing recorded yet. ${
+      j && j.error ? `The table could not be read: ${esc(j.error)}. ` : ''
+      }This fills in on the next cron pass once
+      <code>0059_cron_jobs.sql</code> has been applied.</p>`;
+    return;
+  }
+  if (!j.jobs.length) {
+    sum.textContent = '';
+    box.innerHTML = '<p class="field-hint" style="margin:0;">No pass has been recorded yet. '
+      + 'The cron runs every five minutes, so this should fill in shortly.</p>';
+    return;
+  }
+
+  const failing = j.jobs.filter((x) => x.last_error);
+  sum.textContent = failing.length
+    ? `${failing.length} failing`
+    : `${j.jobs.length} jobs, all healthy`;
+
+  box.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Job</th><th>Last ran</th><th>Last worked</th><th class="num">Runs</th></tr></thead>
+    <tbody>${j.jobs.map((x) => `<tr>
+      <td><strong>${esc(x.name)}</strong>${x.last_error
+        ? `<div class="muted" style="font-size:.76rem;color:var(--red-600);">${
+            esc(x.last_error)}</div>` : ''}</td>
+      <td>${esc(when(x.last_run_at))}${x.last_ms != null
+        ? `<div class="muted" style="font-size:.74rem;">${x.last_ms} ms</div>` : ''}</td>
+      <td${x.last_error ? ' style="color:var(--red-600);"' : ''}>${
+        x.last_ok_at ? esc(when(x.last_ok_at)) : 'never'}</td>
+      <td class="num">${x.runs}${x.failures
+        ? `<div class="muted" style="font-size:.74rem;">${x.failures} failed</div>` : ''}</td>
+    </tr>`).join('')}</tbody></table></div>
+    ${failing.length ? `<p class="field-hint" style="margin-top:.6rem;">A job whose last run
+      is recent and whose last good run is not has been failing quietly. Nothing else says
+      so: each job is wrapped in a catch, on purpose, so one cannot stop the rest.</p>` : ''}`;
+}
+
+/** How long ago, which is the question being asked, rather than a timestamp. */
+function when(iso) {
+  if (!iso) return 'never';
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (!Number.isFinite(mins)) return iso;
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours} hr ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
 async function loadMail(probe = false) {
   mailBody.innerHTML = '<p class="spinner">Loading...</p>';
   try {
     const d = await api(`/api/admin/health${probe ? '?probe=email' : ''}`);
+    drawJobs(d.jobs);
     const e = d.email || {};
     const r = e.resend;
     let html = mailRow('Key configured', e.resendKeyPresent ? 'yes' : 'no',

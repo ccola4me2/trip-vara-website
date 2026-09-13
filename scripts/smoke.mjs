@@ -33,10 +33,42 @@ let checks = 0;
 const skips = [];
 
 function ok(label) { checks++; console.log(`  ok    ${label}`); }
+/**
+ * Also shouted at GitHub, when this is running there.
+ *
+ * An Actions log is only readable by somebody signed in with access to the
+ * repository, and the thing that most often needs to read it is whatever is
+ * trying to work out why the push went red. Annotations are not: they hang off
+ * the run and the check-runs API hands them to anybody who can see a public
+ * repository. So every failure says itself twice, once for a person reading
+ * the log and once where it can be read without one.
+ *
+ * A workflow command has to be one line, so the newlines are escaped the way
+ * Actions asks for rather than being lost.
+ */
+function annotate(label, detail) {
+  if (!process.env.CI) return;
+  const one = (x) => String(x).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.log(`::error title=Smoke::${one(label)}${detail === undefined ? '' : ` -- ${one(detail)}`}`);
+}
+
+/** The shape of the run, not a failure: how many ran, and what was skipped. */
+function summarise(text) {
+  if (!process.env.CI) return;
+  console.log(`::notice title=Smoke::${String(text).replace(/%/g, '%25').replace(/\n/g, '%0A')}`);
+}
+
+// Kept so the run can end by saying what broke. "10 of 735 checks failed" is
+// true and useless: finding the ten means scrolling nine hundred lines, and in
+// CI it means scrolling them in a viewer that only holds a slice at a time.
+const failed = [];
+
 function fail(label, detail) {
   checks++; failures++;
+  failed.push(detail === undefined ? label : `${label}  (${detail})`);
   console.log(`  FAIL  ${label}`);
   if (detail !== undefined) console.log(`        ${detail}`);
+  annotate(label, detail);
 }
 function check(condition, label, detail) {
   condition ? ok(label) : fail(label, detail);
@@ -5392,6 +5424,38 @@ async function main() {
   await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/split`, { defaultSplitPct: '' });
   }
 
+  // -------------------------------------------------------------- the cron -
+  // wrangler dev --test-scheduled exposes /__scheduled. Without it the
+  // scheduled handler is the one part of this Worker that nothing here ever
+  // executes, and a dozen jobs the portal's reminders depend on have never
+  // been run by anything but the clock.
+  {
+  step('The work that happens without anybody asking');
+
+  const cron = await call(null, 'GET', '/__scheduled');
+  if (cron.status !== 200) {
+    skip('the cron', 'wrangler is not exposing /__scheduled, so no pass was run');
+  } else {
+    await new Promise((r) => setTimeout(r, 1500));
+    const health = await call(admin, 'GET', '/api/admin/health');
+    const jobs = health.data?.jobs;
+    const byName = new Map((jobs?.jobs || []).map((x) => [x.name, x]));
+    check(jobs?.ok === true && byName.size > 0,
+      'the cron writes down what each job did',
+      jobs?.error || `${byName.size} jobs recorded`);
+    for (const name of ['task reminders', 'payment reminders', 'mark trips travelled',
+      'purge sessions']) {
+      check(byName.has(name), `and ${name} is one of them`, [...byName.keys()].join(', '));
+    }
+    // A job that only ever appears as "ran" is the case this table exists to
+    // catch: wrapped in a catch, throwing every pass, indistinguishable from
+    // a job with nothing to do.
+    check(byName.get('purge sessions')?.last_ok_at,
+      'a job that did its work without throwing records that it worked',
+      JSON.stringify(byName.get('purge sessions')));
+  }
+  }
+
   // ---------------------------------------------------------------- tidy --
   step('Clean up');
   await runCleanups();
@@ -5413,6 +5477,9 @@ main()
   .catch((e) => {
     failures += 1;
     console.log(e instanceof Bail ? `\n${e.message}` : `\nSmoke test threw: ${e && e.stack || e}`);
+    // A throw ends the run without any check having failed, so nothing else
+    // would say what happened where it can be read.
+    annotate(e instanceof Bail ? 'Bailed out' : 'Threw', e && (e.stack || e.message) || String(e));
   })
   .finally(async () => {
     // Whatever happened above, do not leave test data in the database. The
@@ -5426,6 +5493,11 @@ main()
       await call(admin, 'PUT', `/api/admin/advisors/${advisorId}/status`, { status: 'suspended' })
         .catch(() => {});
     }
+    if (failed.length) {
+      console.log(`\nWhat failed:\n${failed.map((f) => `  - ${f}`).join('\n')}`);
+    }
+    summarise(`${checks} checks, ${failures} failed`
+      + (skips.length ? `, skipped: ${skips.join('; ')}` : ', nothing skipped'));
     console.log(
       `\n${failures ? `${failures} of ${checks} checks failed.` : `All ${checks} checks passed.`}` +
       (skips.length ? ` ${skips.length} section${skips.length === 1 ? '' : 's'} skipped: ${
