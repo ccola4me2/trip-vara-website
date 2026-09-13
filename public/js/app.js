@@ -170,6 +170,7 @@ const NAV = [
       { href: '/app/account', label: 'Account' },
       { href: '/app/settings', label: 'Settings' },
       { href: '/app/crm', label: 'Trip Vara Tools' },
+      { href: '/app/manual', label: 'How this works' },
     ],
   },
 ];

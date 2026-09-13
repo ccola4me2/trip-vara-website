@@ -217,6 +217,7 @@ const PAGE_FILES = {
   '/app/client': '/app/client.html',
   '/app/clients': '/app/clients.html',
   '/app/households': '/app/households.html',
+  '/app/manual': '/app/manual.html',
   '/app/import': '/app/import.html',
   '/app/import-clients': '/app/import-clients.html',
   '/app/complete': '/app/complete.html',
