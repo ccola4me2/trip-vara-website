@@ -320,13 +320,27 @@ function optionsBlock(trip, advisor) {
   const open = Boolean(trip.booking.options_open);
   const taken = list.find((o) => o.chosen);
 
-  const card = (o) => `<div class="option${o.chosen ? ' on' : ''}">
+  // What is included, as a list when it was typed as one.
+  //
+  // Advisors type these a line at a time and they were rendered as one block
+  // of pre-wrapped text, which reads as a paragraph that happens to have hard
+  // breaks in it. A line each with a tick against it is the same information
+  // and is what the client is scanning for. One line stays a sentence, because
+  // a list of one is a list with a bullet nobody needed.
+  const inclusions = (text) => {
+    const lines = String(text).split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return `<p class="oinc">${esc(text.trim())}</p>`;
+    return `<ul class="oticks">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`;
+  };
+
+  const card = (o) => `<div class="option${o.chosen ? ' on' : ''}${
+    taken && !o.chosen ? ' past' : ''}">
     ${o.chosen ? '<span class="tick">Chosen</span>' : ''}
     ${o.image_url ? `<img class="opic" src="${esc(o.image_url)}" alt="" loading="lazy">` : ''}
     <p class="olabel">${esc(o.label)}</p>
     ${o.amount_cents ? `<p class="oamount">${esc(money(o.amount_cents))}</p>` : ''}
     ${o.detail ? `<p class="dim">${esc(o.detail)}</p>` : ''}
-    ${o.inclusions ? `<p class="oinc">${esc(o.inclusions)}</p>` : ''}
+    ${o.inclusions ? inclusions(o.inclusions) : ''}
     ${open && !o.chosen
     ? `<button class="obtn" type="button" data-choose="${esc(o.id)}">Choose this one</button>`
     : ''}
@@ -828,19 +842,40 @@ function page(title, body, brand) {
   ul.plain{list-style:none;margin:0;padding:0}
   ul.plain li{padding:.5rem 0;border-bottom:1px solid var(--line)}
   ul.plain li:last-child{border-bottom:0}
-  .options{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.7rem}
-  .option{border:1px solid var(--line);border-radius:11px;padding:1rem;position:relative}
+  /* 240, not 180. This is the page a client decides on, and at 180 a cabin
+     photo, a price and four inclusions arrive as a thumbnail with a caption. */
+  .options{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.9rem}
+  /* A column, so the button sits on the floor of every card whatever the text
+     above it does. */
+  .option{border:1px solid var(--line);border-radius:11px;padding:1rem;position:relative;
+    display:flex;flex-direction:column}
+  /* Once one is chosen the others are still worth reading and are no longer
+     the answer. Dimmed rather than hidden: a client who changes their mind
+     needs to see what they turned down. */
+  .option.past{opacity:.62}
+  .option.past:hover,.option.past:focus-within{opacity:1}
   .option.on{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy)}
   .tick{position:absolute;top:-.6rem;left:1rem;background:var(--navy);color:#fff;
     font-size:.64rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
     padding:.15rem .45rem;border-radius:4px}
-  .opic{width:100%;height:104px;object-fit:cover;border-radius:8px;margin:0 0 .6rem;display:block}
+  .opic{width:100%;height:150px;object-fit:cover;border-radius:8px;margin:0 0 .7rem;display:block}
+  .oticks{list-style:none;margin:.55rem 0 0;padding:0;font-size:.85rem;color:var(--ink)}
+  .oticks li{position:relative;padding:.1rem 0 .1rem 1.15rem;line-height:1.45}
+  .oticks li::before{content:"";position:absolute;left:.1rem;top:.55rem;width:.36rem;
+    height:.62rem;border:solid var(--navy);border-width:0 1.6px 1.6px 0;
+    transform:rotate(45deg)}
   .oinc{margin:.4rem 0 0;font-size:.85rem;white-space:pre-wrap;color:var(--ink)}
-  .obtn{margin-top:.7rem;width:100%;border:1px solid var(--navy);background:#fff;
+  /* auto, so the button falls to the bottom of the card. The gap above it
+     comes from whatever sits above, since margins do not collapse in a flex
+     column. */
+  .obtn{margin-top:auto;width:100%;border:1px solid var(--navy);background:#fff;
     color:var(--navy);font:inherit;font-size:.85rem;font-weight:650;padding:.5rem .8rem;
     border-radius:999px;cursor:pointer}
   .obtn:hover{background:var(--navy);color:#fff}
   .obtn:disabled{opacity:.55;cursor:not-allowed}
+  .option>.dim,.option>.oinc,.option>.oticks,.option>.oamount{margin-bottom:.9rem}
+  .option>.dim:last-child,.option>.oinc:last-child,
+  .option>.oticks:last-child,.option>.oamount:last-child{margin-bottom:0}
   .oerr{margin:.7rem 0 0;padding:.6rem .8rem;background:#fdeeec;border-radius:8px;
     font-size:.9rem;color:var(--late)}
   .ochose{margin:0 0 .8rem;padding:.6rem .8rem;background:#eef6f1;border-radius:8px;
