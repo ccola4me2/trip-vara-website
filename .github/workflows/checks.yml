@@ -72,6 +72,12 @@ jobs:
       # The one artifact that leaves this repository: the message a client
       # opens. Renders a marketing email and a transactional one and checks
       # what each carries.
+      # \uXXXX is four hex digits. Five reads as four plus a stray letter,
+      # silently, and three icons on the client's itinerary were wrong that way
+      # from the day the page was written.
+      - name: Escapes mean what they look like
+        run: npm run check:escapes
+
       - name: What a rendered email says
         run: npm run check:email
 
