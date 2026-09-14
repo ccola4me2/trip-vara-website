@@ -453,6 +453,33 @@ export async function renderTripPage(request, env, code) {
   }
 
   const b = trip.booking;
+
+  // Did they open it?
+  //
+  // Counted here rather than on the share link, because a link can be followed
+  // by a mail scanner and a page is only counted once it is actually rendered.
+  //
+  // ?preview is the advisor's own link from the reservation screen and is not
+  // counted. Without that the number would mostly be the advisor checking their
+  // own work, which is the fastest way to make a metric worthless.
+  //
+  // Best effort on purpose: a client reading their trip must never see an error
+  // because a counter would not increment.
+  if (!new URL(request.url).searchParams.has('preview')) {
+    try {
+      const ts = now();
+      await env.DB.prepare(
+        `UPDATE bookings
+            SET viewed_first_at = COALESCE(viewed_first_at, ?),
+                viewed_last_at = ?,
+                view_count = COALESCE(view_count, 0) + 1
+          WHERE id = ? AND user_id = ?`
+      ).bind(ts, ts, b.id, b.user_id).run();
+    } catch (e) {
+      console.error('trip view count', e);
+    }
+  }
+
   const advisor = [b.first_name, b.last_name].filter(Boolean).join(' ') || b.agency_name || 'your advisor';
   const nn = nights(b.depart_date, b.return_date);
 

@@ -385,6 +385,7 @@ const BOOKING_COLUMNS = `
   cabin, cabin_category, itinerary, booking_method, insurance_status, advisor_split_pct,
   agreed_split_pct,
   quote_sent_at, quote_sent_count, statement_sent_at, welcomed_at,
+  viewed_first_at, viewed_last_at, view_count,
   invoice_no, invoice_issued_at, invoice_notes, personal,
   created_at, updated_at, share_code, shared_at, statement_hash, itinerary_shared, options_open
 `;
