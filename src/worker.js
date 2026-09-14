@@ -296,7 +296,6 @@ import {
 import {
   handleListAdvisors,
   handleSetAdvisorStatus,
-  handleSetAdvisorGhl,
   handleSetAdvisorSplit,
   handleSetBookingSplit,
   handleRunLifecycle,
@@ -518,7 +517,7 @@ async function routeApi(request, env, path, method) {
   const payRemindMatch = path.match(/^\/api\/payments\/([^/]+)\/remind$/);
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
   const bookingStatusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
-  const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|ghl|split)$/);
+  const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|split)$/);
   const bookingSplitMatch = path.match(/^\/api\/admin\/bookings\/([^/]+)\/split$/);
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   // Checklist steps hang off a task; the steps themselves are addressed by
@@ -882,7 +881,6 @@ async function routeApi(request, env, path, method) {
     const id = decodeURIComponent(advisorMatch[1]);
     if (advisorMatch[2] === 'status') return handleSetAdvisorStatus(request, env, id);
     if (advisorMatch[2] === 'split') return handleSetAdvisorSplit(request, env, id);
-    return handleSetAdvisorGhl(request, env, id);
   }
 
   return notFound('No such endpoint.');

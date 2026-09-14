@@ -40,8 +40,6 @@ function publicUser(u) {
     agencyName: u.agency_name,
     role: u.role,
     status: u.status,
-    ghlLocationId: u.ghl_location_id,
-    ghlUserId: u.ghl_user_id,
     // Null, not 100. No agreement recorded is a different fact from an
     // agreement that the advisor keeps everything, and the admin screen has to
     // be able to tell them apart to show a blank field rather than a number
@@ -138,9 +136,6 @@ export async function handleSignup(request, env) {
 
   const user = await db.createUser(env, {
     agencyId: agency ? agency.id : null,
-    // Their agency's CRM sub-account, so a new advisor is pointed at the right
-    // one without anybody having to remember to set it.
-    ghlLocationId: agency ? agency.ghl_location_id : null,
     email,
     passwordHash: await hashPassword(password),
     firstName,

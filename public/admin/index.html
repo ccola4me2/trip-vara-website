@@ -183,7 +183,7 @@ function render(users, counts) {
   }
 
   panel.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>Keeps</th><th>Automations</th>
+    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>Keeps</th>
       <th>Last seen</th><th></th></tr></thead>
     <tbody>${users.map((u) => `<tr>
       <td><span class="name">${esc(u.name)}</span><div class="muted">${esc(u.email)}</div>
@@ -195,11 +195,6 @@ function render(users, counts) {
           : `<strong>${esc(String(u.defaultSplitPct))}%</strong>`}
         <div><button class="btn btn-ghost btn-sm" data-split="${esc(u.id)}"
           data-pct="${u.defaultSplitPct === null ? '' : esc(String(u.defaultSplitPct))}">Split</button></div></td>
-      <td>${u.ghlLocationId
-          ? `<code style="font-size:.75rem;">${esc(u.ghlLocationId)}</code>`
-          : '<span class="muted">Shared default</span>'}
-        <div><button class="btn btn-ghost btn-sm" data-bind="${esc(u.id)}"
-          data-loc="${esc(u.ghlLocationId || '')}" data-usr="${esc(u.ghlUserId || '')}">Bind</button></div></td>
       <td><span class="muted">${esc(u.lastLoginAt ? timeAgo(u.lastLoginAt) : 'never')}</span>
         ${u.approvedAt ? `<div class="muted" style="font-size:.72rem;">approved ${
           esc(timeAgo(u.approvedAt))}</div>` : ''}</td>
@@ -230,23 +225,6 @@ function render(users, counts) {
       await load();
     } catch (err) { alert(err.message); }
   }));
-
-  panel.querySelectorAll('[data-bind]').forEach((btn) => btn.addEventListener('click', async () => {
-    // Left over from the old CRM, and still the key that decides which advisors
-    // an automation or a form reaches. Blank shares one partition with every
-    // other advisor who has none. It does not decide who sees whose records.
-    const ghlLocationId = prompt(
-      'Automation partition for this advisor (blank shares the default with everyone else):',
-      btn.dataset.loc);
-    if (ghlLocationId === null) return;
-    try {
-      // The user id has no field any more because nothing reads it, but sending
-      // an empty one would wipe what is stored.
-      await api(`/api/admin/advisors/${encodeURIComponent(btn.dataset.bind)}/ghl`,
-        { method: 'PUT', body: { ghlLocationId, ghlUserId: btn.dataset.usr || '' } });
-      await load();
-    } catch (err) { alert(err.message); }
-  }));
 }
 
 async function load() {
@@ -257,11 +235,6 @@ async function load() {
     render(data.users, data.counts);
   } catch (err) { showError(panel, err); }
 }
-// --- CRM sync -------------------------------------------------------------
-const syncBody = document.getElementById('sync-body');
-const SYNC_TONE = { complete: 'badge-green', running: 'badge-amber', error: 'badge-red', idle: 'badge-navy' };
-
-
 filter.addEventListener('change', load);
 await load();
 loadMail();

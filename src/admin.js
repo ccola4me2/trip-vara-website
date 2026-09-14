@@ -138,24 +138,6 @@ export async function handleSetAdvisorStatus(request, env, userId) {
   return json({ ok: true, user: publicUser(updated) });
 }
 
-export async function handleSetAdvisorGhl(request, env, userId) {
-  const { user: admin, response } = await requireAdmin(request, env);
-  if (response) return response;
-  const reach = await reachable(env, admin, userId);
-  if (reach.error) return reach.error;
-
-  const body = await readJson(request);
-  const updated = await db.setUserGhl(env, userId, {
-    locationId: clean(body.ghlLocationId, 64),
-    ghlUserId: clean(body.ghlUserId, 64),
-  });
-  if (!updated) return notFound('Advisor not found.');
-
-  await db.logActivity(env, admin.id, 'admin.ghl',
-    `Bound ${updated.email} to location ${updated.ghl_location_id || 'default'}`, { userId });
-  return json({ ok: true, user: publicUser(updated) });
-}
-
 /**
  * Set an advisor's standing share of the commission they bill.
  *
