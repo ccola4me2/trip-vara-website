@@ -132,6 +132,54 @@
   </form>
 </dialog>
 
+<!--
+  Which of the two you are adding. A household is not a client with extra
+  fields; it is several clients who share an address, and asking up front is
+  shorter than adding three people one at a time and then tying them together.
+-->
+<dialog id="pick-dlg">
+  <form method="dialog">
+    <div class="card-pad" style="text-align:center;">
+      <h2 style="margin:0 0 .2rem;">Add</h2>
+      <p class="muted" style="margin:0 0 1rem;">One person, or everyone at one address.</p>
+      <div style="display:flex;gap:.6rem;justify-content:center;">
+        <button class="btn btn-primary" type="button" data-pick-kind="client">A client</button>
+        <button class="btn" type="button" data-pick-kind="household">A household</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="house-dlg">
+  <form id="house-form" method="dialog">
+    <div class="card-head"><h2>Add a household</h2>
+      <button class="btn btn-ghost btn-sm" type="button" data-close-house>Close</button></div>
+    <div class="card-pad">
+      <div class="notice notice-error" hidden></div>
+      <p class="muted" style="margin:0 0 .9rem;">Everyone who lives at one address. The address,
+        phone and notes go on the household, so a move is one change rather than four.</p>
+      <div class="field"><label for="h-name">Household name</label>
+        <input id="h-name" name="name" placeholder="The Beasleys">
+        <p class="field-hint">Leave it blank and it is named after the people in it.</p></div>
+      <div class="field"><label for="h-address">Address</label>
+        <textarea id="h-address" name="address" rows="2"></textarea></div>
+      <div class="field"><label for="h-phone">Home phone</label>
+        <input id="h-phone" name="phone"></div>
+      <div class="field"><label for="h-notes">Notes</label>
+        <textarea id="h-notes" name="notes" rows="2"></textarea></div>
+
+      <h3 style="margin:1.2rem 0 .4rem;font-size:.95rem;">Who lives there</h3>
+      <p class="muted" style="margin:0 0 .7rem;">At least two. Add the rest of each person&rsquo;s
+        details on their own record afterwards.</p>
+      <div id="house-people"></div>
+      <button class="btn btn-ghost btn-sm" type="button" id="add-person">Add another person</button>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-primary" type="submit">Create household</button>
+    </div>
+  </form>
+</dialog>
+
 <script type="module">
 import { api, mountShell, esc, money, dateFmt, showError, mountScopePicker, advisorParam } from '/js/app.js';
 const ME = (await mountShell()).id;
