@@ -152,8 +152,6 @@ const NAV = [
       { href: '/app/import', label: 'Import' },
       { href: '/app/payments', label: 'Payments Due' },
       { href: '/app/commissions', label: 'Commission owed' },
-      { href: '/app/billing', label: 'Invoices' },
-      { href: '/app/catalog', label: 'Vendor products' },
     ],
   },
   // A page of its own, next to the dashboard. A supplier directory is opened
@@ -169,21 +167,15 @@ const NAV = [
       { href: '/app/clients', label: 'Clients' },
       { href: '/app/households', label: 'Households' },
       { href: '/app/import-clients', label: 'Import clients' },
-      { href: '/app/leads', label: 'CRM contacts' },
       { href: '/app/credits', label: 'Client credits' },
-      { href: '/app/pipeline', label: 'Sales opportunities' },
-      { href: '/app/inbox', label: 'Messages' },
-      { href: '/app/calendar', label: 'Calendar' },
+      { href: '/app/pipeline', label: 'Reservation board' },
     ],
   },
   {
     hub: 'Marketing', icon: I.megaphone, items: [
-      { href: '/app/marketing', label: 'Campaigns & funnels' },
       { href: '/app/specials', label: 'Specials' },
       { href: '/app/formbuilder', label: 'Forms' },
-      { href: '/app/forms', label: 'Imported forms' },
       { href: '/app/automations', label: 'Automations' },
-      { href: '/app/library', label: 'Media' },
     ],
   },
   {
@@ -194,9 +186,7 @@ const NAV = [
   },
   {
     hub: 'Setup', icon: I.gear, items: [
-      { href: '/app/account', label: 'Account' },
       { href: '/app/settings', label: 'Settings' },
-      { href: '/app/crm', label: 'Trip Vara Tools' },
       { href: '/app/manual', label: 'How this works' },
     ],
   },
