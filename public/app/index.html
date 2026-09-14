@@ -24,7 +24,7 @@
       <div id="err"></div>
       <section id="stats" class="stat-grid"></section>
       <section id="stat-note"></section>
-      <section id="ghl-state"></section>
+      <section id="notice"></section>
       <section class="card customiser" id="customiser" hidden>
         <div class="card-head"><h2>Your dashboard</h2>
           <div class="toolbar" style="margin:0;">
@@ -163,9 +163,6 @@ function build() {
      reminder to collect. <strong>At risk of cancelling</strong> is the vendor's own deadline, a week
      later, after which they cancel the trip.</p>`;
 
-  if (d.ghlStatus === 'not_configured') showError(document.getElementById('ghl-state'), { code: 'not_configured' });
-  else if (d.ghlStatus === 'error') document.getElementById('ghl-state').innerHTML =
-    '';
 
   drawPanels();
 }
@@ -900,7 +897,7 @@ function saveLayout() {
       const res = await api('/api/prefs/dashboard', { method: 'PUT', body: { layout } });
       layout = res.layout;
     } catch {
-      const box = document.getElementById('ghl-state');
+      const box = document.getElementById('notice');
       box.innerHTML = '<div class="notice notice-error">Could not save your dashboard layout. '
         + 'It will look right until you reload.</div>';
     }
@@ -947,6 +944,6 @@ try {
 
   build();
 }
-catch (err) { showError(document.getElementById('ghl-state'), err); }
+catch (err) { showError(document.getElementById('notice'), err); }
 </script>
 </body></html>

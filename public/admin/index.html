@@ -13,7 +13,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main">
     <header class="topbar">
-      <div><h1>Advisors</h1><p class="sub">Approve access and bind advisors to a Trip Vara Tools account.</p></div>
+      <div><h1>Advisors</h1><p class="sub">Approve access, set what advisors keep, and see who is waiting.</p></div>
       <select id="filter" aria-label="Filter" style="width:auto;">
         <option value="">Everyone</option>
         <option value="pending">Pending approval</option>
@@ -183,7 +183,7 @@ function render(users, counts) {
   }
 
   panel.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>Keeps</th><th>Tools account</th>
+    <thead><tr><th>Advisor</th><th>Agency</th><th>Status</th><th>Keeps</th><th>Automations</th>
       <th>Last seen</th><th></th></tr></thead>
     <tbody>${users.map((u) => `<tr>
       <td><span class="name">${esc(u.name)}</span><div class="muted">${esc(u.email)}</div>
@@ -232,13 +232,18 @@ function render(users, counts) {
   }));
 
   panel.querySelectorAll('[data-bind]').forEach((btn) => btn.addEventListener('click', async () => {
-    const ghlLocationId = prompt('Trip Vara Tools location id (blank uses the shared default):', btn.dataset.loc);
+    // Left over from the old CRM, and still the key that decides which advisors
+    // an automation or a form reaches. Blank shares one partition with every
+    // other advisor who has none. It does not decide who sees whose records.
+    const ghlLocationId = prompt(
+      'Automation partition for this advisor (blank shares the default with everyone else):',
+      btn.dataset.loc);
     if (ghlLocationId === null) return;
-    const ghlUserId = prompt('Trip Vara Tools user id for this advisor (optional):', btn.dataset.usr);
-    if (ghlUserId === null) return;
     try {
+      // The user id has no field any more because nothing reads it, but sending
+      // an empty one would wipe what is stored.
       await api(`/api/admin/advisors/${encodeURIComponent(btn.dataset.bind)}/ghl`,
-        { method: 'PUT', body: { ghlLocationId, ghlUserId } });
+        { method: 'PUT', body: { ghlLocationId, ghlUserId: btn.dataset.usr || '' } });
       await load();
     } catch (err) { alert(err.message); }
   }));

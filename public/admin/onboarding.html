@@ -45,14 +45,12 @@
 <p>Budget twenty minutes, most of it waiting for the other person.</p>
 
 <h2>Before you start</h2>
-<p>Two things have to exist that are not in this portal:</p>
-<ul>
-  <li>A <strong>Trip Vara Tools sub-account</strong> for the agency, with its location id
-    to hand. Each agency gets its own. Contacts, conversations and pipelines all live
-    against it, and two agencies sharing one would see each other's clients.</li>
-  <li>Somebody at the agency who will be its <strong>owner</strong>: the person who
-    approves their advisors, sets commission agreements and maintains the agency record.</li>
-</ul>
+<p>One thing has to exist that is not in this portal: somebody at the agency who will be its
+  <strong>owner</strong>. That is the person who approves their advisors, sets commission
+  agreements and maintains the agency record. Have their email to hand and tell them the link
+  is coming.</p>
+<p>Nothing else needs setting up outside the portal. This used to start with creating a CRM
+  account for the agency. There is no CRM now and the portal holds everything.</p>
 
 <h2>The sequence</h2>
 
@@ -61,12 +59,16 @@
   <p><a href="/admin/agencies">Agencies</a> &rarr; <strong>Add an agency</strong>. The name
     is what their clients see on a quote, a statement and a deal page, so it is the trading
     name rather than anything internal.</p>
-  <p>Paste the <strong>Trip Vara Tools location id</strong> now rather than later. Every
-    advisor who signs up is stamped with their agency's location as they are created, so an
-    agency created without one puts its first advisors on no sub-account at all, and that is
-    fixed advisor by advisor afterwards.</p>
   <p>Fill in the address, phone and seller-of-travel registration while you are there. They
-    appear on everything the agency's clients read.</p>
+    appear on everything the agency's clients read, and the registration number is there
+    because in several states it has to be.</p>
+  <p>Give the agency its own <strong>automation partition</strong> on the same form. It is a
+    leftover name from the old CRM and it is still the key that decides which advisors an
+    automation or a form reaches. Every advisor who signs up inherits their agency's value as
+    they are created, so an agency left blank puts its advisors in one partition with every
+    other agency that has none. Anything unique will do; the agency's own slug is a reasonable
+    choice. Setting it later does not move advisors already created, so it is worth doing
+    now.</p>
 </div></div>
 
 <div class="step"><div class="n">2</div><div class="what">
@@ -116,10 +118,10 @@
   <li><strong>"The join link says they are not taking signups."</strong> Signups are off on
     that agency, or the slug in the link is another agency's. Both are on the
     <a href="/admin/agencies">Agencies</a> page.</li>
-  <li><strong>Their advisors' contacts go to the wrong sub-account.</strong> The agency was
-    created without a location id, or with the wrong one. An advisor is stamped with it as
-    they are created, so fixing the agency record does not move the advisors already on it.
-    Check the agency first, then each advisor.</li>
+  <li><strong>One agency's automations are firing on another's clients.</strong> Both agencies
+    were created without an automation partition, so their advisors share the default one.
+    Fixing the agency record does not move advisors already created: set the agency first,
+    then each advisor on <a href="/admin/">Advisors</a>.</li>
   <li><strong>They cannot approve their own advisors.</strong> Their role is still advisor
     rather than owner, or they are not attached to the agency. Step 5.</li>
   <li><strong>They can see agencies that are not theirs.</strong> The portal owner flag is
