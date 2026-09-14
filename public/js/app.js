@@ -169,6 +169,7 @@ const NAV = [
       { href: '/app/households', label: 'Households' },
       { href: '/app/import-clients', label: 'Import clients' },
       { href: '/app/credits', label: 'Client credits' },
+      { href: '/app/proposals', label: 'Proposals out' },
       { href: '/app/pipeline', label: 'Reservation board' },
     ],
   },
