@@ -176,6 +176,7 @@ const NAV = [
   },
   {
     hub: 'Marketing', icon: I.megaphone, items: [
+      { href: '/app/reviews', label: 'Reviews' },
       { href: '/app/specials', label: 'Specials' },
       { href: '/app/formbuilder', label: 'Forms' },
       { href: '/app/automations', label: 'Automations' },
