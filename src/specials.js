@@ -286,7 +286,7 @@ export async function handleBookEnquiry(request, env, leadId) {
        product_type, product_name, destination, depart_date, return_date, travellers,
        status, created_at, updated_at, agreed_split_pct)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'quoted',?,?,
-       (SELECT COALESCE(u.default_split_pct, 100) FROM users u WHERE u.id = ?))`
+       (SELECT u.default_split_pct FROM users u WHERE u.id = ?))`
   ).bind(id, user.id, lead.name, clientId, lead.vendor, lead.vendor_id,
          lead.product_type, lead.headline, lead.destination,
          lead.depart_date, lead.return_date, lead.party_size || null, ts, ts,
