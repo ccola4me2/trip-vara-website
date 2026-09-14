@@ -335,6 +335,7 @@ const PAGE_FILES = {
   '/app/formbuilder': '/app/formbuilder.html',
   '/app/automations': '/app/automations.html',
   '/app/pipeline': '/app/pipeline.html',
+  '/app/leads': '/app/leads.html',
   '/app/tasks': '/app/tasks.html',
   '/app/new': '/app/new.html',
   '/app/groups': '/app/groups.html',
@@ -463,6 +464,8 @@ async function routeRequest(request, env, ctx) {
 // ---------------------------------------------------------------------------
 async function routeApi(request, env, path, method) {
   // /api/leads/<id>/notes and /api/leads/<id>
+  const leadMatch = path.match(/^\/api\/leads\/([^/]+)$/);
+  const leadStageMatch = path.match(/^\/api\/leads\/([^/]+)\/stage$/);
   const bookingMatch = path.match(/^\/api\/bookings\/([^/]+)$/);
   const recordMatch = path.match(/^\/api\/bookings\/([^/]+)\/record$/);
   const quickMatch = path.match(/^\/api\/bookings\/([^/]+)\/quick$/);
@@ -545,6 +548,13 @@ async function routeApi(request, env, path, method) {
   // ---- leads ------------------------------------------------------------
 
   // ---- pipeline ---------------------------------------------------------
+  // The marketing pipeline: people who have not booked yet.
+  if (path === '/api/leads' && method === 'GET') return handleLeadBoard(request, env);
+  if (path === '/api/leads' && method === 'POST') return handleAddLead(request, env);
+  if (leadMatch && method === 'PUT') return handleUpdateLead(request, env, leadMatch[1]);
+  if (leadMatch && method === 'DELETE') return handleCloseLead(request, env, leadMatch[1]);
+  if (leadStageMatch && method === 'POST') return handleMoveLead(request, env, leadStageMatch[1]);
+
   if (path === '/api/opportunities' && method === 'GET') return handleListOpportunities(request, env);
 
   // ---- bookings ---------------------------------------------------------

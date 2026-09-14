@@ -164,6 +164,7 @@ const NAV = [
     hub: 'Client', icon: I.people, items: [
       { href: '/app/tasks', label: 'To do' },
       { href: '/app/hotlists', label: 'Who to call' },
+      { href: '/app/leads', label: 'Leads' },
       { href: '/app/clients', label: 'Clients' },
       { href: '/app/households', label: 'Households' },
       { href: '/app/import-clients', label: 'Import clients' },
