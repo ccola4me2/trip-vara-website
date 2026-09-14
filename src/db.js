@@ -1598,7 +1598,7 @@ export async function paymentStats(env, scope, { today, soonThrough, softThrough
        SUM(CASE WHEN payment_class = 'hard' AND paid_date IS NULL THEN amount_cents ELSE 0 END) AS outstanding,
        -- Hard rows only, for the same reason as the two above, which the
        -- comment claimed was already true here and was not. A final payment
-       -- has two rows: the vendor's deadline and this portal's reminder a week
+       -- has two rows: the vendor's deadline and this portal's reminder ten days
        -- earlier for the same balance. Counting both made every late payment
        -- worth twice what it was, and a balance that had been posted stayed in
        -- the past due column because only its hard row had been ticked.
