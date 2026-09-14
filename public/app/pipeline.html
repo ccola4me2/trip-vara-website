@@ -28,7 +28,8 @@
 
 
 <script type="module">
-import { api, mountShell, esc, money, showError, onSubmit } from '/js/app.js';
+import { api, mountShell, esc, money, showError, onSubmit,
+  mountScopePicker, advisorParam } from '/js/app.js';
 await mountShell();
 
 const panel = document.getElementById('panel');
@@ -69,10 +70,8 @@ function render(data) {
         </article>`).join('') || '<p class="muted" style="font-size:.8rem;">Nothing here.</p>'}
     </div>`).join('')}</div>`;
 
-  wireBoard();
 }
 
-/** Drag to move, with a per-card select so touch and keyboard also work. */
 async function load() {
   panel.innerHTML = '<p class="spinner">Loading the board...</p>';
   try {
