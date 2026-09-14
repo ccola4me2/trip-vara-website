@@ -727,7 +727,7 @@ function drawDetail() {
            paid on it: not you and not the agency.</span></dd>` : ''}
        ${d.split && d.split.earns !== false && d.split.pct !== 100 ? `<dt>You keep</dt><dd>${money(d.split.advisorCents)}
          <span class="muted">${esc(String(d.split.pct))}% ${d.split.overridden
-           ? 'set on this trip' : 'by your standing agreement'}; the agency keeps ${
+           ? 'set on this trip' : 'by the agreement this trip was taken under'}; the agency keeps ${
            money(d.split.agencyCents)}${d.split.unsplitCents
              ? `. ${money(d.split.unsplitCents)} of it is TC or bonus and is yours in full,
                 so the split applies to the rest` : ''}</span></dd>` : ''}
@@ -1738,9 +1738,15 @@ document.getElementById('statement-close').addEventListener('click',
 /**
  * The share of this trip's commission the advisor keeps.
  *
- * Blank is not zero. Blank means this trip follows the standing agreement,
- * and zero means the agency keeps all of it, so the field is left empty
+ * Blank is not zero. Blank means this trip follows the agreement it was taken
+ * under, and zero means the agency keeps all of it, so the field is left empty
  * rather than pre-filled with the number it would inherit.
+ *
+ * The number it would inherit is the one stamped on the reservation when it was
+ * taken, not the one on the advisor's record today. Where those differ the hint
+ * says both, because an owner who has just changed an agreement and opens an
+ * old trip should see why it is not following the new figure rather than
+ * wonder whether something is broken.
  */
 const splitDlg = document.getElementById('split-dlg');
 const splitForm = document.getElementById('split-form');
@@ -1755,9 +1761,19 @@ function openSplit() {
       + `The percentage applies to the other ${money(d.booking.commission_cents - sp.unsplitCents)}.`
     : `${money(d.booking.commission_cents)} commission on this reservation.`;
   splitForm.elements.advisorSplitPct.value = sp.overridden ? String(sp.pct) : '';
-  document.getElementById('sp-hint').textContent = sp.defaultPct === null
-    ? 'Leave it blank to keep all of it, which is your standing arrangement.'
-    : `Leave it blank to follow your standing agreement of ${sp.defaultPct}%.`;
+  const hint = document.getElementById('sp-hint');
+  if (sp.agreedPct === null) {
+    hint.textContent = sp.defaultPct === null
+      ? 'Leave it blank to keep all of it, which is your standing arrangement.'
+      : `Leave it blank to follow your standing agreement of ${sp.defaultPct}%.`;
+  } else if (sp.defaultPct !== null && sp.defaultPct !== sp.agreedPct) {
+    hint.textContent = `Leave it blank to follow the ${sp.agreedPct}% agreed when this`
+      + ` reservation was taken. The agreement is ${sp.defaultPct}% now, and that applies`
+      + ' to trips taken since it changed, not to this one.';
+  } else {
+    hint.textContent = `Leave it blank to follow the ${sp.agreedPct}% this reservation`
+      + ' was taken under.';
+  }
   splitDlg.showModal();
 }
 

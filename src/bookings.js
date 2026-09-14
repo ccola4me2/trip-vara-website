@@ -331,7 +331,7 @@ export async function handleBookingRecord(request, env, id) {
     // on the reservation because that is where the override is set, and a
     // percentage with no money beside it is easy to get backwards.
     split: (() => {
-      const pct = splitPct(booking.advisor_split_pct, booking.default_split_pct);
+      const pct = splitPct(booking, booking.default_split_pct);
       // A TC credit or a bonus is the advisor's in full, so it comes out of
       // the sum before the percentage is applied and goes back on afterwards.
       const unsplit = priceLines
@@ -343,6 +343,12 @@ export async function handleBookingRecord(request, env, id) {
         // advisor's standing agreement. The page says which, because "70%"
         // means something different in each case.
         overridden: booking.advisor_split_pct !== null && booking.advisor_split_pct !== undefined,
+        // What the agreement said on the day this reservation was taken, which
+        // is the figure it actually follows. The advisor's record may say
+        // something else by now; that is the agreement for the next trip, not
+        // for this one.
+        agreedPct: booking.agreed_split_pct === null || booking.agreed_split_pct === undefined
+          ? null : Number(booking.agreed_split_pct),
         defaultPct: booking.default_split_pct === null || booking.default_split_pct === undefined
           ? null : Number(booking.default_split_pct),
         // Only an owner may write a figure over the standing agreement, so the

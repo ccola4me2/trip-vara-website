@@ -32,9 +32,24 @@ export const UNSPLIT_COMMISSION_KINDS = ['bonus'];
 // money they are not owed.
 export const NO_COMMISSION = 'none';
 
-/** The percentage the advisor keeps, given a reservation's value and their standing one. */
-export function splitPct(bookingPct, advisorDefaultPct) {
-  for (const v of [bookingPct, advisorDefaultPct]) {
+/**
+ * The percentage the advisor keeps.
+ *
+ * Four answers in order, and the order is the whole point:
+ *
+ *   1. A figure written on this one reservation by hand. Beats everything.
+ *   2. What the agreement said when the reservation was taken, stamped onto it
+ *      then and never touched since.
+ *   3. The advisor's agreement as it stands now, for reservations taken before
+ *      there was a stamp. See 0063_agreed_split.sql.
+ *   4. All of it.
+ *
+ * Two is what stops a change to an agreement restating money already earned.
+ * Three exists only for rows that predate the stamp and has no other job; once
+ * the backfill has run nothing reaches it.
+ */
+export function splitPct(booking, advisorDefaultPct) {
+  for (const v of [booking.advisor_split_pct, booking.agreed_split_pct, advisorDefaultPct]) {
     if (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v))) {
       return Math.max(0, Math.min(Number(v), 100));
     }
@@ -61,17 +76,20 @@ export function shareOf(commissionCents, pct, unsplitCents = 0) {
   return { advisorCents, agencyCents: cents - advisorCents, unsplitCents: whole };
 }
 
-// The same arithmetic in SQLite, for the grouped reports that cannot pull
-// rows into JavaScript. Kept next to shareOf so the two are read together, and
-// checked against each other by the smoke test on a worked example.
+// The same arithmetic in SQLite, for the grouped reports that cannot pull rows
+// into JavaScript. Kept next to shareOf so the two are read together, checked
+// against each other by the smoke test on a worked example, and written in the
+// same four steps as splitPct above.
 //
-// The split is resolved at read time rather than stamped onto a reservation
-// when it is created. Changing an advisor's standing agreement then applies to
-// every trip that has not been given its own figure, which is what changing an
-// agreement means; a stamped copy would need a backfill and would silently
-// disagree with the agreement it came from.
-export const SPLIT_PCT_SQL = (bookingPct, advisorPct) =>
-  `COALESCE(${bookingPct}, ${advisorPct}, 100)`;
+// Takes the two table aliases rather than the column expressions: every caller
+// joins bookings as b to users as u.
+//
+// It does disagree with the agreement on the advisor's record, and that is the
+// point rather than a flaw in it. The record says what is agreed now; a
+// reservation says what was agreed when it was taken. A report that reads the
+// first is restating March from September.
+export const SPLIT_PCT_SQL = (b = 'b', u = 'u') =>
+  `COALESCE(${b}.advisor_split_pct, ${b}.agreed_split_pct, ${u}.default_split_pct, 100)`;
 
 /**
  * The commission a reservation actually earns.
