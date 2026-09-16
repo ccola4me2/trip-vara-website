@@ -602,6 +602,19 @@ export async function handleUpdateBooking(request, env, id) {
   fields.advisorSplitPct = before.advisor_split_pct === null
     || before.advisor_split_pct === undefined ? null : Number(before.advisor_split_pct);
 
+  // And whatever status it already carries, unless this request names one.
+  //
+  // oneOf falls back to the first value it is given when it is handed nothing,
+  // and the first booking status is 'quoted'. This endpoint saves the whole
+  // record, so a save that left status out did not leave it alone: it silently
+  // demoted a booked trip to a quote. The form has always sent one, so nothing
+  // was ever seen to do it, and it cost an afternoon when a test did.
+  //
+  // A quote is also where a reservation starts, so the wrong answer here reads
+  // as normal on every screen it reaches. The same rule as the split above:
+  // what the record holds is kept unless somebody actually said otherwise.
+  if (!Object.prototype.hasOwnProperty.call(raw, 'status')) fields.status = before.status;
+
   fields.clientId = await db.resolveClient(env, owner.id, fields.clientName,
     { ghlContactId: fields.ghlContactId });
   fields.vendorId = await resolveVendor(env, owner.id, fields.supplier);
