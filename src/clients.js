@@ -169,7 +169,7 @@ export async function handleClientRecord(request, env) {
     bookings: rows,
     credits: credits.results || [],
     tasks: tasks.results || [],
-    editable: client.user_id === user.id,
+    editable: db.mayWrite(user, client),
     // Who else lives there, what the house is worth together, and the address
     // they share. Null when they live alone as far as the portal knows.
     household,
@@ -322,6 +322,10 @@ export async function handleUpdateClient(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
+  // Whose record this is: see db.writerFor.
+  const owner = await db.writerFor(env, user, 'clients', id);
+  if (!owner) return notFound('Client not found.');
+
   const body = await readJson(request);
 
   // Pinning is its own shape: it happens from a list, constantly, and should
@@ -329,7 +333,7 @@ export async function handleUpdateClient(request, env, id) {
   if (Object.prototype.hasOwnProperty.call(body, 'pinned')) {
     const res = await env.DB.prepare(
       'UPDATE clients SET pinned_at = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-    ).bind(body.pinned ? now() : null, now(), id, user.id).run();
+    ).bind(body.pinned ? now() : null, now(), id, owner.id).run();
     if (!res.meta || res.meta.changes === 0) return notFound('Client not found.');
     return json({ ok: true });
   }
@@ -374,15 +378,15 @@ export async function handleUpdateClient(request, env, id) {
          oneOf(body.sourceKind, SOURCE_KIND_IDS) || null,
          clean(body.referredBy, 64) || null,
          ...travelBinds(travel),
-         now(), id, user.id).run();
+         now(), id, owner.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Client not found.');
 
   // A rename that reaches the client and not their reservations leaves the
   // same person under two names, so a failure here is the caller's problem.
   await env.DB.prepare('UPDATE bookings SET client_name = ? WHERE client_id = ? AND user_id = ?')
-    .bind(name, id, user.id).run();
+    .bind(name, id, owner.id).run();
   await env.DB.prepare('UPDATE client_credits SET client_name = ? WHERE client_id = ? AND user_id = ?')
-    .bind(name, id, user.id).run();
+    .bind(name, id, owner.id).run();
 
-  return json({ ok: true, client: await db.getClient(env, db.selfScope(user), { id }) });
+  return json({ ok: true, client: await db.getClient(env, db.selfScope(owner), { id }) });
 }
