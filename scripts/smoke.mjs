@@ -3446,6 +3446,48 @@ async function main() {
   check(empty.status === 400, 'a request that names no known field changes nothing',
     `status ${empty.status}`);
 
+  // A full save leaves alone every field the request did not mention.
+  //
+  // This is the endpoint the reservation form posts to, and it writes the whole
+  // record. While the form carried every field that was harmless. The Totals
+  // box came off it, so it stopped carrying the trip total and the commission,
+  // and from then on saving a confirmation number wrote zero over both. The
+  // traveller count, the commission status and the group link were never on
+  // that form at all. Nobody saw it because nothing on screen shows a figure
+  // going missing: it just reads as a reservation with no money on it.
+  const wasBooked = await call(advisor, 'GET', `/api/bookings/${bareId}`);
+  const had = wasBooked.data?.booking || {};
+  const quietSave = await call(advisor, 'PUT', `/api/bookings/${bareId}`,
+    { clientName: had.client_name, supplier: 'Cunard' });
+  check(quietSave.status === 200, 'a full save that names only two fields is accepted',
+    `status ${quietSave.status}`);
+
+  const kept = quietSave.data?.booking || {};
+  check(kept.status === had.status, 'and leaves the status exactly as it found it',
+    `${had.status} -> ${kept.status}`);
+  check(kept.gross_cents === had.gross_cents,
+    'the trip total survives a save that never mentions it',
+    `${had.gross_cents} -> ${kept.gross_cents}`);
+  check(kept.commission_cents === had.commission_cents,
+    'and so does the commission', `${had.commission_cents} -> ${kept.commission_cents}`);
+  check(kept.travellers === had.travellers,
+    'and the traveller count', `${had.travellers} -> ${kept.travellers}`);
+  check(kept.commission_status === had.commission_status,
+    'and where the commission had got to',
+    `${had.commission_status} -> ${kept.commission_status}`);
+  check(kept.depart_date === had.depart_date && kept.final_payment_due === had.final_payment_due,
+    'and the dates nobody touched',
+    `${had.depart_date}/${had.final_payment_due} -> ${kept.depart_date}/${kept.final_payment_due}`);
+
+  // Present and empty still clears. Absent is silence; empty is somebody
+  // actually emptying the box, and every field on the form posts even when
+  // blank, so the two have to stay different.
+  const cleared = await call(advisor, 'PUT', `/api/bookings/${bareId}`,
+    { clientName: had.client_name, supplier: 'Cunard', confirmationNumber: '' });
+  check(!cleared.data?.booking?.confirmation_number,
+    'while a field sent empty is still cleared',
+    String(cleared.data?.booking?.confirmation_number));
+
   const byOwner = await call(admin, 'POST', `/api/bookings/${bareId}/quick`, { gross: '4300.00' });
   check(byOwner.status === 200, 'and an owner can quick edit an associate\'s reservation',
     `status ${byOwner.status}`);
