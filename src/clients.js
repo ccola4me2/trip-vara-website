@@ -23,7 +23,11 @@ export async function handleListClients(request, env) {
   if (response) return response;
 
   const url = new URL(request.url);
-  const scope = db.scopeFor(env, user, request);
+  // "mine" means mine, whoever is asking. An owner sees the agency's book
+  // here, which is right for the Clients page and wrong for a box whose next
+  // step only works on your own records.
+  const mine = url.searchParams.get('mine') === '1';
+  const scope = mine ? db.selfScope(user) : db.scopeFor(env, user, request);
   const query = clean(url.searchParams.get('q'), 80);
   const clients = await db.listClients(env, scope, {
     limit: url.searchParams.get('limit'),
@@ -55,8 +59,10 @@ export async function handleListClients(request, env) {
   // Not while pinned-only is on. That filter means "the handful I have
   // starred", and filling the rest of the screen with the rest is the opposite
   // of what was asked for.
+  // Not when the caller asked for their own: these have no client row behind
+  // them, so anything that needs one cannot use them.
   let fromCrm = [];
-  if (query && query.length >= 2) {
+  if (query && query.length >= 2 && !mine) {
     const known = new Set(clients.map((c) => c.name.trim().toLowerCase()));
     const { contacts } = await db.localContacts(env, tenantFor(env, user), {
       query, limit: 8,
