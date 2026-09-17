@@ -1100,6 +1100,115 @@ export async function proposals(env, scope, { limit = 200 } = {}) {
  * quote somebody wrote and forgot, and no amount of chasing the client fixes
  * it.
  */
+// The reservation board, ported from the sibling portal along with the
+// closing figures beside it.
+//
+// src/pipeline.js here has called db.reservationPipeline and
+// db.RESERVATION_STAGES since the CRM was dropped, and neither existed in this
+// fork, so the Pipeline page threw on every load. Nothing offline caught it:
+// a missing member on an imported namespace is not a missing import.
+/**
+ * What became of the reservations raised in a window.
+ *
+ * Created in the window, by what they are now. There is no column recording
+ * when a reservation closed, so "closed this year" cannot be answered and is
+ * not claimed: this is the intake of the window and what came of it.
+ *
+ * Quotes still open are counted apart. Silence is not a loss, and a rate that
+ * treats it as one reads as decisive when it is only unknown.
+ */
+export async function closedSince(env, scope, sinceIso) {
+  const scoped = scopeWhere(scope, 'b.user_id');
+  const row = await env.DB.prepare(
+    `SELECT
+       SUM(CASE WHEN b.status IN ('booked','travelled') THEN 1 ELSE 0 END) AS won,
+       SUM(CASE WHEN b.status IN ('booked','travelled') THEN COALESCE(b.gross_cents,0) ELSE 0 END)
+         AS won_cents,
+       SUM(CASE WHEN b.status = 'cancelled' THEN 1 ELSE 0 END) AS lost,
+       SUM(CASE WHEN b.status = 'quoted' THEN 1 ELSE 0 END) AS still_open
+     FROM bookings b
+     WHERE ${scoped.sql} AND b.created_at >= ?`
+  ).bind(...scoped.binds, Math.floor(Date.parse(`${sinceIso}T00:00:00Z`) / 1000))
+    .first().catch(() => null);
+
+  const won = Number(row?.won || 0);
+  const lost = Number(row?.lost || 0);
+  const decided = won + lost;
+  return {
+    won,
+    wonValue: Math.round(Number(row?.won_cents || 0) / 100),
+    lost,
+    abandoned: Number(row?.still_open || 0),
+    // Null rather than nought when nothing has been decided either way: a
+    // closing rate of 0% and no data at all are different things.
+    closingRate: decided ? Math.round((won / decided) * 100) : null,
+  };
+}
+
+export const RESERVATION_STAGES = [
+  { id: 'inquiry', name: 'Inquiry' },
+  { id: 'quote_sent', name: 'Quote sent' },
+  { id: 'deposit_due', name: 'Booked, deposit due' },
+  { id: 'deposit_paid', name: 'Deposit paid' },
+  { id: 'final_due', name: 'Final payment due' },
+  { id: 'final_paid', name: 'Paid in full' },
+  { id: 'travelling', name: 'Away now' },
+  { id: 'travelled', name: 'Home' },
+];
+
+export async function reservationPipeline(env, scope, today) {
+  const b = scopeWhere(scope, 'b.user_id');
+  const { results } = await env.DB.prepare(
+    `SELECT b.id, b.client_name, b.supplier, b.product_name, b.status, b.gross_cents,
+            b.depart_date, b.return_date, b.final_payment_due, b.quote_sent_at,
+            b.ghl_contact_id,
+            -- Hard rows only, like every other money total. A soft row is the
+            -- same balance ten days early, so counting a paid one would carry a
+            -- reservation to "paid in full" on half the money.
+            COALESCE((SELECT SUM(p.amount_cents) FROM booking_payments p
+                       WHERE p.booking_id = b.id AND p.kind = 'deposit'
+                         AND p.payment_class = 'hard'
+                         AND p.paid_date IS NOT NULL), 0) AS deposit_paid_cents,
+            COALESCE((SELECT SUM(p.amount_cents) FROM booking_payments p
+                       WHERE p.booking_id = b.id AND p.payment_class = 'hard'
+                         AND p.paid_date IS NOT NULL), 0) AS paid_cents
+       FROM bookings b
+      WHERE ${b.sql} AND b.status IN ('quoted', 'booked', 'travelled')
+      ORDER BY COALESCE(b.depart_date, '9999-12-31') ASC
+      LIMIT 500`
+  ).bind(...b.binds).all();
+
+  return (results || []).map((r) => ({
+    id: r.id,
+    // The same shape the CRM cards use, so the board renders both without
+    // knowing which it is looking at.
+    name: [r.client_name, r.product_name || r.supplier].filter(Boolean).join(' · '),
+    status: 'open',
+    stageId: stageOf(r, today),
+    pipelineId: 'reservations',
+    monetaryValue: Math.round((r.gross_cents || 0) / 100),
+    contactId: r.ghl_contact_id || null,
+    contactName: r.client_name || '',
+    href: `/app/reservation?id=${r.id}`,
+    departDate: r.depart_date || null,
+  }));
+}
+
+function stageOf(r, today) {
+  if (r.status === 'travelled') return 'travelled';
+  if (r.status === 'quoted') return r.quote_sent_at ? 'quote_sent' : 'inquiry';
+
+  // Booked. Away now beats every money stage: where the client physically is
+  // outranks what the ledger says about them.
+  if (r.depart_date && r.depart_date <= today
+      && (!r.return_date || r.return_date >= today)) return 'travelling';
+
+  if (!r.deposit_paid_cents) return 'deposit_due';
+  if (r.gross_cents && r.paid_cents >= r.gross_cents) return 'final_paid';
+  if (r.final_payment_due && r.final_payment_due <= today) return 'final_due';
+  return 'deposit_paid';
+}
+
 export async function quoteFollowUps(env, scope, { quietDays = 7, limit = 20 } = {}) {
   const scoped = scopeWhere(scope, 'b.user_id');
   // Seconds. Every timestamp column in this database is written by now(),
@@ -1243,8 +1352,10 @@ export async function calendarMonth(env, scope, { from, to }) {
   const p = scopeWhere(scope, 'p.user_id');
   const t = scopeWhere(scope, 't.user_id');
   const g = scopeWhere(scope, 'g.user_id');
+  const a = scopeWhere(scope, 'a.user_id');
+  const c = scopeWhere(scope, 'c.user_id');
 
-  const [departs, returns, payments, tasks, options] = await Promise.all([
+  const [departs, returns, payments, tasks, options, appts, leadSteps] = await Promise.all([
     env.DB.prepare(
       `SELECT b.id, b.depart_date AS on_date, b.client_name, b.supplier
          FROM bookings b WHERE ${b.sql} AND b.status IN ('quoted','booked','travelled')
@@ -1276,9 +1387,41 @@ export async function calendarMonth(env, scope, { from, to }) {
          FROM travel_groups g WHERE ${g.sql} AND g.status = 'open'
           AND g.option_date BETWEEN ? AND ?`
     ).bind(...g.binds, from, to).all().catch(() => ({ results: [] })),
+
+    env.DB.prepare(
+      `SELECT a.id, a.on_date, a.start_time, a.end_time, a.title, a.location,
+              cl.name AS client_name
+         FROM appointments a
+         LEFT JOIN clients cl ON cl.id = a.client_id
+        WHERE ${a.sql} AND a.cancelled_at IS NULL AND a.on_date BETWEEN ? AND ?`
+    ).bind(...a.binds, from, to).all().catch(() => ({ results: [] })),
+
+    // Somebody who has booked is off the lead board on their own, so they are
+    // off this too: the follow-up date stopped mattering when the trip existed.
+    env.DB.prepare(
+      `SELECT c.id, c.lead_next_step_on AS on_date, c.name, c.lead_next_step
+         FROM clients c
+        WHERE ${c.sql} AND c.lead_stage IS NOT NULL
+          AND c.lead_next_step_on BETWEEN ? AND ?
+          AND NOT EXISTS (SELECT 1 FROM bookings x
+                           WHERE x.client_id = c.id AND x.status IN ('booked','travelled'))`
+    ).bind(...c.binds, from, to).all().catch(() => ({ results: [] })),
   ]);
 
+  const appointmentRows = appts.results || [];
+  const leadRows = leadSteps.results || [];
+
   const out = [];
+  for (const r of appointmentRows) {
+    const when = [r.start_time, r.end_time].filter(Boolean).join(' to ');
+    out.push({ date: r.on_date, kind: 'appointment', title: r.title,
+               detail: [when, r.client_name, r.location].filter(Boolean).join(' · '),
+               href: '/app/calendar' });
+  }
+  for (const r of leadRows) {
+    out.push({ date: r.on_date, kind: 'lead', title: r.lead_next_step || `Follow up with ${r.name}`,
+               detail: r.name, href: '/app/leads' });
+  }
   for (const r of departs.results || []) {
     out.push({ date: r.on_date, kind: 'depart', title: r.client_name,
                detail: `Departs${r.supplier ? ' · ' + r.supplier : ''}`, href: '/app/reservation?id=' + r.id });

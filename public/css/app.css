@@ -923,6 +923,8 @@ table.grid input:focus { border-color: var(--navy-400); background: #fff; }
 .dot.soft { background: var(--amber-600); }
 .dot.task { background: var(--green-600); }
 .dot.option { background: var(--red-600); }
+.dot.appointment { background: var(--coral-600); }
+.dot.lead { background: var(--amber-600); }
 .cal-day.today .dot { outline: 1px solid rgba(255,255,255,.6); }
 .cal-detail { border-top: 1px solid var(--navy-100); margin-top: .7rem; }
 .cal-none { font-size: .8rem; color: var(--ink-400); padding: .8rem .2rem; margin: 0; }
