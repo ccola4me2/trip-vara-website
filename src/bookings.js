@@ -5,7 +5,7 @@
 // commission. It lives in D1, optionally linked back to the GHL contact and
 // opportunity it came from.
 
-import { json, badRequest, notFound, clean, cleanDate, badDate, toCents, oneOf, readJson, now } from './util.js';
+import { json, badRequest, notFound, forbidden, clean, cleanDate, badDate, toCents, oneOf, readJson, now } from './util.js';
 import { tenantFor } from './tenant.js';
 import { requireUser, isAdmin } from './auth.js';
 import * as db from './db.js';
@@ -814,7 +814,24 @@ export async function handleDeleteBooking(request, env, id) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
 
-  // Whose record this is: see db.writerFor.
+  // An administrator's act, not an advisor's.
+  //
+  // Cancelling keeps the record and is what almost every "this trip is not
+  // happening" actually means: the deposit that was taken, the penalty the
+  // vendor charged, the commission owed anyway, and the fact that this client
+  // cancelled once are all worth keeping. Deleting says it never existed.
+  //
+  // Checked here rather than by hiding the button, because a hidden button is
+  // still a control and this endpoint was reachable by any advisor who owned
+  // the reservation.
+  if (user.role !== 'admin') {
+    return forbidden('Only an administrator can delete a reservation. '
+      + 'Set its status to cancelled instead, which keeps the money and the '
+      + 'history against the client.');
+  }
+
+  // Whose record this is: see db.writerFor. An administrator reaches their own
+  // agency's reservations and no further.
   const owner = await db.writerForBooking(env, user, id);
   if (!owner) return notFound('Booking not found.');
 
