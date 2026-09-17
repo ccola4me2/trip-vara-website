@@ -46,6 +46,20 @@ bucket_name = "trip-vara-docs"
 # Non-secret config. Secrets (RESEND_API_KEY) are set in the
 # dashboard under Settings > Variables and Secrets. Never committed.
 [vars]
+# Where forwarded meeting invites are received.
+#
+# Its own subdomain, because this zone's ordinary mail is somewhere else and
+# Email Routing takes over the MX of whatever it is enabled on. Nothing about
+# the agency's real mail is touched by pointing a subdomain here.
+#
+# Commented out on purpose until the DNS and the Email Routing rule exist. The
+# Settings card reads this: absent, it says forwarding is not set up, which is
+# true. Present with nothing behind it, it would hand advisors an address that
+# silently swallows everything they forward to it.
+#
+# Uncomment when: cal.tripvaratravel.com has an MX pointing at Cloudflare Email Routing, and a rule
+# there sends that address to this Worker.
+# INVITE_DOMAIN = "cal.tripvaratravel.com"
 APP_URL = "https://tripvaratravel.com"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
 # Where operator notifications go (new advisor signups awaiting approval).
