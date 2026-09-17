@@ -184,6 +184,7 @@ const NAV = [
       { href: '/app/reviews', label: 'Reviews' },
       { href: '/app/specials', label: 'Specials' },
       { href: '/app/formbuilder', label: 'Forms' },
+      { href: '/app/qr', label: 'QR codes' },
       { href: '/app/automations', label: 'Automations' },
     ],
   },
