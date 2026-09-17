@@ -313,6 +313,7 @@ import {
   handleListAdvisors,
   handleSetAdvisorStatus,
   handleSetAdvisorSplit,
+  handleUpdateAdvisor,
   handleSetBookingSplit,
   handleRunLifecycle,
   handleHealth,
@@ -545,6 +546,7 @@ async function routeApi(request, env, path, method) {
   const scheduleMatch = path.match(/^\/api\/bookings\/([^/]+)\/schedule$/);
   const bookingStatusMatch = path.match(/^\/api\/bookings\/([^/]+)\/status$/);
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|split)$/);
+  const advisorOneMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)$/);
   const bookingSplitMatch = path.match(/^\/api\/admin\/bookings\/([^/]+)\/split$/);
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   // Checklist steps hang off a task; the steps themselves are addressed by
@@ -948,6 +950,12 @@ async function routeApi(request, env, path, method) {
   if (bookingSplitMatch && method === 'PUT') {
     return handleSetBookingSplit(request, env, decodeURIComponent(bookingSplitMatch[1]));
   }
+  // The advisor's own details. An id with no suffix had no route at all
+  // and fell through to "no such endpoint".
+  if (advisorOneMatch && method === 'PUT') {
+    return handleUpdateAdvisor(request, env, decodeURIComponent(advisorOneMatch[1]));
+  }
+
   if (advisorMatch && method === 'PUT') {
     const id = decodeURIComponent(advisorMatch[1]);
     if (advisorMatch[2] === 'status') return handleSetAdvisorStatus(request, env, id);
