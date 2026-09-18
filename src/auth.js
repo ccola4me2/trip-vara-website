@@ -84,6 +84,17 @@ export function isAdmin(user) {
   return Boolean(user && user.role === 'admin' && user.status === 'active');
 }
 
+/**
+ * Is this session sitting in somebody else's seat?
+ *
+ * Never, here. This portal has no working as an advisor: one person, one seat,
+ * and no acting_as column on sessions. The question exists so the modules that
+ * have to ask it are the same file on both sides.
+ */
+export function borrowedSeat() {
+  return false;
+}
+
 export function isActiveAdvisor(user) {
   return Boolean(user && user.status === 'active');
 }
