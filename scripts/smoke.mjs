@@ -7132,11 +7132,18 @@ async function main() {
   if (handedId) cleanup('the handed-over reservation', () => dropBooking(handedId));
 
   // Something on it, so the check is about the whole tree rather than one row.
-  await call(admin, 'POST', `/api/bookings/${handedId}/travellers`,
-    { firstName: 'Hand', lastName: `Over ${stamp}` });
-  await call(admin, 'POST', '/api/payments', {
+  // Both fixtures are asserted rather than assumed: a setup call that quietly
+  // failed leaves the check below reading zero and blaming the move for it,
+  // which is exactly how this suite spent a run pointing at the wrong thing.
+  const rider = await call(admin, 'POST', `/api/bookings/${handedId}/travellers`,
+    { name: `Hand Over ${stamp}` });
+  check(rider.status === 201, 'a traveller goes on the trip to be moved with it',
+    `status ${rider.status}`);
+  const deposit = await call(admin, 'POST', '/api/payments', {
     bookingId: handedId, amount: '500', dueDate: isoDay(30), kind: 'deposit',
   });
+  check(deposit.status === 200 || deposit.status === 201,
+    'and a payment', `status ${deposit.status}`);
 
   const before = await call(advisor, 'GET', `/api/bookings/${handedId}/record`);
   check(before.status === 404, 'the advisor cannot see it to begin with',
@@ -7157,9 +7164,9 @@ async function main() {
   const after = await call(advisor, 'GET', `/api/bookings/${handedId}/record`);
   check(after.status === 200, 'the advisor can now open it', `status ${after.status}`);
   check(after.data?.editable === true, 'and write to it', String(after.data?.editable));
-  check((after.data?.travellers || []).some((t) => t.last_name === `Over ${stamp}`),
+  check((after.data?.travellers || []).some((t) => t.name === `Hand Over ${stamp}`),
     'the travellers came with it', String((after.data?.travellers || []).length));
-  check((after.data?.payments || []).length === 1,
+  check((after.data?.payments || []).some((p) => p.amount_cents === 50000),
     'and so did the payment schedule', String((after.data?.payments || []).length));
 
   // The half that would be missed: the trip is on their commission page, not
@@ -7167,7 +7174,7 @@ async function main() {
   const theirs = await call(advisor, 'GET', '/api/commissions');
   check((theirs.data?.rows || []).some((r) => r.id === handedId),
     'it is on the advisor\'s commission page');
-  const owners = await call(admin, 'GET', '/api/commissions?advisor=me');
+  const owners = await call(admin, 'GET', `/api/commissions?advisor=${adminWho}`);
   check(!(owners.data?.rows || []).some((r) => r.id === handedId),
     'and off the owner\'s own');
 
