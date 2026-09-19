@@ -738,15 +738,15 @@ export const BOOKING_CHILDREN = [
 export async function reassignBooking(env, bookingId, fromUserId, toUserId) {
   const ts = now();
   const writes = [
-    // Restamped from the advisor receiving it. See the note above the column.
+    // Restamped from the advisor receiving it. One agreement here, not two:
+    // this portal has no separate rate for a lead the agency handed over.
     env.DB.prepare(
       `UPDATE bookings
           SET user_id = ?,
               agreed_split_pct = (SELECT u.default_split_pct FROM users u WHERE u.id = ?),
-              agreed_lead_split_pct = (SELECT u.lead_split_pct FROM users u WHERE u.id = ?),
               updated_at = ?
         WHERE id = ? AND user_id = ?`
-    ).bind(toUserId, toUserId, toUserId, ts, bookingId, fromUserId),
+    ).bind(toUserId, toUserId, ts, bookingId, fromUserId),
   ];
   for (const table of BOOKING_CHILDREN) {
     writes.push(env.DB.prepare(
