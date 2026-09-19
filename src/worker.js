@@ -332,6 +332,7 @@ import {
   handleSetAdvisorSplit,
   handleUpdateAdvisor,
   handleSetBookingSplit,
+  handleSetBookingAdvisor,
   handleRunLifecycle,
   handleHealth,
   handleTestEmail,
@@ -604,6 +605,7 @@ async function routeApi(request, env, path, method) {
   const advisorMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/(status|split)$/);
   const advisorOneMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)$/);
   const bookingSplitMatch = path.match(/^\/api\/admin\/bookings\/([^/]+)\/split$/);
+  const bookingAdvisorMatch = path.match(/^\/api\/admin\/bookings\/([^/]+)\/advisor$/);
   const myTaskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   // Checklist steps hang off a task; the steps themselves are addressed by
   // their own id, so ticking one off does not need to name its task twice.
@@ -1038,6 +1040,9 @@ async function routeApi(request, env, path, method) {
   // no longer know the field.
   if (bookingSplitMatch && method === 'PUT') {
     return handleSetBookingSplit(request, env, decodeURIComponent(bookingSplitMatch[1]));
+  }
+  if (bookingAdvisorMatch && method === 'PUT') {
+    return handleSetBookingAdvisor(request, env, decodeURIComponent(bookingAdvisorMatch[1]));
   }
   // The advisor's own details. An id with no suffix had no route at all
   // and fell through to "no such endpoint".
