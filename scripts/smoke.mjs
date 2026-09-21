@@ -7209,6 +7209,10 @@ async function main() {
     'advisor_split', 'agreed_split', 'lead_source'].filter((w) => html.includes(w));
   check(!leaked.length, 'and it says nothing about what the agency earns',
     leaked.join(', '));
+  // The same test the trip page has had since it shipped, worded the same
+  // way, because the two pages make the same promise.
+  check(!/commission/i.test(html), 'nor the word at all');
+  check(!/mark ?up/i.test(html), 'nor about the mark up, which is a real charge with a bad name');
 
   // Turning it off drops the code rather than hiding it.
   const off = await call(advisor, 'POST', `/api/clients/${clientId}/hub`, { on: false });
