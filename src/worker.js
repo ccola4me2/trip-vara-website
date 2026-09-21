@@ -60,6 +60,7 @@ import { handleProposals } from './proposals.js'; import {
   serveTripDocument,
   renderTripManifest,
 } from './share.js';
+import { handleShareClient, renderHubPage } from './hub.js';
 import {
   handleReadConfirmation,
 } from './confirm.js';
@@ -571,6 +572,7 @@ async function routeApi(request, env, path, method) {
   const statementMatch = path.match(/^\/api\/bookings\/([^/]+)\/statement$/);
   const welcomedMatch = path.match(/^\/api\/bookings\/([^/]+)\/welcomed$/);
   const shareMatch = path.match(/^\/api\/bookings\/([^/]+)\/share$/);
+  const clientHubMatch = path.match(/^\/api\/clients\/([^/]+)\/hub$/);
   const tripMsgMatch = path.match(/^\/api\/bookings\/([^/]+)\/messages$/);
   const msgReadMatch = path.match(/^\/api\/trip-messages\/([^/]+)\/read$/);
   const docShareMatch = path.match(/^\/api\/documents\/([^/]+)\/share$/);
@@ -849,6 +851,7 @@ async function routeApi(request, env, path, method) {
   // Tasks: the advisor's own working list, not the CRM's.
   // Sharing a trip with the person it is for.
   if (shareMatch && method === 'POST') return handleShareTrip(request, env, shareMatch[1]);
+  if (clientHubMatch && method === 'POST') return handleShareClient(request, env, clientHubMatch[1]);
   if (tripMsgMatch && method === 'GET') return handleTripMessages(request, env, tripMsgMatch[1]);
   if (msgReadMatch && method === 'POST') return handleReadTripMessage(request, env, msgReadMatch[1]);
   if (docShareMatch && method === 'POST') return handleShareDocument(request, env, docShareMatch[1]);
@@ -1106,6 +1109,11 @@ async function routePage(request, env, path) {
       ? handleTripMessage(request, env, tripCode)
       : renderTripPage(request, env, tripCode);
   }
+
+  // One client's own page: every trip they have with us, on the same terms as
+  // a single trip's page. The code is the credential.
+  const hubPage = path.match(/^\/c\/([^/]+)\/?$/);
+  if (hubPage) return renderHubPage(request, env, decodeURIComponent(hubPage[1]));
 
   // A group's own page, on the same terms: public, because it is how names
   // arrive for a trip nobody has been told about yet.
