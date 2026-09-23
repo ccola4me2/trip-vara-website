@@ -809,11 +809,17 @@ function trendBars(field) {
       ${rows.length} month${rows.length === 1 ? '' : 's'}</p>`;
 }
 
+// Panels that take the whole width of the grid. Associate stats is seven
+// columns across and measured 735 pixels in a 515 pixel column, which is a
+// table clipped rather than a table on a dashboard.
+const WIDE = new Set(['associates']);
+
 function drawPanels() {
   const visible = layout.widgets.filter((w) => !w.hidden && PANELS[w.id]);
   widgetsEl.replaceChildren(...visible.map((w) => {
     const el = PANELS[w.id]();
     el.dataset.panel = w.id;
+    if (WIDE.has(w.id)) el.classList.add('wide');
     return el;
   }));
   // Delegated, because a widget redraws its body whenever a tab is clicked and
