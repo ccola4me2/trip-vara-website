@@ -55,6 +55,7 @@ import { handleProposals } from './proposals.js'; import {
   handleReadTripMessage,
   renderTripPage,
   handleTripMessage,
+  handleTripUpload,
   handleTripReview,
   handleClientChoose,
   serveTripDocument,
@@ -1100,6 +1101,11 @@ async function routePage(request, env, path) {
   }
   // The client answering their proposal. Before the page match, which would
   // otherwise read /choose as part of the code.
+  const tripUpload = path.match(/^\/t\/([^/]+)\/upload$/);
+  if (tripUpload && request.method === 'POST') {
+    return handleTripUpload(request, env, decodeURIComponent(tripUpload[1]));
+  }
+
   const tripChoose = path.match(/^\/t\/([^/]+)\/choose$/);
   if (tripChoose && request.method === 'POST') {
     return handleClientChoose(request, env, decodeURIComponent(tripChoose[1]));
