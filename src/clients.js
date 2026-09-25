@@ -29,10 +29,14 @@ export async function handleListClients(request, env) {
   const mine = url.searchParams.get('mine') === '1';
   const scope = mine ? db.selfScope(user) : db.scopeFor(env, user, request);
   const query = clean(url.searchParams.get('q'), 80);
+  // Named rather than inlined, because the figures below have to be counted
+  // over the same filtered set the list uses, and reading the parameter twice
+  // is how the two quietly come apart.
+  const pinnedOnly = url.searchParams.get('pinned') === '1';
   const clients = await db.listClients(env, scope, {
     limit: url.searchParams.get('limit'),
     query,
-    pinnedOnly: url.searchParams.get('pinned') === '1',
+    pinnedOnly,
   });
   // One row past the cap, so the page can say it was cut. Filtering a list
   // that is already short is how a search for somebody who exists comes back
