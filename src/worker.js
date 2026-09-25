@@ -61,6 +61,7 @@ import { handleProposals } from './proposals.js'; import {
   renderTripManifest,
 } from './share.js';
 import { handleShareClient, renderHubPage } from './hub.js';
+import { handleDuplicates, handleMergeClients } from './merge.js';
 import { renderPortal, handlePortalSignIn } from './portal.js';
 import { handleClientLinkRedeem, handleClientSignOut } from './clientauth.js';
 import {
@@ -959,6 +960,10 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/goals' && method === 'GET') return handleGetGoals(request, env);
   if (path === '/api/goals' && method === 'PUT') return handleSaveGoals(request, env);
   if (path === '/api/client' && method === 'GET') return handleClientRecord(request, env);
+  // Two records that are one person. Above the list so neither is shadowed by
+  // a future /api/clients/:id matcher.
+  if (path === '/api/clients/duplicates' && method === 'GET') return handleDuplicates(request, env);
+  if (path === '/api/clients/merge' && method === 'POST') return handleMergeClients(request, env);
   if (path === '/api/clients' && method === 'GET') return handleListClients(request, env);
   if (path === '/api/clients' && method === 'POST') return handleCreateClient(request, env);
   if (path === '/api/import/clients/preview' && method === 'POST') {
