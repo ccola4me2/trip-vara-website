@@ -2964,6 +2964,42 @@ async function main() {
       'and the door says so too, rather than letting them in to a dead portal',
       `status ${reLogin.status}`);
 
+
+    // ---- being told before it happens ----
+    // A trial that ends in silence is a prospect who opens the portal one
+    // morning, finds it shut, and concludes the product is unreliable.
+    const dayOut = Math.floor(Date.now() / 1000) + 86400;
+    await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
+      { plan: 'demo', endsAt: dayOut });
+
+    const firstNotice = await call(admin, 'POST', '/api/demo/notices', {});
+    check(firstNotice.data?.sent === 1, 'a trial a day out is told',
+      JSON.stringify(firstNotice.data));
+
+    const again = await call(admin, 'POST', '/api/demo/notices', {});
+    check(again.data?.sent === 0, 'and not told twice for the same notice',
+      JSON.stringify(again.data));
+
+    // Extending it starts the notices over, which is the one way this could
+    // leave somebody surprised a second time.
+    await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
+      { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) + (14 * 86400) });
+    const afterExtend = await call(admin, 'POST', '/api/demo/notices', {});
+    check(afterExtend.data?.sent === 0,
+      'a trial put back to a fortnight is not told anything yet',
+      JSON.stringify(afterExtend.data));
+
+    await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
+      { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) + 86400 });
+    const toldAgain = await call(admin, 'POST', '/api/demo/notices', {});
+    check(toldAgain.data?.sent === 1,
+      'and is told again when it comes back round, rather than staying quiet',
+      JSON.stringify(toldAgain.data));
+
+    const notice403 = await call(demoJar, 'POST', '/api/demo/notices', {});
+    check(notice403.status === 403, 'a demo owner cannot run the notices themselves',
+      `status ${notice403.status}`);
+
     // ---- converting keeps everything ----
     const live = await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`, { plan: 'live' });
     check(live.status === 200 && live.data?.plan === 'live', 'the portal owner can turn it live');

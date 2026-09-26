@@ -24,6 +24,7 @@ import {
 import { requireAdmin } from './auth.js';
 import * as db from './db.js';
 import { EXPECTED_SCHEMA } from './schema-expected.js';
+import { sendTrialNoticeEmail } from './email.js';
 
 export const TRIAL_DAYS = 14;
 // How long a locked demo is kept before it is removed. Long enough that
@@ -188,8 +189,12 @@ export async function handleConvertAgency(request, env, id) {
       ? Math.trunc(Number(body.endsAt))
       : now() + (Math.max(1, Math.min(Number(body.days) || TRIAL_DAYS, 365)) * DAY);
 
+    // trial_reminded is cleared with it. Extending a trial and then saying
+    // nothing because the three day notice already went is the one way this
+    // could leave somebody surprised again.
     await env.DB.prepare(
-      `UPDATE agencies SET plan = 'demo', trial_ends_at = ?, locked_at = NULL, updated_at = ?
+      `UPDATE agencies SET plan = 'demo', trial_ends_at = ?, locked_at = NULL,
+         trial_reminded = NULL, updated_at = ?
         WHERE id = ?`
     ).bind(endsAt, now(), id).run();
     await db.logActivity(env, user.id, 'agency.trial', 'Set a trial end date', { id, endsAt });
@@ -197,7 +202,8 @@ export async function handleConvertAgency(request, env, id) {
   }
 
   await env.DB.prepare(
-    `UPDATE agencies SET plan = 'live', trial_ends_at = NULL, locked_at = NULL, updated_at = ?
+    `UPDATE agencies SET plan = 'live', trial_ends_at = NULL, locked_at = NULL,
+       trial_reminded = NULL, updated_at = ?
       WHERE id = ?`
   ).bind(now(), id).run();
   await db.logActivity(env, user.id, 'agency.convert', 'Converted a demo to a live agency', { id });
@@ -327,6 +333,94 @@ export async function handleDeleteAgency(request, env, id) {
   await db.logActivity(env, user.id, 'agency.remove',
     `Removed ${agency.name} and everything in it`, { id, rows });
   return json({ ok: true, removed: agency.name, rows });
+}
+
+/**
+ * How many days of notice this trial is due, or null.
+ *
+ * The same shape as leadFor in payremind.js, and for the same reason: `sent`
+ * is the closest notice already used, so a trial seven days out that has had
+ * its seven day notice waits for the three rather than sending one every time
+ * the cron ticks.
+ */
+export const TRIAL_NOTICES = [7, 3, 1];
+// The one on the day it ends. Deliberately not a member of the list above: it
+// is not a number of days of notice, and giving it a zero that sorts correctly
+// by accident is how a list like this quietly stops working.
+export const TRIAL_ENDED = 0;
+
+export function noticeFor(endsAt, at, sent) {
+  if (!endsAt) return null;
+  const days = Math.ceil((endsAt - at) / DAY);
+  if (days <= 0) return sent === TRIAL_ENDED ? null : TRIAL_ENDED;
+  // The tightest notice this day qualifies for, which means the smallest.
+  // Searching the list as written finds 7 first, so a trial one day out looked
+  // like it was due its seven day notice, saw that one had gone, and said
+  // nothing for the rest of the fortnight.
+  const due = [...TRIAL_NOTICES].sort((a, b) => a - b).find((n) => days <= n);
+  if (due === undefined) return null;
+  // Already had this one, or a closer one. A smaller number is closer.
+  if (sent !== null && sent !== undefined && sent <= due) return null;
+  return due;
+}
+
+/**
+ * Tell the people whose demos are running out.
+ *
+ * Runs on the cron beside the sweep. Best effort per agency: one address that
+ * bounces must not stop the rest being told, and the stamp is written before
+ * the send so a permanently failing address is not retried every five minutes
+ * for a fortnight.
+ */
+export async function remindTrials(env, { at = now(), limit = 100 } = {}) {
+  const out = { sent: 0, failed: 0, noEmail: 0, considered: 0 };
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, demo_email, trial_ends_at, trial_reminded
+       FROM agencies
+      WHERE plan = 'demo' AND trial_ends_at IS NOT NULL AND locked_at IS NULL
+      LIMIT ?`
+  ).bind(limit).all();
+
+  out.considered = (results || []).length;
+
+  for (const a of results || []) {
+    const notice = noticeFor(a.trial_ends_at, at, a.trial_reminded);
+    if (notice === null) continue;
+    if (!a.demo_email) { out.noEmail += 1; continue; }
+
+    await env.DB.prepare('UPDATE agencies SET trial_reminded = ?, updated_at = ? WHERE id = ?')
+      .bind(notice, at, a.id).run();
+
+    try {
+      await sendTrialNoticeEmail(env, {
+        to: a.demo_email,
+        // The last two are worth knowing about at this end as well: a day out
+        // and the day it ends are when a conversation is worth having, and the
+        // earlier ones would just be noise.
+        copyTo: notice <= 1 ? (env.NOTIFY_EMAIL || null) : null,
+        agencyName: a.name,
+        days: notice,
+        appUrl: (env.APP_URL || 'https://tripvaratravel.com').replace(/\/$/, ''),
+      });
+      out.sent += 1;
+    } catch (e) {
+      console.error('trial notice', a.id, e);
+      out.failed += 1;
+    }
+  }
+
+  return out;
+}
+
+/** Send the trial notices now, rather than waiting for a cron tick. */
+export async function handleRunTrialNotices(request, env) {
+  const { user, response } = await requireAdmin(request, env);
+  if (response) return response;
+  if (!user.platform_owner) return json({ error: 'Only the portal owner can do that.' }, 403);
+  const result = await remindTrials(env);
+  await db.logActivity(env, user.id, 'demo.notices', 'Sent the trial notices', result);
+  return json(result);
 }
 
 /** Run the sweep now, for somebody who does not want to wait a day to find out. */

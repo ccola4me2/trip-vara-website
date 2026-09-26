@@ -247,6 +247,7 @@ import {
 } from './goals.js';
 import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
+  remindTrials, handleRunTrialNotices,
 } from './demo.js';
 import {
   handleListCommissions,
@@ -499,6 +500,9 @@ export default {
     // Every guard is inside sweepDemos: it cannot touch a live agency, the
     // house agency, or one with a portal owner in it.
     job('demo sweep', () => sweepDemos(env));
+    // Before the sweep locks anything, so the day it ends the person is told
+    // rather than just shut out.
+    job('trial notices', () => remindTrials(env));
     job('purge automation runs', () => purgeOldRuns(env));
 
     // The catalog import is a no-op once the current monthly snapshot is fully
@@ -1060,6 +1064,7 @@ async function routeApi(request, env, path, method) {
   // the agency routes, none of which a stranger may reach.
   if (path === '/api/demo' && method === 'POST') return handleStartDemo(request, env);
   if (path === '/api/demo/sweep' && method === 'POST') return handleRunDemoSweep(request, env);
+  if (path === '/api/demo/notices' && method === 'POST') return handleRunTrialNotices(request, env);
   if (convertMatch && method === 'POST') return handleConvertAgency(request, env, convertMatch[1]);
   if (agencyOneMatch && method === 'DELETE') return handleDeleteAgency(request, env, agencyOneMatch[1]);
 

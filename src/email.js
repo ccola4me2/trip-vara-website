@@ -552,6 +552,47 @@ export function sendQuoteDeclinedEmail(env, {
   });
 }
 
+/**
+ * A demo is running out, or has.
+ *
+ * The one thing it has to say, in every version, is that their work is safe.
+ * Somebody who has spent a fortnight putting real clients in wants to know
+ * that before they want to know anything about pricing.
+ */
+export function sendTrialNoticeEmail(env, { to, copyTo, agencyName, days, appUrl }) {
+  if (!to) return Promise.resolve({ skipped: true });
+
+  const ended = days === 0;
+  const when = ended ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
+
+  const subject = ended
+    ? `Your ${agencyName} demo has ended`
+    : `Your ${agencyName} demo ends ${when}`;
+
+  const body = ended
+    ? `<p style="margin:0 0 12px;">Your fourteen days are up, so the portal is closed for now.</p>
+       <p style="margin:0 0 12px;"><strong>Everything you put in is still there.</strong> Every
+       client, every reservation, every payment. Nothing has been deleted and nothing will be
+       while we are talking.</p>
+       <p style="margin:0 0 16px;">Reply to this and we will switch it back on. Carrying on
+       keeps all of it exactly where it is: there is nothing to move or import.</p>`
+    : `<p style="margin:0 0 12px;">Your demo of Trip Vara ends <strong>${escapeHtml(when)}</strong>.</p>
+       <p style="margin:0 0 12px;">If you carry on, everything you have entered stays exactly
+       where it is. There is no export, no import, and nothing to set up again: the same
+       account keeps working.</p>
+       <p style="margin:0 0 16px;">If you would rather not, you need do nothing at all.</p>`;
+
+  return send(env, {
+    to: copyTo ? [to, copyTo] : to,
+    subject,
+    html: layout(env, {
+      heading: ended ? 'Your demo has ended' : `Your demo ends ${when}`,
+      body,
+      cta: ended ? undefined : { label: 'Open the portal', href: `${appUrl}/app/` },
+    }),
+  });
+}
+
 export function sendPasswordResetEmail(env, user, token) {
   const minutes = Number(env.RESET_TTL_MINUTES || 60);
   return send(env, {
