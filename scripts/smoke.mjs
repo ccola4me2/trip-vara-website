@@ -2907,6 +2907,47 @@ async function main() {
     check(dupe.status === 400, 'the same address cannot start a second demo',
       `status ${dupe.status}`);
 
+
+    // Self serve signup changed what role 'admin' means. Before demos every
+    // one was somebody approved by hand; now a stranger is one three minutes
+    // after filling in a form. Everything whose reach is wider than their own
+    // agency has to say no to them, and these are the ones that did not.
+    const widerThanTheirs = [
+      ['GET', '/api/admin/health', 'the portal health, which names the operator and counts its users'],
+      ['POST', '/api/admin/test-email', 'sending mail from the verified domain'],
+      ['POST', '/api/admin/payment-reminders', 'chasing every client in every agency'],
+      ['POST', '/api/admin/task-reminders', 'mailing every advisor in every agency'],
+      ['POST', '/api/admin/call-lists', 'the same, for call lists'],
+      ['POST', '/api/admin/lifecycle', 'a sweep over every reservation on the portal'],
+      ['GET', '/api/admin/catalog', 'the shared sailing catalog'],
+      ['POST', '/api/admin/catalog', 'driving the shared catalog import'],
+      ['POST', '/api/demo/sweep', 'locking and removing agencies'],
+    ];
+    for (const [method, route, why] of widerThanTheirs) {
+      const said = await call(demoJar, method, route,
+        method === 'POST' ? { to: 'attacker@example.test' } : undefined);
+      // 403 exactly, not merely "not 200": a route that has moved answers 404
+      // and would pass a looser check while the hole stayed open. That is how
+      // the first version of this block passed against two paths that did not
+      // exist.
+      check(said.status === 403, `a demo owner is refused ${route}: ${why}`,
+        `status ${said.status}`);
+    }
+
+    // And the test email in particular, because it takes the address from the
+    // request: an open relay on a verified sending domain is somebody else's
+    // spam sent over the portal's reputation.
+    const relay = await call(demoJar, 'POST', '/api/admin/test-email',
+      { to: 'somebody-else@example.test' });
+    check(relay.status === 403,
+      'and cannot name the recipient of a message sent as the portal',
+      `status ${relay.status}`);
+
+    // What they may still do, because it is their own agency.
+    const own = await call(demoJar, 'GET', '/api/agencies');
+    check(own.status === 200 && (own.data?.agencies || []).length === 1,
+      'while their own agency is still theirs to see');
+
     // ---- the trial running out ----
     await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
       { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) - 60 });

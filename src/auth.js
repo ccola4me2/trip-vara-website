@@ -150,10 +150,35 @@ export async function trialOver(env, user) {
     + 'Get in touch and we will switch the account on.';
 }
 
+/**
+ * Owns an agency. Not the same as running the portal, and the difference
+ * started mattering the day demos became self serve.
+ *
+ * Before that, every role === 'admin' was somebody approved by hand. Now a
+ * stranger is one three minutes after filling in a form, so anything that
+ * reaches past their own agency needs requirePlatformOwner instead.
+ */
 export async function requireAdmin(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return { response };
   if (!isAdmin(user)) return { response: forbidden('Admin access required.') };
+  return { user };
+}
+
+/**
+ * Runs the portal itself.
+ *
+ * For everything whose blast radius is wider than one agency: reading the
+ * portal's own health, sending mail as it, running a pass over every advisor
+ * in it, and driving the shared catalog. An agency owner is not one of these,
+ * however much of their own agency they own.
+ */
+export async function requirePlatformOwner(request, env) {
+  const { user, response } = await requireAdmin(request, env);
+  if (response) return { response };
+  if (!user.platform_owner) {
+    return { response: forbidden('That is for whoever runs the portal.') };
+  }
   return { user };
 }
 

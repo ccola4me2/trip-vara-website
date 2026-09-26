@@ -6,7 +6,7 @@ import {
   normalizeEmail, isValidEmail,
 } from './util.js';
 import { tenantFor } from './tenant.js';
-import { requireAdmin, publicUser } from './auth.js';
+import { requireAdmin, requirePlatformOwner, publicUser } from './auth.js';
 import * as db from './db.js';
 import { sendAdvisorApprovedEmail, checkResend, sendTestEmail } from './email.js';
 import { remindTasks } from './taskmail.js';
@@ -321,7 +321,7 @@ export async function handleSetAdvisorSplit(request, env, userId) {
  * trips and the reports still say nobody has travelled.
  */
 export async function handleRunLifecycle(request, env) {
-  const { user: admin, response } = await requireAdmin(request, env);
+  const { user: admin, response } = await requirePlatformOwner(request, env);
   if (response) return response;
 
   const today = new Date().toISOString().slice(0, 10);
@@ -338,7 +338,7 @@ export async function handleRunLifecycle(request, env) {
  */
 /** Pull the sailing catalog from the copy CruiseShoppers already holds. */
 export async function handleMirrorCatalog(request, env) {
-  const { user, response } = await requireAdmin(request, env);
+  const { user, response } = await requirePlatformOwner(request, env);
   if (response) return response;
 
   const body = await readJson(request);
@@ -351,7 +351,7 @@ export async function handleMirrorCatalog(request, env) {
 }
 
 export async function handleMirrorStatus(request, env) {
-  const { response } = await requireAdmin(request, env);
+  const { response } = await requirePlatformOwner(request, env);
   if (response) return response;
   return json(await mirrorStatus(env));
 }
@@ -412,7 +412,7 @@ async function orphanRows(env, user) {
 }
 
 export async function handleHealth(request, env) {
-  const { user, response } = await requireAdmin(request, env);
+  const { user, response } = await requirePlatformOwner(request, env);
   if (response) return response;
 
   const url = new URL(request.url);
@@ -478,7 +478,7 @@ export async function handleHealth(request, env) {
  * the real stamps: a task told about here is not told about again.
  */
 export async function handleRunTaskReminders(request, env) {
-  const { user, response } = await requireAdmin(request, env);
+  const { user, response } = await requirePlatformOwner(request, env);
   if (response) return response;
   const result = await remindTasks(env, { force: true });
   await db.logActivity(env, user.id, 'admin.taskReminders', 'Ran the task reminder pass', result);
@@ -493,7 +493,7 @@ export async function handleRunTaskReminders(request, env) {
  * on, hard deadlines only, and one notice per lead time.
  */
 export async function handleRunPaymentReminders(request, env) {
-  const { user, response } = await requireAdmin(request, env);
+  const { user, response } = await requirePlatformOwner(request, env);
   if (response) return response;
   const result = await remindDuePayments(env);
   await db.logActivity(env, user.id, 'admin.paymentReminders',
@@ -510,7 +510,7 @@ export async function handleRunPaymentReminders(request, env) {
  * it looks like.
  */
 export async function handleRunCallLists(request, env) {
-  const { user, response } = await requireAdmin(request, env);
+  const { user, response } = await requirePlatformOwner(request, env);
   if (response) return response;
   const body = await readJson(request).catch(() => ({}));
   const result = await sendCallLists(env, {
@@ -524,7 +524,7 @@ export async function handleRunCallLists(request, env) {
 }
 
 export async function handleTestEmail(request, env) {
-  const { user, response } = await requireAdmin(request, env);
+  const { user, response } = await requirePlatformOwner(request, env);
   if (response) return response;
 
   const body = await readJson(request);

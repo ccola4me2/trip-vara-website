@@ -6,7 +6,7 @@ import { knownCruiseLines } from './catalogmirror.js';
 // could not carry.
 
 import { json, badRequest, notFound, clean, readJson } from './util.js';
-import { requireUser, requireAdmin } from './auth.js';
+import { requireUser, requireAdmin, requirePlatformOwner } from './auth.js';
 import * as db from './db.js';
 import {
   catalogLines, catalogShips, catalogDates, matchSailing,
@@ -78,13 +78,13 @@ export async function handleCatalogDates(request, env) {
 }
 
 export async function handleCatalogStatus(request, env) {
-  const { response } = await requireAdmin(request, env);
+  const { response } = await requirePlatformOwner(request, env);
   if (response) return response;
   return json(await importStatus(env));
 }
 
 export async function handleCatalogImport(request, env) {
-  const { response } = await requireAdmin(request, env);
+  const { response } = await requirePlatformOwner(request, env);
   if (response) return response;
   const body = await readJson(request);
   return json(await importCatalogStep(env, {
