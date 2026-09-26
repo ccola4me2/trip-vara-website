@@ -2948,6 +2948,29 @@ async function main() {
     check(own.status === 200 && (own.data?.agencies || []).length === 1,
       'while their own agency is still theirs to see');
 
+    // The agencies screen offers "Turn it live" on a demo. It must not offer
+    // it to the person whose demo it is: the server refuses them, so nothing
+    // was ever at risk, but a control that fails when pressed is a control
+    // advertising a thing they should not be considering.
+    const theirView = await call(demoJar, 'GET', '/api/agencies');
+    check(theirView.data?.platformOwner === false,
+      'the agencies screen tells a demo owner they do not run the portal, which is what hides the button',
+      `${theirView.data?.platformOwner}`);
+
+    const theirOwn = (theirView.data?.agencies || [])[0];
+    check(theirOwn && theirOwn.plan === 'demo' && theirOwn.trial_ends_at,
+      'while still showing them their own trial and when it ends');
+
+    const selfConvert = await call(demoJar, 'POST', `/api/agencies/${demoAgencyId}/plan`,
+      { plan: 'live' });
+    check(selfConvert.status === 403,
+      'and they cannot end their own trial by asking, whatever the screen shows',
+      `status ${selfConvert.status}`);
+
+    const stillDemo = (await call(admin, 'GET', '/api/agencies')).data?.agencies || [];
+    check((stillDemo.find((a) => a.id === demoAgencyId) || {}).plan === 'demo',
+      'the trial is still a trial afterwards');
+
     // ---- the trial running out ----
     await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
       { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) - 60 });
@@ -2963,6 +2986,7 @@ async function main() {
     check(reLogin.status === 403 && reLogin.data?.status === 'trial_ended',
       'and the door says so too, rather than letting them in to a dead portal',
       `status ${reLogin.status}`);
+
 
 
     // ---- being told before it happens ----

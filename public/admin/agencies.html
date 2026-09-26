@@ -154,7 +154,11 @@ function draw() {
         </div>
         <div class="call-acts">
           ${a.join_open ? `<button class="btn btn-ghost btn-sm" data-copy="${esc(link)}">Copy link</button>` : ''}
-          ${a.plan === 'demo'
+          ${a.plan === 'demo' && d.platformOwner
+    // Only whoever runs the portal. An agency owner looking at their own trial
+    // was being offered a button that ends it for free: the server refused it,
+    // so nothing was ever at risk, but a control that fails when pressed is
+    // still a control advertising something they should not be considering.
     ? `<button class="btn btn-primary btn-sm" data-live="${esc(a.id)}">Turn it live</button>` : ''}
           <button class="btn btn-secondary btn-sm" data-edit="${esc(a.id)}">Edit</button>
         </div>
