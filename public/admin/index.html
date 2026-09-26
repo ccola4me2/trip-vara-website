@@ -93,7 +93,14 @@
 
 <script type="module">
 import { api, mountShell, esc, timeAgo, showError } from '/js/app.js';
-await mountShell({ admin: true });
+const me = await mountShell({ admin: true });
+
+// Email and Background jobs are the portal's own plumbing, and only whoever
+// runs it may read them. An agency owner opening this page was getting two
+// cards that loaded, failed, and printed "that is for whoever runs the portal"
+// where the content should be. Honest, and a poor first thing for somebody
+// evaluating the product to see. They are not rendered at all now.
+const RUNS_THE_PORTAL = Boolean(me && me.platformOwner);
 
 const panel = document.getElementById('panel');
 
@@ -291,7 +298,12 @@ async function load() {
 }
 filter.addEventListener('change', load);
 await load();
-loadMail();
+if (RUNS_THE_PORTAL) {
+  loadMail();
+} else {
+  document.getElementById('mail').hidden = true;
+  document.getElementById('jobs').hidden = true;
+}
 
 // ------------------------------------------------------ advisor details --
 //

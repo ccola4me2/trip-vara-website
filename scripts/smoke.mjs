@@ -2961,6 +2961,18 @@ async function main() {
     check(theirOwn && theirOwn.plan === 'demo' && theirOwn.trial_ends_at,
       'while still showing them their own trial and when it ends');
 
+    // The admin page reads health to draw Email and Background jobs. A demo
+    // owner is refused it, which used to print the refusal where the content
+    // should be: two red boxes as the first thing a prospect sees. The page
+    // asks whether they run the portal and leaves both cards out instead.
+    const theirHealth = await call(demoJar, 'GET', '/api/admin/health');
+    check(theirHealth.status === 403,
+      'a demo owner cannot read the plumbing those two cards are made of',
+      `status ${theirHealth.status}`);
+    const ourHealth = await call(admin, 'GET', '/api/admin/health');
+    check(ourHealth.status === 200 && ourHealth.data?.email,
+      'while the portal owner still can, which is what keeps the cards working');
+
     const selfConvert = await call(demoJar, 'POST', `/api/agencies/${demoAgencyId}/plan`,
       { plan: 'live' });
     check(selfConvert.status === 403,
