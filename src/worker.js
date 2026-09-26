@@ -246,7 +246,7 @@ import {
   handleSaveGoals,
 } from './goals.js';
 import {
-  handleStartDemo, handleConvertAgency, handleRunDemoSweep, sweepDemos,
+  handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
 } from './demo.js';
 import {
   handleListCommissions,
@@ -641,6 +641,7 @@ async function routeApi(request, env, path, method) {
   const optionsOpenMatch = path.match(/^\/api\/bookings\/([^/]+)\/options-open$/);
   const libMatch = path.match(/^\/api\/itinerary-library\/([^/]+)$/);
   const convertMatch = path.match(/^\/api\/agencies\/([^/]+)\/plan$/);
+  const agencyOneMatch = path.match(/^\/api\/agencies\/([^/]+)$/);
   const houseMatch = path.match(/^\/api\/households\/([^/]+)$/);
   const houseMemberMatch = path.match(/^\/api\/households\/([^/]+)\/members$/);
   const houseDropMatch = path.match(/^\/api\/households\/([^/]+)\/members\/([^/]+)$/);
@@ -1060,6 +1061,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/demo' && method === 'POST') return handleStartDemo(request, env);
   if (path === '/api/demo/sweep' && method === 'POST') return handleRunDemoSweep(request, env);
   if (convertMatch && method === 'POST') return handleConvertAgency(request, env, convertMatch[1]);
+  if (agencyOneMatch && method === 'DELETE') return handleDeleteAgency(request, env, agencyOneMatch[1]);
 
   if (path === '/api/agencies' && method === 'GET') return handleListAgencies(request, env);
   if (path === '/api/agencies' && method === 'POST') return handleCreateAgency(request, env);

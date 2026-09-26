@@ -92,6 +92,9 @@ export async function handleListAgencies(request, env) {
     `SELECT a.id, a.name, a.slug, a.address, a.phone, a.email,
             a.website, a.seller_of_travel, a.logo_url, a.brand_color, a.tagline,
             a.join_open, a.created_at, a.updated_at,
+            -- The trial, so the agencies screen can say how long is left and
+            -- offer to turn one live rather than making somebody guess.
+            a.plan, a.trial_ends_at, a.locked_at, a.demo_email,
             ${HEADCOUNT}, ${ACTIVE}, ${WAITING}
        FROM agencies a WHERE ${where} ORDER BY a.name ASC LIMIT 200`
   ).bind(...binds).all();

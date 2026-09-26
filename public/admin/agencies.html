@@ -81,9 +81,32 @@ const dlg = document.getElementById('dlg');
 const form = document.getElementById('agency-form');
 let d = null;
 let editingId = null;
-// Whether the portal can reach the agency level at all. False leaves the
-// button off entirely rather than offering something that will fail: a
-// sub-account token cannot create a sub-account, and no scope on it ever will.
+
+/**
+ * Where a trial stands, in the words somebody would use out loud.
+ *
+ * Days rather than a date: "4 days left" is a thing to act on, and "ends on
+ * the 8th" is a thing to work out first.
+ */
+function trialBadge(a) {
+  if (a.plan !== 'demo') return '';
+  const secs = Math.floor(Date.now() / 1000);
+  if (a.locked_at) {
+    const goes = Math.max(0, Math.ceil(((a.locked_at + (30 * 86400)) - secs) / 86400));
+    return `<span class="badge badge-amber" style="margin-left:.3rem;"
+      title="Everything they entered is still here. Turning it live keeps all of it."
+      >demo ended &middot; removed in ${goes} day${goes === 1 ? '' : 's'}</span>`;
+  }
+  if (!a.trial_ends_at) {
+    return '<span class="badge badge-navy" style="margin-left:.3rem;">demo</span>';
+  }
+  const left = Math.ceil((a.trial_ends_at - secs) / 86400);
+  if (left <= 0) {
+    return '<span class="badge badge-amber" style="margin-left:.3rem;">demo ended</span>';
+  }
+  return `<span class="badge badge-navy" style="margin-left:.3rem;">demo &middot; ${
+    left} day${left === 1 ? '' : 's'} left</span>`;
+}
 
 function draw() {
   document.getElementById('actions').innerHTML = d.platformOwner
@@ -115,8 +138,10 @@ function draw() {
           ${a.join_open
       ? `<span class="badge badge-navy" style="margin-left:.3rem;">${a.pending_advisors || 0} waiting</span>`
       : '<span class="badge badge-amber" style="margin-left:.3rem;">join closed</span>'}
+          ${trialBadge(a)}
           <div class="call-why">${a.active_advisors || 0} active of ${a.advisors || 0} advisor${
-      a.advisors === 1 ? '' : 's'}${a.tagline ? ` &middot; ${esc(a.tagline)}` : ''}</div>
+      a.advisors === 1 ? '' : 's'}${a.tagline ? ` &middot; ${esc(a.tagline)}` : ''}${
+      a.plan === 'demo' && a.demo_email ? ` &middot; ${esc(a.demo_email)}` : ''}</div>
           <div class="call-links">
             ${a.join_open
       ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(link.replace(/^https?:\/\//, ''))}</a>`
@@ -129,11 +154,28 @@ function draw() {
         </div>
         <div class="call-acts">
           ${a.join_open ? `<button class="btn btn-ghost btn-sm" data-copy="${esc(link)}">Copy link</button>` : ''}
+          ${a.plan === 'demo'
+    ? `<button class="btn btn-primary btn-sm" data-live="${esc(a.id)}">Turn it live</button>` : ''}
           <button class="btn btn-secondary btn-sm" data-edit="${esc(a.id)}">Edit</button>
         </div>
       </div>
     </li>`;
   }).join('')}</ul>`;
+
+  panel.querySelectorAll('[data-live]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const a = d.agencies.find((x) => x.id === b.dataset.live);
+      if (!confirm(`Turn ${a.name} into a live agency?\n\n`
+        + 'Everything they entered during the trial stays exactly where it is. '
+        + 'The countdown stops and nothing is ever deleted.')) return;
+      b.disabled = true;
+      try {
+        await api(`/api/agencies/${encodeURIComponent(a.id)}/plan`,
+          { method: 'POST', body: { plan: 'live' } });
+        await load();
+      } catch (e) { b.disabled = false; showError(document.getElementById('err'), e); }
+    });
+  });
 
   panel.querySelectorAll('[data-edit]').forEach((b) => {
     b.addEventListener('click', () => openEdit(d.agencies.find((a) => a.id === b.dataset.edit)));

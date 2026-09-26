@@ -2848,6 +2848,164 @@ async function main() {
   // -------------------------------------------------- deals and their page --
 
 
+
+  // ------------------------------------------------- a fourteen day demo ---
+  // Strangers putting real client names into somebody else's portal. The
+  // countdown is the easy half; the half that matters is that a demo is its
+  // own agency and can never see, or be seen by, anybody else's book.
+  step('A demo agency, and the wall around it');
+  {
+    const demoJar = jar();
+    const demoEmail = `demo-${stamp}@example.test`;
+    const started = await call(demoJar, 'POST', '/api/demo', {
+      agencyName: `Demo Travel ${stamp}`,
+      firstName: 'Dana', lastName: 'Demo',
+      email: demoEmail, password: 'demo-password-12345',
+    });
+    check(started.status === 201 && started.data?.started === true,
+      'somebody with no account at all can start one', `status ${started.status}`);
+    check(started.data?.trialDays === 14, 'for fourteen days', `${started.data?.trialDays}`);
+
+    await call(demoJar, 'POST', '/api/auth/login',
+      { email: demoEmail, password: 'demo-password-12345' });
+    const me = await call(demoJar, 'GET', '/api/auth/me');
+    const demoAgencyId = me.data?.user?.agencyId;
+    check(Boolean(demoAgencyId), 'and is signed in to an agency', JSON.stringify(demoAgencyId));
+    check(me.data?.user?.platformOwner !== true,
+      'who does not run the portal, whatever else they can do');
+
+    // The one that matters. /signup with no link drops somebody into the first
+    // agency on the books, which is the house one. A demo must never land there.
+    const mine = await call(admin, 'GET', '/api/auth/me');
+    check(demoAgencyId !== mine.data?.user?.agencyId,
+      'and it is their own agency, not the one the portal owner is in',
+      `${demoAgencyId} vs ${mine.data?.user?.agencyId}`);
+
+    // Their own agency is real and theirs, and the portal's is not visible.
+    const theirAgencies = await call(demoJar, 'GET', '/api/agencies');
+    const listed = theirAgencies.data?.agencies || [];
+    check(listed.length === 1 && listed[0].id === demoAgencyId,
+      'they see their own agency and no other', `${listed.length}`);
+    check(listed[0].join_open === 0,
+      'whose join link is shut, so a guessed slug cannot walk into their trial',
+      `${listed[0].join_open}`);
+
+    // Their clients are theirs.
+    const theirClient = await call(demoJar, 'POST', '/api/bookings', {
+      clientName: `Demo Client ${stamp}`, supplier: 'Princess',
+      departDate: isoDay(40), gross: '1000', status: 'booked',
+    });
+    check(theirClient.status === 201, 'they can put a real booking in');
+    const ours = await call(advisor, 'GET', '/api/clients');
+    check(!(ours.data?.clients || []).some((c) => c.name === `Demo Client ${stamp}`),
+      'and it does not appear in another advisor\'s client list');
+
+    const dupe = await call(jar(), 'POST', '/api/demo', {
+      agencyName: 'Second go', firstName: 'Dana', lastName: 'Demo',
+      email: demoEmail, password: 'demo-password-12345',
+    });
+    check(dupe.status === 400, 'the same address cannot start a second demo',
+      `status ${dupe.status}`);
+
+    // ---- the trial running out ----
+    await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
+      { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) - 60 });
+
+    const afterEnd = await call(demoJar, 'GET', '/api/clients');
+    check(afterEnd.status === 403, 'once it runs out every screen stops', `status ${afterEnd.status}`);
+    check(/still here/i.test(afterEnd.data?.error || ''),
+      'saying their work is still there rather than just refusing',
+      afterEnd.data?.error);
+
+    const reLogin = await call(jar(), 'POST', '/api/auth/login',
+      { email: demoEmail, password: 'demo-password-12345' });
+    check(reLogin.status === 403 && reLogin.data?.status === 'trial_ended',
+      'and the door says so too, rather than letting them in to a dead portal',
+      `status ${reLogin.status}`);
+
+    // ---- converting keeps everything ----
+    const live = await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`, { plan: 'live' });
+    check(live.status === 200 && live.data?.plan === 'live', 'the portal owner can turn it live');
+
+    const backIn = jar();
+    const ok = await call(backIn, 'POST', '/api/auth/login',
+      { email: demoEmail, password: 'demo-password-12345' });
+    check(ok.status === 200, 'after which they are back in');
+    const kept = await call(backIn, 'GET', '/api/clients');
+    check((kept.data?.clients || []).some((c) => c.name === `Demo Client ${stamp}`),
+      'with every client they entered during the trial exactly where they left it');
+
+    // ---- the sweep, and what it must never touch ----
+    const houseId = mine.data?.user?.agencyId;
+    const beforeSweep = await call(admin, 'GET', '/api/agencies');
+    const houseBefore = (beforeSweep.data?.agencies || []).length;
+
+    // Put it back on an ended trial and lock it, then age the lock past the
+    // thirty days, so the sweep has something it is genuinely allowed to take.
+    await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
+      { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) - 60 });
+    const firstSweep = await call(admin, 'POST', '/api/demo/sweep', {});
+    check(firstSweep.data?.locked >= 1, 'the sweep locks a trial that has run out',
+      JSON.stringify(firstSweep.data));
+    check((firstSweep.data?.deleted || 0) === 0,
+      'and deletes nothing on the day it locks it, because the thirty days start then',
+      `${firstSweep.data?.deleted}`);
+
+    const afterSweep = await call(admin, 'GET', '/api/agencies');
+    check((afterSweep.data?.agencies || []).length === houseBefore,
+      'the portal owner still has every agency they had', `${(afterSweep.data?.agencies || []).length}`);
+    const meStill = await call(admin, 'GET', '/api/auth/me');
+    check(meStill.status === 200 && meStill.data?.user?.agencyId === mine.data?.user?.agencyId,
+      'and the portal owner is not locked out of their own agency by any of it');
+
+
+    // The guard that matters most, tested by actually trying it on. The house
+    // agency is made to look exactly like a demo that ran out days ago, which
+    // is the only state the sweep ever acts on, and then the sweep is run.
+    // If the guard is wrong this test locks the portal owner out of his own
+    // book, and every check after it fails loudly, which is the point.
+    await call(admin, 'POST', `/api/agencies/${houseId}/plan`,
+      { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) - (40 * 86400) });
+
+    const sweepWithHouseExpired = await call(admin, 'POST', '/api/demo/sweep', {});
+    const houseAfter = (await call(admin, 'GET', '/api/agencies')).data?.agencies || [];
+    const house = houseAfter.find((a) => a.id === houseId);
+    check(Boolean(house),
+      'the house agency survives a sweep that thinks it is an expired demo',
+      JSON.stringify(sweepWithHouseExpired.data));
+    check(house && !house.locked_at,
+      'and is not even locked, let alone removed', `${house && house.locked_at}`);
+
+    const ownerStillIn = await call(admin, 'GET', '/api/clients');
+    check(ownerStillIn.status === 200,
+      'the portal owner is still working while it is in that state');
+
+    // Put it back, whatever happened above.
+    await call(admin, 'POST', `/api/agencies/${houseId}/plan`, { plan: 'live' });
+    const restored = ((await call(admin, 'GET', '/api/agencies')).data?.agencies || [])
+      .find((a) => a.id === houseId);
+    check(restored && restored.plan === 'live' && !restored.trial_ends_at,
+      'and it is put back to a live agency with no trial on it',
+      JSON.stringify(restored && restored.plan));
+
+    // Removing it, which also proves the portal owner can. Leaving it behind
+    // as a live agency littered one per run, and the signup rate limit counts
+    // agencies made from this address today, so the suite stopped being
+    // repeatable on the fourth go.
+    const removed = await call(admin, 'DELETE', `/api/agencies/${demoAgencyId}`);
+    check(removed.status === 200, 'the portal owner can remove a demo outright',
+      `status ${removed.status}`);
+
+    const left = (await call(admin, 'GET', '/api/agencies')).data?.agencies || [];
+    check(!left.some((a) => a.id === demoAgencyId), 'and it is gone');
+    check(left.some((a) => a.id === houseId), 'while the house agency is still there');
+
+    const houseRefused = await call(admin, 'DELETE', `/api/agencies/${houseId}`);
+    check(houseRefused.status === 400,
+      'and the portal\'s own agency cannot be removed that way at all',
+      `status ${houseRefused.status}`);
+  }
+
   step('A special, its public page, and the enquiry it pulls');
   {
     const made = await call(advisor, 'POST', '/api/specials', {

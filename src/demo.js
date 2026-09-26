@@ -17,7 +17,8 @@
 // trial is exactly where they left it.
 
 import {
-  json, badRequest, clean, isValidEmail, normalizeEmail, uid, now, readJson, sha256Hex,
+  json, badRequest, notFound, clean, isValidEmail, normalizeEmail, uid, now, readJson,
+  sha256Hex,
   hashPassword,
 } from './util.js';
 import { requireAdmin } from './auth.js';
@@ -178,13 +179,21 @@ export async function handleConvertAgency(request, env, id) {
   const toDemo = body.plan === 'demo';
 
   if (toDemo) {
-    const days = Math.max(1, Math.min(Number(body.days) || TRIAL_DAYS, 365));
+    // Either a number of days from today, or an explicit date. The second is
+    // what an operator wants when they are ending a trial now rather than
+    // granting one, and saying "minus three days" to mean that is a worse
+    // interface than saying when.
+    const endsAt = Number.isFinite(Number(body.endsAt)) && body.endsAt !== null
+      && body.endsAt !== undefined && String(body.endsAt).trim() !== ''
+      ? Math.trunc(Number(body.endsAt))
+      : now() + (Math.max(1, Math.min(Number(body.days) || TRIAL_DAYS, 365)) * DAY);
+
     await env.DB.prepare(
       `UPDATE agencies SET plan = 'demo', trial_ends_at = ?, locked_at = NULL, updated_at = ?
         WHERE id = ?`
-    ).bind(now() + (days * DAY), now(), id).run();
-    await db.logActivity(env, user.id, 'agency.trial', `Gave ${id} ${days} days`, { id, days });
-    return json({ ok: true, plan: 'demo', days });
+    ).bind(endsAt, now(), id).run();
+    await db.logActivity(env, user.id, 'agency.trial', 'Set a trial end date', { id, endsAt });
+    return json({ ok: true, plan: 'demo', endsAt });
   }
 
   await env.DB.prepare(
@@ -277,6 +286,47 @@ export async function purgeAgency(env, agencyId) {
   await env.DB.prepare(`DELETE FROM users WHERE id IN (${marks})`).bind(...ids).run();
   await env.DB.prepare('DELETE FROM agencies WHERE id = ?').bind(agencyId).run();
   return rows;
+}
+
+/**
+ * Remove an agency now, rather than waiting for the sweep.
+ *
+ * For the demo that is plainly never coming back, and for the one somebody
+ * asks to be deleted. The same guards as the sweep, because they are the same
+ * risk: never the house agency, and never one containing somebody who runs the
+ * portal. Live agencies are allowed, deliberately, because "delete us" is a
+ * request a real customer can make and refusing it would mean doing it by hand
+ * in the database, which is worse.
+ */
+export async function handleDeleteAgency(request, env, id) {
+  const { user, response } = await requireAdmin(request, env);
+  if (response) return response;
+  if (!user.platform_owner) return json({ error: 'Only the portal owner can do that.' }, 403);
+
+  const house = await env.DB.prepare(
+    'SELECT id FROM agencies ORDER BY created_at ASC LIMIT 1'
+  ).first();
+  if (house && house.id === id) {
+    return badRequest('That is the portal\'s own agency. It cannot be removed from here.');
+  }
+  if (id === user.agency_id) {
+    return badRequest('That is your own agency.');
+  }
+
+  const owner = await env.DB.prepare(
+    'SELECT 1 AS yes FROM users WHERE agency_id = ? AND platform_owner = 1 LIMIT 1'
+  ).bind(id).first();
+  if (owner) {
+    return badRequest('Somebody who runs the portal is in that agency.');
+  }
+
+  const agency = await env.DB.prepare('SELECT name FROM agencies WHERE id = ?').bind(id).first();
+  if (!agency) return notFound('Agency not found.');
+
+  const rows = await purgeAgency(env, id);
+  await db.logActivity(env, user.id, 'agency.remove',
+    `Removed ${agency.name} and everything in it`, { id, rows });
+  return json({ ok: true, removed: agency.name, rows });
 }
 
 /** Run the sweep now, for somebody who does not want to wait a day to find out. */
