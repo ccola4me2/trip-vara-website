@@ -32,6 +32,11 @@ export const TRIGGERS = [
   // these for its own to-do lists; firing them as triggers lets a GoHighLevel
   // campaign do the talking instead of the advisor remembering to.
   'booking.returned',
+  // And the client said no, which until now the portal had no way to hear at
+  // all. Worth a campaign more than a yes is: somebody who declined this year
+  // is a warm lead next year, and the advisor who says nothing after a no is
+  // the reason they book with somebody else.
+  'quote.declined',
 ];
 
 export const ACTIONS = [
