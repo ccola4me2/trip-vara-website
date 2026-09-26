@@ -145,6 +145,16 @@
 
 <script type="module">
 import { mountShell } from '/js/app.js';
-await mountShell({ admin: true });
+const me = await mountShell({ admin: true });
+
+// Hiding the nav link is not the same as closing the page: the address still
+// works for anybody who types it. This is the operator's own runbook for
+// creating agencies and moving people between them, and an agency owner
+// reading it learns nothing they can use and a fair amount they should not
+// see. Sent back to the part of the portal that is theirs.
+if (!me.platformOwner) {
+  document.body.innerHTML = '';
+  window.location.replace('/admin/');
+}
 </script>
 </body></html>

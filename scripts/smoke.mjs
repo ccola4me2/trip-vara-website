@@ -2877,6 +2877,7 @@ async function main() {
     // The one that matters. /signup with no link drops somebody into the first
     // agency on the books, which is the house one. A demo must never land there.
     const mine = await call(admin, 'GET', '/api/auth/me');
+    const houseId = mine.data?.user?.agencyId;
     check(demoAgencyId !== mine.data?.user?.agencyId,
       'and it is their own agency, not the one the portal owner is in',
       `${demoAgencyId} vs ${mine.data?.user?.agencyId}`);
@@ -2983,6 +2984,49 @@ async function main() {
     check((stillDemo.find((a) => a.id === demoAgencyId) || {}).plan === 'demo',
       'the trial is still a trial afterwards');
 
+
+    // The sweep over what is left on the admin screens. Two of these were
+    // wrong in the same way: the server said no and the page offered it
+    // anyway. What remains has to be either genuinely theirs or genuinely
+    // absent, and this asserts which is which.
+
+    // Theirs: an agency owner runs their own advisors, and reachable() is what
+    // keeps that inside their agency.
+    const ourAdvisor = (await call(admin, 'GET', '/api/admin/advisors')).data?.users || [];
+    const someoneElse = ourAdvisor.find((u) => u.email && !u.email.includes('probe'));
+    if (someoneElse) {
+      const suspend = await call(demoJar, 'POST', `/api/admin/advisors/${someoneElse.id}/status`,
+        { status: 'suspended' });
+      check(suspend.status === 404,
+        'a demo owner cannot suspend an advisor outside their agency, and is told no such person',
+        `status ${suspend.status}`);
+
+      const split = await call(demoJar, 'POST', `/api/admin/advisors/${someoneElse.id}/split`,
+        { defaultSplitPct: 100 });
+      check(split.status === 404, 'nor set what they keep', `status ${split.status}`);
+
+      const edit = await call(demoJar, 'PUT', `/api/admin/advisors/${someoneElse.id}`,
+        { firstName: 'Taken' });
+      check(edit.status === 404, 'nor edit them at all', `status ${edit.status}`);
+    }
+
+    // Theirs: their own agency's branding, which is the point of the Edit
+    // button they do keep.
+    const rename = await call(demoJar, 'PUT', `/api/agencies/${demoAgencyId}`,
+      { name: `Renamed By Owner ${stamp}` });
+    check(rename.status === 200, 'but they may rename their own agency, which is the Edit button',
+      `status ${rename.status}`);
+
+    // Not theirs: somebody else's agency, by id.
+    const houseRename = await call(demoJar, 'PUT', `/api/agencies/${houseId}`,
+      { name: 'Taken Over' });
+    check(houseRename.status === 403, 'and not another agency, even knowing the id',
+      `status ${houseRename.status}`);
+    const houseStill = ((await call(admin, 'GET', '/api/agencies')).data?.agencies || [])
+      .find((a) => a.id === houseId);
+    check(houseStill && houseStill.name !== 'Taken Over',
+      'which leaves the portal owner agency named what it was', houseStill?.name);
+
     // ---- the trial running out ----
     await call(admin, 'POST', `/api/agencies/${demoAgencyId}/plan`,
       { plan: 'demo', endsAt: Math.floor(Date.now() / 1000) - 60 });
@@ -3049,7 +3093,6 @@ async function main() {
       'with every client they entered during the trial exactly where they left it');
 
     // ---- the sweep, and what it must never touch ----
-    const houseId = mine.data?.user?.agencyId;
     const beforeSweep = await call(admin, 'GET', '/api/agencies');
     const houseBefore = (beforeSweep.data?.agencies || []).length;
 

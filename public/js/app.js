@@ -254,7 +254,12 @@ const NAV = [
 const ADMIN_NAV = [
   { href: '/admin/', label: 'Advisors', icon: I.people },
   { href: '/admin/agencies', label: 'Agencies', icon: I.handshake },
-  { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield },
+  // Only whoever runs the portal. The page is the runbook for creating an
+  // agency and moving people between them, and it opens by saying an agency
+  // owner cannot do any of it: a nav item to a page that tells you it is not
+  // for you is worse than no nav item, and it puts the operator's own
+  // procedures in front of somebody trying the product out.
+  { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield, owner: true },
   { href: '/admin/manual', label: 'Running the agency', icon: I.book },
   { href: '/app/', label: 'Back to portal', icon: I.back },
 ];
@@ -1276,7 +1281,8 @@ export async function mountShell({ admin = false } = {}) {
   if (!sidebar) return user;
 
   const current = location.pathname.replace(/index\.html$/, '');
-  const items = admin ? ADMIN_NAV : NAV;
+  const items = (admin ? ADMIN_NAV : NAV)
+    .filter((entry) => !entry.owner || user.platformOwner);
   const showAdminLink = !admin && user.role === 'admin';
 
   // The hub holding the current page always opens. Otherwise reopen whichever
