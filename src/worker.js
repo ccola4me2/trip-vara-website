@@ -246,6 +246,9 @@ import {
   handleSaveGoals,
 } from './goals.js';
 import {
+  handleStartDemo, handleConvertAgency, handleRunDemoSweep, sweepDemos,
+} from './demo.js';
+import {
   handleListCommissions,
   handleSetCommissionStatus,
 } from './commissions.js';
@@ -268,6 +271,7 @@ import {
   handleClientRecord,
   handleListClients,
   handleUpdateClient,
+  handleDeleteClient,
   handleCreateClient,
 } from './clients.js';
 import {
@@ -361,6 +365,7 @@ const PUBLIC_PAGES = new Set([
   '/reset-password', '/reset-password.html',
   '/pending', '/pending.html',
   '/join', '/join.html',
+  '/demo', '/demo.html',
 ]);
 
 // Extension-less page paths mapped to the file that serves them.
@@ -388,6 +393,7 @@ const PAGE_FILES = {
   '/app/credits': '/app/credits.html',
   '/app/hotlists': '/app/hotlists.html',
   '/join': '/join.html',
+  '/demo': '/demo.html',
   '/admin/agencies': '/admin/agencies.html',
   '/admin/onboarding': '/admin/onboarding.html',
   '/app/specials': '/app/specials.html',
@@ -489,6 +495,10 @@ export default {
     const job = (name, fn) => ctx.waitUntil(runJob(env, name, fn));
 
     job('purge sessions', () => purgeExpiredSessions(env));
+    // Locks the demos that ran out, and removes the ones locked long enough.
+    // Every guard is inside sweepDemos: it cannot touch a live agency, the
+    // house agency, or one with a portal owner in it.
+    job('demo sweep', () => sweepDemos(env));
     job('purge automation runs', () => purgeOldRuns(env));
 
     // The catalog import is a no-op once the current monthly snapshot is fully
@@ -630,6 +640,7 @@ async function routeApi(request, env, path, method) {
   const itinUseMatch = path.match(/^\/api\/bookings\/([^/]+)\/itinerary\/from-library$/);
   const optionsOpenMatch = path.match(/^\/api\/bookings\/([^/]+)\/options-open$/);
   const libMatch = path.match(/^\/api\/itinerary-library\/([^/]+)$/);
+  const convertMatch = path.match(/^\/api\/agencies\/([^/]+)\/plan$/);
   const houseMatch = path.match(/^\/api\/households\/([^/]+)$/);
   const houseMemberMatch = path.match(/^\/api\/households\/([^/]+)\/members$/);
   const houseDropMatch = path.match(/^\/api\/households\/([^/]+)\/members\/([^/]+)$/);
@@ -1003,6 +1014,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/admin/catalog' && method === 'GET') return handleCatalogStatus(request, env);
   if (path === '/api/admin/catalog' && method === 'POST') return handleCatalogImport(request, env);
   if (clientMatch && method === 'PUT') return handleUpdateClient(request, env, clientMatch[1]);
+  if (clientMatch && method === 'DELETE') return handleDeleteClient(request, env, clientMatch[1]);
   if (path === '/api/commissions' && method === 'GET') return handleListCommissions(request, env);
   // Ordered before the bare statement match so the longer path wins: a regex
   // for /statements/:id also matches /statements/:id/candidates otherwise.
@@ -1043,6 +1055,12 @@ async function routeApi(request, env, path, method) {
   // Agencies: who is on this portal, and what each of them looks like.
   // Whether the portal can reach the agency level at all, and what it could
   // copy. Before the single-segment match, which would otherwise swallow it.
+  // A fourteen day demo, started by somebody with no account at all. Before
+  // the agency routes, none of which a stranger may reach.
+  if (path === '/api/demo' && method === 'POST') return handleStartDemo(request, env);
+  if (path === '/api/demo/sweep' && method === 'POST') return handleRunDemoSweep(request, env);
+  if (convertMatch && method === 'POST') return handleConvertAgency(request, env, convertMatch[1]);
+
   if (path === '/api/agencies' && method === 'GET') return handleListAgencies(request, env);
   if (path === '/api/agencies' && method === 'POST') return handleCreateAgency(request, env);
   if (agencyMatch && method === 'PUT') return handleUpdateAgency(request, env, agencyMatch[1]);

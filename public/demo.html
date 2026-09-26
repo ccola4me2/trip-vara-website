@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Try Trip Vara for 14 days</title>
+<meta name="description" content="Fourteen days with your own clients, in your own agency. No card, nothing shared with anyone else.">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="auth-page">
+  <a class="auth-brand" href="/">
+    <img src="/logo-mark.svg" alt="">
+    <span><b>TripVara</b><small>From first inquiry to welcome home.</small></span>
+  </a>
+  <div class="auth-card">
+    <div class="auth-card-head">
+      <h1>Fourteen days, your own clients</h1>
+      <p>Your own agency inside the portal. Nobody else can see it, and you can
+        put real bookings in.</p>
+    </div>
+    <div class="auth-card-body">
+      <div class="notice notice-error" id="err" hidden></div>
+      <div id="done" hidden>
+        <div class="notice notice-ok">
+          <p style="margin:0 0 .4rem;"><strong>Your demo is ready.</strong></p>
+          <p style="margin:0;">Sign in and start putting your own clients in. We will remind you
+            before the fourteen days are up.</p>
+        </div>
+        <a class="btn btn-primary" href="/login" style="margin-top:1.2rem;">Sign in</a>
+      </div>
+
+      <form id="form" novalidate>
+        <div class="field"><label for="agencyName">Your agency</label>
+          <input id="agencyName" name="agencyName" maxlength="120" required
+            placeholder="Cruises Tours &amp; Travel">
+          <p class="field-hint">This names your own space in the portal. Only you and the
+            people you invite can see what goes in it.</p></div>
+        <div class="field-row">
+          <div class="field"><label for="firstName">First name</label>
+            <input id="firstName" name="firstName" maxlength="80" required></div>
+          <div class="field"><label for="lastName">Last name</label>
+            <input id="lastName" name="lastName" maxlength="80" required></div>
+        </div>
+        <div class="field"><label for="email">Email</label>
+          <input id="email" name="email" type="email" maxlength="254" required></div>
+        <div class="field"><label for="password">Password</label>
+          <input id="password" name="password" type="password" minlength="10" required>
+          <p class="field-hint">At least 10 characters.</p></div>
+        <!-- A bot fills every field it finds. -->
+        <div class="hp" style="position:absolute;left:-9999px;" aria-hidden="true">
+          <label>Company website<input name="company_website" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <button class="btn btn-primary" type="submit" id="go" style="margin-top:1rem;">
+          Start the 14 days</button>
+        <p class="field-hint" style="margin-top:.8rem;">No card. Nothing is sent to your clients
+          unless you send it. If you decide to carry on, everything you entered during the trial
+          stays exactly where it is.</p>
+      </form>
+    </div>
+  </div>
+  <p class="auth-legal">Already have an account? <a href="/login">Sign in</a></p>
+</div>
+
+<script type="module">
+const form = document.getElementById('form');
+const err = document.getElementById('err');
+const go = document.getElementById('go');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!form.reportValidity()) return;
+  err.hidden = true;
+  go.disabled = true;
+  go.textContent = 'Setting it up...';
+  try {
+    const res = await fetch('/api/demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        agencyName: form.elements.agencyName.value,
+        firstName: form.elements.firstName.value,
+        lastName: form.elements.lastName.value,
+        email: form.elements.email.value,
+        password: form.elements.password.value,
+        company_website: form.elements.company_website.value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'That did not go through.');
+    form.hidden = true;
+    document.getElementById('done').hidden = false;
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.hidden = false;
+    go.disabled = false;
+    go.textContent = 'Start the 14 days';
+  }
+});
+</script>
+</body></html>

@@ -9,7 +9,7 @@ import {
   json, badRequest, unauthorized, forbidden,
   cookieHeader, clearCookieHeader, parseCookies,
   hashPassword, verifyPassword, randomToken, sha256Hex,
-  isValidEmail, normalizeEmail, clean, readJson,
+  isValidEmail, normalizeEmail, clean, readJson, now,
 } from './util.js';
 import * as db from './db.js';
 import { getAgencyBySlug, houseAgency } from './brand.js';
@@ -103,7 +103,14 @@ export function isActiveAdvisor(user) {
   return Boolean(user && user.status === 'active');
 }
 
-/** For API handlers: returns { user } or { response } to return immediately. */
+/**
+ * For API handlers: returns { user } or { response } to return immediately.
+ *
+ * The trial check lives here rather than on each handler because every handler
+ * already comes through this door. A demo that expires has to stop working
+ * everywhere at once, and a list of places to remember to check is a list with
+ * one missing.
+ */
 export async function requireUser(request, env) {
   const user = await getCurrentUser(request, env);
   if (!user) return { response: unauthorized() };
@@ -113,7 +120,34 @@ export async function requireUser(request, env) {
   if (user.status !== 'active') {
     return { response: forbidden('This account is not active.') };
   }
+  const over = await trialOver(env, user);
+  if (over) return { response: forbidden(over) };
   return { user };
+}
+
+/**
+ * Whether this user's agency is a demo that has run out.
+ *
+ * Returns the sentence to show them, or null. Best effort on the read: a
+ * database hiccup should not lock a paying agency out of their own portal, and
+ * the sweep will catch a genuinely expired demo either way.
+ */
+export async function trialOver(env, user) {
+  if (!user || !user.agency_id) return null;
+  // The portal's own operator is never locked out of it.
+  if (user.platform_owner) return null;
+  let agency;
+  try {
+    agency = await env.DB.prepare(
+      "SELECT plan, trial_ends_at FROM agencies WHERE id = ? AND plan = 'demo'"
+    ).bind(user.agency_id).first();
+  } catch {
+    return null;
+  }
+  if (!agency || !agency.trial_ends_at) return null;
+  if (agency.trial_ends_at > now()) return null;
+  return 'Your 14 day demo has ended. Everything you entered is still here. '
+    + 'Get in touch and we will switch the account on.';
 }
 
 export async function requireAdmin(request, env) {
@@ -198,6 +232,10 @@ export async function handleLogin(request, env) {
   if (row.status !== 'active') {
     return json({ error: 'This account has been suspended.', status: row.status }, 403);
   }
+  // Said at the door as well as behind it. Letting somebody sign in and then
+  // refusing every screen reads as a broken portal rather than an ended trial.
+  const expired = await trialOver(env, row);
+  if (expired) return json({ error: expired, status: 'trial_ended' }, 403);
 
   const token = randomToken(32);
   await db.createSession(env, row.id, await sha256Hex(token), sessionTtlSeconds(env));
