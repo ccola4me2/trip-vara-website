@@ -276,6 +276,14 @@ function sqlStatements(src) {
 const INTERPOLATED_TABLE = /\b(?:FROM|JOIN|UPDATE|DELETE\s+FROM|INTO)\s+\$\{/i;
 
 const INTERPOLATED_ALLOWED = [
+  ['DELETE FROM ${table} WHERE user_id IN (${marks})',
+    'demo.purgeAgency, which removes an expired demo agency and everything its people '
+    + 'own. This database does not enforce foreign keys, so nothing cascades and the '
+    + 'rows have to be named. The table comes from userOwnedTables(), which reads the '
+    + 'generated schema and keeps only names matching /^[a-z_]+$/, so it can never be '
+    + 'anything a request supplied; the ids in the IN are the agency\'s own users, '
+    + 'selected with platform_owner = 0, and sweepDemos will not hand it a live agency, '
+    + 'the house agency, or one containing somebody who runs the portal'],
   ['UPDATE ${table} SET user_id = ? WHERE booking_id = ? AND user_id = ?',
     'db.reassignBooking, which hands a reservation to another advisor. The table comes '
     + 'from BOOKING_CHILDREN in db.js and nowhere else; the statement names the outgoing '

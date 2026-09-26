@@ -12,6 +12,7 @@
 export const AGENCY_COLUMNS = `
   id, name, slug, address, phone, email, website,
   seller_of_travel, logo_url, brand_color, tagline, join_open,
+  plan, trial_ends_at, locked_at, demo_email, demo_ip_hash,
   created_at, updated_at
 `;
 
