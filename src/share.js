@@ -31,6 +31,10 @@ import { json, badRequest, notFound, clean, cleanText, oneOf, uid, now, sha256He
 import { brandForUser, DEFAULT_BRAND, HEX_COLOR, readableOnWhite } from './brand.js';
 import { currentClient } from './clientauth.js';
 import { requireUser } from './auth.js';
+// Both for the decline, which fires a trigger the way choosing does on the
+// other portal. This file had never needed either.
+import { tenantFor } from './tenant.js';
+import { fireTrigger } from './automations.js';
 import * as db from './db.js';
 import {
   sendTripMessageEmail, sendOptionChosenEmail, sendQuoteDeclinedEmail,
