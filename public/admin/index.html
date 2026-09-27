@@ -299,7 +299,17 @@ async function load() {
 filter.addEventListener('change', load);
 await load();
 if (RUNS_THE_PORTAL) {
-  loadMail();
+  // Probed on load rather than waiting to be asked.
+  //
+  // This card used to render from the Worker's own settings alone and only
+  // called Resend when somebody pressed the button, on the grounds that the
+  // call costs something. What it cost instead: on the other portal the
+  // sending domain was never verified, and for as long as that was true the
+  // card read "key configured: yes", named the address, and looked entirely
+  // well, while not one email had left. A page whose job is to say whether
+  // the portal is still working has to do the asking. The button stays, for
+  // checking again after a DNS change.
+  loadMail(true);
 } else {
   document.getElementById('mail').hidden = true;
   document.getElementById('jobs').hidden = true;
