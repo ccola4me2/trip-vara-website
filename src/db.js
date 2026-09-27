@@ -486,7 +486,7 @@ const BOOKING_COLUMNS = `
   viewed_first_at, viewed_last_at, view_count,
   invoice_no, invoice_issued_at, invoice_notes, personal,
   created_at, updated_at, share_code, shared_at, statement_hash, itinerary_shared, options_open,
-  declined_at, declined_reason
+  declined_at, declined_reason, accepted_at
 `;
 
 // The same columns qualified, for the queries that join users to name the

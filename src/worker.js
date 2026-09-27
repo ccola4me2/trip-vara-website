@@ -59,6 +59,7 @@ import { handleProposals, handleMarkBooked, handleSetDeclined } from './proposal
   handleTripReview,
   handleClientChoose,
   handleClientDecline,
+  handleClientAccept,
   serveTripDocument,
   renderTripManifest,
 } from './share.js';
@@ -1146,6 +1147,12 @@ async function routePage(request, env, path) {
   const tripDecline = path.match(/^\/t\/([^/]+)\/decline$/);
   if (tripDecline && request.method === 'POST') {
     return handleClientDecline(request, env, decodeURIComponent(tripDecline[1]));
+  }
+
+  // And the yes, beside the no for the same reason the no sits beside choosing.
+  const tripAccept = path.match(/^\/t\/([^/]+)\/accept$/);
+  if (tripAccept && request.method === 'POST') {
+    return handleClientAccept(request, env, decodeURIComponent(tripAccept[1]));
   }
   const tripManifest = path.match(/^\/t\/([^/]+)\/app\.webmanifest$/);
   if (tripManifest) {
