@@ -24,6 +24,10 @@ export const DEFAULT_BRAND = {
   tagline: 'From first inquiry to welcome home.',
   logoUrl: null,
   color: '#1b3a5f',
+  // The agency's own site, for the foot of an email. Null rather than the
+  // portal's address: see the footer in email.js for why the portal must not
+  // put its own domain under a message to a client.
+  website: null,
 };
 
 // Six hex digits after a hash, and nothing else. This value is interpolated
@@ -85,6 +89,7 @@ export function brandOf(agency) {
     tagline: agency.tagline || DEFAULT_BRAND.tagline,
     logoUrl: agency.logo_url || null,
     color: readableOnWhite(agency.brand_color) ? agency.brand_color : DEFAULT_BRAND.color,
+    website: agency.website || null,
   };
 }
 
