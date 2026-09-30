@@ -52,6 +52,7 @@ import { handleProposals, handleMarkBooked, handleSetDeclined } from './proposal
   handleShareTrip,
   handleShareDocument,
   handleTripMessages,
+  handleReplyTripMessage,
   handleReadTripMessage,
   renderTripPage,
   handleTripMessage,
@@ -880,6 +881,7 @@ async function routeApi(request, env, path, method) {
   if (shareMatch && method === 'POST') return handleShareTrip(request, env, shareMatch[1]);
   if (clientHubMatch && method === 'POST') return handleShareClient(request, env, clientHubMatch[1]);
   if (tripMsgMatch && method === 'GET') return handleTripMessages(request, env, tripMsgMatch[1]);
+  if (tripMsgMatch && method === 'POST') return handleReplyTripMessage(request, env, tripMsgMatch[1]);
   if (msgReadMatch && method === 'POST') return handleReadTripMessage(request, env, msgReadMatch[1]);
   if (docShareMatch && method === 'POST') return handleShareDocument(request, env, docShareMatch[1]);
 
