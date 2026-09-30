@@ -70,6 +70,11 @@ import {
   handleShareTripPlan, handleDeleteTrip,
 } from './trips.js';
 import { renderPlanPage } from './tripplan.js';
+import {
+  handleTraining,
+  handleTrainingDone,
+  handleTrainingBoard,
+} from './training.js';
 import { handleDuplicates, handleMergeClients } from './merge.js';
 import { renderPortal, handlePortalSignIn } from './portal.js';
 import { handleClientLinkRedeem, handleClientSignOut } from './clientauth.js';
@@ -406,6 +411,7 @@ const PAGE_FILES = {
   '/demo': '/demo.html',
   '/admin/agencies': '/admin/agencies.html',
   '/admin/onboarding': '/admin/onboarding.html',
+  '/admin/training': '/admin/training.html',
   '/app/specials': '/app/specials.html',
   '/app/special': '/app/special.html',
   '/app/goals': '/app/goals.html',
@@ -424,6 +430,8 @@ const PAGE_FILES = {
   '/app/vendor': '/app/vendor.html',
   '/app/group': '/app/group.html',
   '/app/trip': '/app/trip.html',
+  '/app/training': '/app/training.html',
+  '/app/cheatsheet': '/app/cheatsheet.html',
   '/app/cruise-search': '/app/cruise-search.html',
   '/app/form': '/app/form.html',
   '/app/bookings': '/app/reservations.html',
@@ -891,6 +899,10 @@ async function routeApi(request, env, path, method) {
   if (shareMatch && method === 'POST') return handleShareTrip(request, env, shareMatch[1]);
   if (clientHubMatch && method === 'POST') return handleShareClient(request, env, clientHubMatch[1]);
   // Several reservations, one trip, and the one link a client is sent for it.
+  // The course over the manual, and who has got how far through it.
+  if (path === '/api/training' && method === 'GET') return handleTraining(request, env);
+  if (path === '/api/training' && method === 'POST') return handleTrainingDone(request, env);
+  if (path === '/api/admin/training' && method === 'GET') return handleTrainingBoard(request, env);
   if (path === '/api/trips' && method === 'GET') return handleListTrips(request, env);
   if (path === '/api/trips' && method === 'POST') return handleCreateTrip(request, env);
   if (tripPlanShareMatch && method === 'POST') return handleShareTripPlan(request, env, tripPlanShareMatch[1]);

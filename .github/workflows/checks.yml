@@ -186,6 +186,12 @@ jobs:
       - name: The morning digest goes once a day
         run: npm run check:digest
 
+      # The course links into the manual and into pages by name. Both live in
+      # other files, so a renamed section or a moved page would be found by a
+      # brand new advisor on their first morning.
+      - name: Getting started points at things that exist
+        run: npm run check:training
+
       # A reader for a cruise line's proposal is a pile of patterns written from
       # one document, and it breaks when another is added beside it. Nothing
       # shows until somebody uploads a real proposal and a date comes out wrong.

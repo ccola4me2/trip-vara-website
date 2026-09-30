@@ -310,6 +310,8 @@ const NAV = [
   {
     hub: 'Setup', icon: I.gear, items: [
       { href: '/app/settings', label: 'Settings' },
+      { href: '/app/training', label: 'Training' },
+      { href: '/app/cheatsheet', label: 'Cheat sheet' },
       { href: '/app/manual', label: 'How this works' },
     ],
   },
@@ -324,6 +326,7 @@ const ADMIN_NAV = [
   // for you is worse than no nav item, and it puts the operator's own
   // procedures in front of somebody trying the product out.
   { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield, owner: true },
+  { href: '/admin/training', label: 'Training', icon: I.book },
   { href: '/admin/manual', label: 'Running the agency', icon: I.book },
   { href: '/app/', label: 'Back to portal', icon: I.back },
 ];
