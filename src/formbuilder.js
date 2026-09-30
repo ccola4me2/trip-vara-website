@@ -1090,7 +1090,7 @@ export async function handleFormsReport(request, env) {
   // is the rule here. (It used to show the unclaimed to everybody, on the
   // reasoning that hiding them is how a lead goes cold. The owner sees them, so
   // they do not go cold, and "advisors see only their own" has no exception.)
-  const unclaimed = isAdmin(user) && !user.acting_as ? 1 : 0;
+  const unclaimed = isAdmin(user) ? 1 : 0;
   // Seconds. now() is seconds in this codebase and mixing the two has been the
   // most repeated bug in it.
   const since = now() - days * 86400;

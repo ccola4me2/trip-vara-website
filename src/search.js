@@ -36,7 +36,7 @@ export async function handleSearch(request, env) {
   const bookingScope = db.scopeWhere(scope, 'b.user_id');
   const paymentScope = db.scopeWhere(scope, 'p.user_id');
 
-  // Owners only, and while not sitting in somebody's seat.
+  // Owners only.
   //
   // crm_contacts is the mirror of the old CRM: nothing has written to it since
   // that was dropped, and its rows belong to no advisor, only to the agency.
@@ -44,7 +44,7 @@ export async function handleSearch(request, env) {
   // email and phone, including people who were never theirs. The advisor's own
   // clients are found by the group below, which is fenced to their
   // reservations; this one is left for whoever runs the agency.
-  const readsMirror = isAdmin(user) && !user.acting_as;
+  const readsMirror = isAdmin(user);
 
   const [clients, reservations, payments] = await Promise.all([
     readsMirror
