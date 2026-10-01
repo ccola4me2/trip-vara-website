@@ -50,6 +50,8 @@ const OWNED = new Set([
   // by scope and written only through db.writerFor; the public page finds it by
   // share code and every statement under it names the advisor anyway.
   'trips',
+  // Pairs of clients an advisor has decided are two people. Theirs alone.
+  'client_not_duplicates',
   // One row per lesson an advisor has finished. Theirs alone; the owner's board
   // counts them by agency in a statement that names agency_id itself.
   'training_progress',
