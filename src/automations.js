@@ -22,6 +22,7 @@
 import { uid, now, clean, oneOf, PermanentError } from './util.js';
 import { tenantFor } from './tenant.js';
 import { sendAutomationEmail } from './email.js';
+import { isSuppressed } from './suppression.js';
 
 export const TRIGGERS = [
   'form.submitted',
@@ -203,8 +204,23 @@ async function runStep(env, run, step, context) {
     case 'send_email': {
       const to = context.email;
       if (!to) return { status: 'skipped', detail: 'no email address on the contact' };
-      await sendAutomationEmail(env, to, fill(step.subject, context), fill(step.body, context));
-      return { status: 'ok', detail: `emailed ${to}` };
+      // Every email to a client carries its way out, and an automatic one goes to
+      // nobody who has used it. Skipped, not failed: the run carries on to whatever
+      // follows, because opting out of the emails is not opting out of the task the
+      // next step makes for their advisor.
+      const agencyId = run.agency_id || null;
+      if (await isSuppressed(env, agencyId, to)) {
+        return { status: 'skipped', detail: `${to} has unsubscribed` };
+      }
+      let agencyName = '';
+      try {
+        const row = agencyId
+          ? await env.DB.prepare('SELECT name FROM agencies WHERE id = ? LIMIT 1').bind(agencyId).first() : null;
+        agencyName = (row && row.name) || '';
+      } catch (e) { console.error('agency name', e); }
+      await sendAutomationEmail(env, to, fill(step.subject, context), fill(step.body, context),
+        { unsubscribe: { agencyId, agencyName } });
+      return { status: 'ok', detail: `emailed ${to}, with an opt out` };
     }
     // The advisor's own to-do list, not a contact task in a CRM that is gone.
     // This is the one retired action with a real home to move to, and the home

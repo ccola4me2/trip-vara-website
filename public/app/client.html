@@ -537,7 +537,17 @@ function drawContact(d) {
       || c.known_traveler || c.redress || c.gender || c.citizenship
       || c.nickname || c.source;
 
-    box.innerHTML = has
+    const optOut = d.unsubscribed ? `<div class="notice notice-warn" style="margin:0 0 1rem;">
+      <strong>${esc(c.name)} has unsubscribed from our emails.</strong>
+      ${esc(d.unsubscribedAt ? `Recorded ${timeAgo(d.unsubscribedAt)}` : '')}${
+        d.unsubscribedHow ? ` &middot; ${esc(d.unsubscribedHow)}` : ''}.
+      Automatic email is not sent to them, payment reminders included, so ring them about
+      payment dates. Something you send by hand, such as a quote or an invoice, still goes.
+      <button class="btn btn-ghost btn-sm" id="restore-email"
+        style="margin-top:.6rem;">Put them back on the list</button>
+    </div>` : '';
+
+    box.innerHTML = optOut + (has
       ? `<dl class="pairs">
           ${c.nickname ? `<dt>Goes by</dt><dd>${esc(c.nickname)}</dd>` : ''}
           ${c.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></dd>` : ''}
@@ -563,9 +573,20 @@ function drawContact(d) {
               ? `<div class="muted">sent by ${esc(c.referred_by_name)}</div>` : ''}</dd>` : ''}
           ${c.notes ? `<dt>Notes</dt><dd>${esc(c.notes)}</dd>` : ''}
         </dl>`
-      : '<p class="muted" style="margin:0;font-size:.86rem;">No phone or email on file yet.</p>';
+      : '<p class="muted" style="margin:0;font-size:.86rem;">No phone or email on file yet.</p>');
     const edit = document.getElementById('edit-contact');
     if (edit) edit.addEventListener('click', () => { editing = true; drawContact(d); });
+
+    const restore = document.getElementById('restore-email');
+    if (restore) restore.addEventListener('click', async () => {
+      if (!confirm(`Put ${c.email} back on our email list? Do this when they have said `
+        + 'so, not to try again.')) return;
+      restore.disabled = true;
+      try {
+        await api('/api/suppressions/restore', { method: 'POST', body: { email: c.email } });
+        await load();
+      } catch (e) { showError(err, e); restore.disabled = false; }
+    });
     return;
   }
 

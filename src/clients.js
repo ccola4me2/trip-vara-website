@@ -16,6 +16,7 @@ import { tenantFor } from './tenant.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { householdFor } from './households.js';
+import { suppressionFor } from './suppression.js';
 import { SOURCE_KINDS, SOURCE_KIND_IDS } from './attribution.js';
 
 export async function handleListClients(request, env) {
@@ -157,7 +158,8 @@ export async function handleClientRecord(request, env) {
   const tScope = db.scopeWhere(scope, 't.user_id');
   const today = new Date().toISOString().slice(0, 10);
 
-  const [bookings, credits, tasks, household] = await Promise.all([
+  const [bookings, credits, tasks, household, unsubscribed] = await Promise.all([
+
     env.DB.prepare(
       `SELECT b.id, b.client_name, b.supplier, b.product_name, b.product_type, b.destination,
               b.confirmation_number, b.depart_date, b.return_date, b.status,
@@ -186,6 +188,11 @@ export async function handleClientRecord(request, env) {
     // Who else lives there. Best effort: a client record that cannot load its
     // household is still a client record worth reading.
     householdFor(env, client, scope).catch(() => null),
+
+    // Whether they have asked not to be emailed. On the record rather than only inside
+    // the sender, because an advisor who cannot see it will write to them personally
+    // and wonder why they never hear back.
+    suppressionFor(env, user.agency_id, client.email),
   ]);
 
   const rows = bookings.results || [];
@@ -247,6 +254,10 @@ export async function handleClientRecord(request, env) {
       };
     }),
     editable: db.mayWrite(user, client),
+    // Flat rather than a nested row, and always present.
+    unsubscribed: Boolean(unsubscribed),
+    unsubscribedAt: unsubscribed ? unsubscribed.created_at : null,
+    unsubscribedHow: unsubscribed ? (unsubscribed.source || unsubscribed.reason || null) : null,
     // Who else lives there, what the house is worth together, and the address
     // they share. Null when they live alone as far as the portal knows.
     household,

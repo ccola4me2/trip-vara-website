@@ -70,6 +70,7 @@ import {
   handleShareTripPlan, handleDeleteTrip,
 } from './trips.js';
 import { renderPlanPage } from './tripplan.js';
+import { renderUnsubscribe, handleUnsubscribe, handleRestoreSuppression } from './suppression.js';
 import {
   handleTraining,
   handleTrainingDone,
@@ -903,6 +904,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/training' && method === 'GET') return handleTraining(request, env);
   if (path === '/api/training' && method === 'POST') return handleTrainingDone(request, env);
   if (path === '/api/admin/training' && method === 'GET') return handleTrainingBoard(request, env);
+  if (path === '/api/suppressions/restore' && method === 'POST') return handleRestoreSuppression(request, env);
   if (path === '/api/trips' && method === 'GET') return handleListTrips(request, env);
   if (path === '/api/trips' && method === 'POST') return handleCreateTrip(request, env);
   if (tripPlanShareMatch && method === 'POST') return handleShareTripPlan(request, env, tripPlanShareMatch[1]);
@@ -1220,6 +1222,17 @@ async function routePage(request, env, path) {
   // a single trip's page. The code is the credential.
   const hubPage = path.match(/^\/c\/([^/]+)\/?$/);
   if (hubPage) return renderHubPage(request, env, decodeURIComponent(hubPage[1]));
+
+  // The way out of an email. Two steps, not one: a one click link is fired by every
+  // scanner and preview pane between the sender and the reader, so the GET asks and
+  // the POST does it. The List-Unsubscribe-Post header makes a mail app's own button
+  // the POST.
+  const unsub = path.match(/^\/u\/([A-Za-z0-9._-]+)$/);
+  if (unsub) {
+    return request.method === 'POST'
+      ? handleUnsubscribe(env, unsub[1])
+      : renderUnsubscribe(env, unsub[1]);
+  }
 
   // One trip made of several reservations, on the same terms: the code is the credential.
   const planPage = path.match(/^\/i\/([^/]+)\/?$/);
