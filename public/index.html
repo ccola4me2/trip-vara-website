@@ -84,14 +84,59 @@
   .lp-does { padding: 3.8rem 0 1rem; }
   .lp-does h2 {
     font-size: clamp(1.5rem, 3.4vw, 2rem); line-height: 1.2; letter-spacing: -.015em;
-    color: var(--navy-900); margin: 0 0 2.2rem; font-weight: 700;
+    color: var(--navy-900); margin: 0 0 .7rem; font-weight: 700;
     max-width: 32rem; text-wrap: balance;
   }
-  .lp-grid { display: grid; gap: 1.7rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
-  .lp-grid h3 {
-    font-size: 1.02rem; color: var(--navy-800); margin: 0 0 .35rem; font-weight: 700;
+  .lp-does .sub {
+    margin: 0 0 1rem; max-width: 38rem; font-size: 1.02rem; line-height: 1.6;
+    color: var(--ink-500);
   }
-  .lp-grid p { margin: 0; font-size: .93rem; line-height: 1.6; color: var(--ink-500); }
+
+  /* ---------- the chapter index ---------- */
+  /* Six links, because the page below is six chapters and somebody weighing
+     this up arrives wanting to know whether it does the one thing they are
+     short of. Scrolling past forty features to find out is the wrong answer. */
+  .lp-index {
+    display: flex; flex-wrap: wrap; gap: .4rem .5rem;
+    padding: 1.4rem 0 0; border-top: 1px solid var(--navy-100); margin-top: .4rem;
+  }
+  .lp-index a {
+    font-size: .8rem; font-weight: 600; letter-spacing: .01em;
+    color: var(--navy-700); text-decoration: none;
+    padding: .34rem .7rem; border: 1px solid var(--navy-200); border-radius: 999px;
+    background: #fff;
+  }
+  .lp-index a:hover { border-color: var(--coral-400); color: var(--coral-600); }
+
+  /* ---------- the chapters ---------- */
+  /* A rail on the left holding the chapter and what it is for, the features on
+     the right. Not cards: forty bordered boxes read as forty separate objects
+     and the grouping, which is the only thing making a list this long
+     legible, disappears. */
+  .lp-ch { padding: 3rem 0; border-top: 1px solid var(--navy-100); }
+  .lp-ch:first-of-type { border-top: 0; }
+  .lp-ch-in { display: grid; gap: 1.6rem 3rem; grid-template-columns: 15rem 1fr; }
+  .lp-ch-rail { position: sticky; top: 2rem; align-self: start; }
+  .lp-ch-rail .lbl {
+    display: block; font-size: .7rem; font-weight: 700; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--coral-500); margin-bottom: .6rem;
+  }
+  .lp-ch-rail h3 {
+    margin: 0 0 .6rem; font-size: 1.32rem; line-height: 1.2; letter-spacing: -.015em;
+    color: var(--navy-900); font-weight: 700; text-wrap: balance;
+  }
+  .lp-ch-rail p { margin: 0; font-size: .89rem; line-height: 1.55; color: var(--ink-500); }
+
+  .lp-feats {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; gap: 1.5rem 2rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  }
+  .lp-feats li { border-top: 2px solid var(--navy-200); padding-top: .8rem; }
+  .lp-feats b {
+    display: block; font-size: .93rem; color: var(--navy-800); font-weight: 700;
+    margin-bottom: .3rem; line-height: 1.3;
+  }
+  .lp-feats p { margin: 0; font-size: .87rem; line-height: 1.55; color: var(--ink-500); }
 
   /* ---------- the promise ---------- */
   .lp-promise {
@@ -129,6 +174,10 @@
     .lp-brand small { font-size: .68rem; }
     .lp-hero { padding: 2.4rem 0 2.8rem; }
     .lp-band { padding: 2.6rem 0; }
+    .lp-ch { padding: 2.2rem 0; }
+    .lp-ch-in { grid-template-columns: 1fr; gap: 1.2rem; }
+    /* Sticky in one column parks the heading over its own list. */
+    .lp-ch-rail { position: static; }
   }
 </style>
 </head>
@@ -163,6 +212,15 @@
     <p class="lp-note">Your own agency, your own clients, no card. Joining an agency that
       already uses Trip Vara? <a href="/signup">Ask them for access</a> instead.</p>
   </section>
+
+  <nav class="lp-index" aria-label="What is inside">
+    <a href="#selling">Quoting and booking</a>
+    <a href="#money">The money</a>
+    <a href="#book">Your book of business</a>
+    <a href="#day">The working day</a>
+    <a href="#client">What the client sees</a>
+    <a href="#agency">The agency</a>
+  </nav>
 </div>
 
 <section class="lp-band">
@@ -197,36 +255,251 @@
 <div class="lp-wrap">
   <section class="lp-does">
     <h2>Built around the way a trip is actually sold.</h2>
-    <div class="lp-grid">
-      <div>
-        <h3>Every charge knows if it earns</h3>
-        <p>A cruise fare earns and the port taxes do not. A tour is a land package with air bolted
-          on that pays nothing. Price it properly once and the commission checks itself.</p>
+    <p class="sub">Six parts of the job, and what the portal does about each one. None of it
+      is a module you buy separately.</p>
+
+    <div class="lp-ch" id="selling">
+      <div class="lp-ch-in">
+        <div class="lp-ch-rail">
+          <span class="lbl">Quoting and booking</span>
+          <h3>From the first question to the deposit.</h3>
+          <p>Most of this is retyping that somebody else already typed. The portal reads it
+            instead.</p>
+        </div>
+        <ul class="lp-feats">
+          <li><b>Two or three choices on a quote</b>
+            <p>An inside, an oceanview and a balcony on one quote. The portal keeps what you
+              offered as well as what they took.</p></li>
+          <li><b>Proposals out</b>
+            <p>Every quote still unanswered, split by the only thing that matters: waiting on
+              the client, or waiting on you.</p></li>
+          <li><b>Read the confirmation, do not retype it</b>
+            <p>Paste the vendor confirmation and the booking number, ship, dates, cabin, guests
+              and money come off it.</p></li>
+          <li><b>Group proposals, read off the PDF</b>
+            <p>Norwegian, Celebrity, Margaritaville and a general reader pull out the dates, the
+              hold, the tariff and the amenities.</p></li>
+          <li><b>Group space</b>
+            <p>A page that takes names for a departure, cabins counted against what is held, and
+              every enquiry landing on the group.</p></li>
+          <li><b>Cruise search</b>
+            <p>Every sailing in the catalog, searched inside the portal instead of in four
+              supplier sites.</p></li>
+          <li><b>Specials, with a death date</b>
+            <p>What a BDM sent you, what you negotiated, the group rate with three cabins left,
+              and which of them dies on Friday.</p></li>
+          <li><b>What cancelling costs today</b>
+            <p>The penalty tiers off the vendor confirmation, counted against today, so you can
+              answer the question every client asks.</p></li>
+          <li><b>Fill in the gaps</b>
+            <p>The reservations missing a confirmation number or a date that the reminders and
+              the commission both depend on.</p></li>
+          <li><b>Sixteen kinds of thing to sell</b>
+            <p>Cruise, hotel, tour, air, rail, insurance, a visa, a car park. Each priced the way
+              its own vendor pays.</p></li>
+        </ul>
       </div>
-      <div>
-        <h3>Who to call, every Monday</h3>
-        <p>Five lists drawn from records you already keep: gone quiet, money lapsing, just home,
-          birthdays, anniversaries. Emailed to you, so it does not need remembering.</p>
+    </div>
+
+    <div class="lp-ch" id="money">
+      <div class="lp-ch-in">
+        <div class="lp-ch-rail">
+          <span class="lbl">The money</span>
+          <h3>Nothing here is a single field with a tickbox.</h3>
+          <p>Commission was one number and a status. That is why underpayments were invisible
+            and lapsed credits were nobody's job.</p>
+        </div>
+        <ul class="lp-feats">
+          <li><b>Every charge knows if it earns</b>
+            <p>Cruise fare earns. Port taxes, government fees and non-commissionable fare do
+              not. Gratuities and packages depend on the vendor.</p></li>
+          <li><b>Payments due</b>
+            <p>Deposit, part payments and the final balance, on the vendor's real deadline with
+              a reminder a week in front of it.</p></li>
+          <li><b>Commission owed, and aged</b>
+            <p>Who owes you, how much, and how long it has been owed. Three questions an owner
+              asks and none of them used to have an answer.</p></li>
+          <li><b>What the vendor actually paid</b>
+            <p>Reconciled against what was expected, so a short payment, a held bonus or a
+              netted-off chargeback shows up as a figure.</p></li>
+          <li><b>Splits</b>
+            <p>The advisor's standing agreement, or a different share frozen onto one
+              reservation. Set by the agency, never by the advisor.</p></li>
+          <li><b>Payouts</b>
+            <p>What the agency actually paid each advisor, and when. The last step of the money,
+              on the record instead of in a memory.</p></li>
+          <li><b>Credits with an expiry</b>
+            <p>Future cruise deposits, credits and goodwill certificates, with the date they stop
+              being worth anything. The vendor will not ring.</p></li>
+          <li><b>TC and bonus commission</b>
+            <p>Kept in full by the advisor who earned it, with casino deals split like anything
+              else.</p></li>
+          <li><b>Casino and comped sailings</b>
+            <p>A client paying only taxes and fees is not a broken reservation. The commission is
+              still there and still split.</p></li>
+        </ul>
       </div>
-      <div>
-        <h3>The chasing, done for you</h3>
-        <p>Deposits, final payments, documents, the welcome home call. On real supplier deadlines
-          rather than the buffer you set yourself, and never twice in a day.</p>
+    </div>
+
+    <div class="lp-ch" id="book">
+      <div class="lp-ch-in">
+        <div class="lp-ch-rail">
+          <span class="lbl">Your book of business</span>
+          <h3>Including the part of it you are not working.</h3>
+          <p>A list of six hundred clients tells you nothing. The useful question is which
+            twelve of them to ring this week.</p>
+        </div>
+        <ul class="lp-feats">
+          <li><b>Clients</b>
+            <p>One record per person: their birthday, their passport and its expiry, their trips,
+              and where they came from.</p></li>
+          <li><b>Households</b>
+            <p>The fact that two of those rows are married. Put one on a reservation and the rest
+              of the house is offered as travellers.</p></li>
+          <li><b>Two records, one person</b>
+            <p>Robert Smith and Bob Smith merged into one, with everything each of them was
+              carrying kept.</p></li>
+          <li><b>Who to call, every Monday</b>
+            <p>Five lists off records you already keep: gone quiet, money lapsing, just home,
+              birthdays, anniversaries. Emailed, so it needs no remembering.</p></li>
+          <li><b>Leads</b>
+            <p>Everybody who is not a client yet, each with a next step and a date that puts them
+              on your calendar.</p></li>
+          <li><b>Sales opportunities</b>
+            <p>Where every live reservation stands, as a board you work across rather than a
+              column you sort.</p></li>
+          <li><b>Reviews and referrals</b>
+            <p>The portal already knew who came home and has not been rung. Now it asks them, and
+              records who they sent you.</p></li>
+          <li><b>Where clients come from</b>
+            <p>Ten channels, one origin per client, inherited by their reservations. No free text,
+              so Facebook and FB stop being two channels.</p></li>
+          <li><b>Bring your book across</b>
+            <p>Select the rows in whatever you use now and paste them in. Clients and reservations
+              both, because no back office gives you a clean export.</p></li>
+        </ul>
       </div>
-      <div>
-        <h3>A page for your client</h3>
-        <p>What is booked, what they have paid, what falls due next, and the documents you chose
-          to share. One link instead of nine emails.</p>
+    </div>
+
+    <div class="lp-ch" id="day">
+      <div class="lp-ch-in">
+        <div class="lp-ch-rail">
+          <span class="lbl">The working day</span>
+          <h3>What is waiting, where you cannot walk past it.</h3>
+          <p>Everything that needs somebody happens on a day. Until this, each kind was only
+            visible on the screen that owned it.</p>
+        </div>
+        <ul class="lp-feats">
+          <li><b>A dashboard that says what it could not build</b>
+            <p>Panels you pin and reorder, and a named failure instead of a blank space when one
+              of them cannot be worked out.</p></li>
+          <li><b>The month, with everything on it</b>
+            <p>Appointments, tasks, a lead's next step, departures, returns and vendor deadlines.
+              Every reason Thursday is not free.</p></li>
+          <li><b>To do</b>
+            <p>The day's work from every corner of the portal in one list, not five.</p></li>
+          <li><b>Task templates</b>
+            <p>The four things that follow every cruise, written once and hung off a date on the
+              reservation so they land when they matter.</p></li>
+          <li><b>The bell</b>
+            <p>The same list as the morning email, in the portal, for the people who do not read
+              email at eight.</p></li>
+          <li><b>Your phone, with the tab shut</b>
+            <p>A push notification that deliberately carries nothing. It knocks, and the portal is
+              asked what is waiting.</p></li>
+          <li><b>Chat, advisors only</b>
+            <p>No route by which a client reaches any of it. That absence is why you can write
+              "the deposit is wobbling" next to the booking it is about.</p></li>
+          <li><b>One search field</b>
+            <p>Clients, reservations, vendors and leads, grouped. A forward slash from anywhere
+              puts the cursor in it.</p></li>
+          <li><b>Targets with a pace</b>
+            <p>A year's number, and whether today puts you ahead of where you should be or
+              behind it.</p></li>
+        </ul>
       </div>
-      <div>
-        <h3>Suppliers, shared</h3>
-        <p>Rates, desk contacts, booking instructions and payment terms in one directory the whole
-          agency works from, so nobody rebuilds it from memory.</p>
+    </div>
+
+    <div class="lp-ch" id="client">
+      <div class="lp-ch-in">
+        <div class="lp-ch-rail">
+          <span class="lbl">What the client sees</span>
+          <h3>What you chose to share, and nothing you did not.</h3>
+          <p>Their half of this is a page they can look at, which is the difference between
+            answering a question once and answering it every three weeks.</p>
+        </div>
+        <ul class="lp-feats">
+          <li><b>One trip, on a link</b>
+            <p>What is booked, what they have paid, what falls due next, and the documents you
+              chose to share.</p></li>
+          <li><b>Everything you hold for them</b>
+            <p>Eight reservations that are one holiday in Spain, answered as one page in the order
+              it will happen.</p></li>
+          <li><b>The itinerary, day by day</b>
+            <p>The flight at 6:40, the transfer that meets it, which night is the captain's
+              dinner, and the afternoon they should be told is free.</p></li>
+          <li><b>An itinerary library</b>
+            <p>The Palancar Reef snorkelling described once, with the meeting time right, reused
+              instead of retyped in slightly different words.</p></li>
+          <li><b>They can sign in</b>
+            <p>A link cannot tell two people apart. An account can, and taking it off one person
+              leaves the rest of the household alone.</p></li>
+          <li><b>Documents</b>
+            <p>The confirmation, the insurance policy, the air tickets, the visa letter. Held
+              once, so "can you send that again" is a link.</p></li>
+          <li><b>A statement they can read</b>
+            <p>Everything the reservation knows, minus the commission rate, the splits, the
+              passport numbers, the card digits and your own notes.</p></li>
+          <li><b>Your own forms</b>
+            <p>Built here, hosted here, and submitted into your own database as a client rather
+              than as an email you have to retype.</p></li>
+          <li><b>QR codes</b>
+            <p>A square somebody can point a phone at, for a form, a group page or a special, on
+              anything you hand out.</p></li>
+          <li><b>Automations</b>
+            <p>A sequence that can wait days between steps, because where it got to is recorded
+              rather than held in memory.</p></li>
+        </ul>
       </div>
-      <div>
-        <h3>Groups that sell themselves</h3>
-        <p>A page that takes names for a departure, a deal page with a book-by date, and every
-          enquiry landing against the offer that pulled it.</p>
+    </div>
+
+    <div class="lp-ch" id="agency">
+      <div class="lp-ch-in">
+        <div class="lp-ch-rail">
+          <span class="lbl">The agency</span>
+          <h3>More than one advisor, and more than one agency.</h3>
+          <p>Harmless with one advisor, the whole thing with six. Who can see what is decided in
+            one place rather than screen by screen.</p>
+        </div>
+        <ul class="lp-feats">
+          <li><b>Your agency, fenced</b>
+            <p>Every read and every write is bounded by the agency the person is in. Nothing
+              widens by accident, because widening is not the default.</p></li>
+          <li><b>An advisor sees their own commission</b>
+            <p>Their own and nobody else's, including what the agency keeps. Guarded by tests, not
+              by everyone remembering.</p></li>
+          <li><b>Advisors</b>
+            <p>Add them, suspend them, set what each one keeps. The owner can do it, and only
+              inside their own agency.</p></li>
+          <li><b>Your name on the front of it</b>
+            <p>Your agency name, your mark, your colour and your tagline on every page a client
+              of yours opens.</p></li>
+          <li><b>One vendor directory</b>
+            <p>Rates, desk contacts, booking instructions, payment terms and the supplier's own
+              website at the top of the record. Nobody rebuilds it from memory.</p></li>
+          <li><b>Production reports</b>
+            <p>What was sold, by whom, by month and by vendor, out of the book itself rather than
+              a copy of it.</p></li>
+          <li><b>Training</b>
+            <p>The whole portal in the order somebody would learn it, not nine lessons that stop
+              at a first booking.</p></li>
+          <li><b>A manual and a cheat sheet</b>
+            <p>One for the advisor, one for whoever runs the agency, both written for the things
+              a screen cannot tell you.</p></li>
+          <li><b>Join by link</b>
+            <p>Send your advisors one address. They sign up against your agency, and you approve
+              them before they see anything.</p></li>
+        </ul>
       </div>
     </div>
 
