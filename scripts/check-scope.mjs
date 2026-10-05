@@ -97,7 +97,12 @@ const OWNED = new Set([
 // key after the caller has already proved the row is theirs, so adding them
 // would mean a dozen entries in ALLOWED, and a rule that only passes because
 // of its exceptions is the failure this file warns about. Worth doing right.
-const AGENCY_OWNED = new Set(['forms', 'form_submissions']);
+const AGENCY_OWNED = new Set([
+  'forms', 'form_submissions',
+  // A commission check: what a vendor paid the agency in one payment, which can
+  // cover several advisors' reservations, so no one advisor owns it. Owners only.
+  'commission_checks',
+]);
 
 // Carries a user_id, and is not reached through one.
 const EXEMPT = new Map([

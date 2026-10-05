@@ -31,7 +31,7 @@ const STATEMENT_COLUMNS = `
 
 const RECEIPT_COLUMNS = `
   r.id, r.user_id, r.booking_id, r.statement_id, r.amount_cents, r.received_on,
-  r.reference, r.notes, r.kind, r.created_at, r.updated_at
+  r.reference, r.notes, r.kind, r.created_at, r.updated_at, r.check_id, r.payout_on
 `;
 
 // ---------------------------------------------------------------------------
@@ -234,7 +234,7 @@ export async function handleDeleteReceipt(request, env, id) {
  * is not a question anybody was answering, and a status that can only be
  * wrong is worse than one fewer status.
  */
-async function syncCommissionStatus(env, userId, bookingId) {
+export async function syncCommissionStatus(env, userId, bookingId) {
   const booking = await env.DB.prepare(
     'SELECT commission_cents, commission_status FROM bookings WHERE id = ? AND user_id = ?'
   ).bind(bookingId, userId).first();
