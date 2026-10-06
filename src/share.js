@@ -26,7 +26,7 @@
 //     starts an argument. The total and the schedule are what a client needs.
 //   - Passport numbers. Travellers carry them; this shows names.
 
-import { json, badRequest, notFound, clean, cleanText, oneOf, uid, now, sha256Hex, readJson, escapeHtml as esc }
+import { json, badRequest, notFound, clean, cleanText, oneOf, uid, now, sha256Hex, readJson, escapeHtml as esc, usDate }
   from './util.js';
 import { brandForUser, DEFAULT_BRAND, HEX_COLOR, readableOnWhite } from './brand.js';
 import { currentClient } from './clientauth.js';
@@ -51,14 +51,13 @@ export const money = (cents) => ((Number(cents) || 0) / 100).toLocaleString('en-
 
 export function sayDate(iso) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return '';
-  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US',
-    { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  const weekday = new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+  return `${weekday} ${usDate(iso)}`;
 }
 
 export function shortDate(iso) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return '';
-  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US',
-    { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  return usDate(iso);
 }
 
 function nights(from, to) {
