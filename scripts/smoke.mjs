@@ -2401,6 +2401,17 @@ async function main() {
     check(body.includes('Smoke Client') || body.includes('Western Caribbean'),
       'while showing the trip itself');
 
+    // The ten-day chase reminder is ours, not a second payment: the client
+    // sees each hard payment once.
+    {
+      const sched = (await call(advisor, 'GET', `/api/bookings/${bookingId}/record`))
+        .data?.payments || [];
+      const hardFinals = sched.filter((p) => p.kind === 'final' && p.payment_class === 'hard').length;
+      const shown = (body.match(/Final payment/g) || []).length;
+      check(shown <= hardFinals, 'and lists a final payment once, not its internal reminder too',
+        `${shown} shown, ${hardFinals} real`);
+    }
+
     // A portal nobody can find is a portal nobody uses. A trip link is where
     // most clients meet their advisor, and for a fortnight after the sign-in
     // shipped, not one page or message anywhere pointed at it.
