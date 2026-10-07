@@ -310,6 +310,26 @@ async function main() {
   check(rowsAfterMove.find((p) => p.kind === 'deposit')?.due_date === isoDay(5),
     'while the deposit, which nobody moved, stays where it was');
 
+  // The automatic final balance gives way to what has been scheduled since, and
+  // its reminder with it, so the schedule never adds up to more than the trip.
+  {
+    const made = await call(advisor, 'POST', '/api/payments', {
+      bookingId, kind: 'installment', amount: '1000', dueDate: isoDay(30),
+    });
+    const rs = (await call(advisor, 'GET', `/api/bookings/${bookingId}/record`))
+      .data?.payments || [];
+    const fh = rs.find((p) => p.kind === 'final' && p.payment_class === 'hard');
+    const fs = rs.find((p) => p.kind === 'final' && p.payment_class === 'soft');
+    check(fh?.amount_cents === 350000 && fs?.amount_cents === 350000,
+      'a new payment comes off the automatic final balance and its reminder',
+      `${fh?.amount_cents} and ${fs?.amount_cents}`);
+    if (made.data?.payment?.id) await call(advisor, 'DELETE', `/api/payments/${made.data.payment.id}`);
+    const back = (await call(advisor, 'GET', `/api/bookings/${bookingId}/record`))
+      .data?.payments || [];
+    check(back.find((p) => p.kind === 'final' && p.payment_class === 'hard')?.amount_cents === 450000,
+      'and removing it puts the final balance back');
+  }
+
   // The dashboard is the thing an advisor actually looks at, so check the
   // schedule reaches it rather than trusting the write.
   const dash = await call(advisor, 'GET', '/api/dashboard');
