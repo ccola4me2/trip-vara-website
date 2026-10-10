@@ -886,7 +886,7 @@ export function linkify(escaped) {
   );
 }
 
-export async function sendAutomationEmail(env, to, subject, body, { unsubscribe } = {}) {
+export async function sendAutomationEmail(env, to, subject, body, { unsubscribe, replyTo } = {}) {
   // Neither of these improves by waiting five minutes and asking again.
   if (!env.RESEND_API_KEY) {
     throw new PermanentError('Email is not configured: the RESEND_API_KEY secret is not set on the Worker.');
@@ -907,6 +907,8 @@ export async function sendAutomationEmail(env, to, subject, body, { unsubscribe 
     body: JSON.stringify({
       from: env.MAIL_FROM || 'Trip Vara <noreply@tripvaratravel.com>',
       to: [to],
+      // So a client who answers writes to a person and not to noreply@.
+      ...(replyTo ? { reply_to: [replyTo] } : {}),
       ...(parts ? { headers: parts.headers } : {}),
       subject,
       html,
