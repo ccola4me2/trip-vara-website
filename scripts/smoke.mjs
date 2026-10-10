@@ -5924,22 +5924,29 @@ async function main() {
   // The payout run. What is in, what the advisor is owed out of it, and what
   // the agency keeps, which have to add up or a payout cannot be checked
   // against the bank.
-  const payRow = (after.data?.rows || []).find((r) => r.id === stale.data.booking.id);
-  // Read on the advisor's own call, deliberately. What the agency took is
-  // the figure an advisor most wants and the one an agency looks worst for
-  // keeping to itself, so it is on their screen and not only on an owner's.
+  // The agency's half is the agency's figure, so it is read on an owner's call.
+  // An advisor is sent what they keep and nothing about the other half.
+  const ownerAfter = await call(admin, 'GET', '/api/commissions');
+  const payRow = (ownerAfter.data?.rows || []).find((r) => r.id === stale.data.booking.id);
+  const advisorRow = (after.data?.rows || []).find((r) => r.id === stale.data.booking.id);
   check(payRow && typeof payRow.agency_received_cents === 'number',
-    'an advisor sees what the agency took out of their commission',
+    'an owner sees what the agency took out of the commission',
     JSON.stringify(payRow && payRow.agency_received_cents));
+  check(advisorRow && advisorRow.agency_received_cents === undefined
+      && advisorRow.agency_cents === undefined
+      && after.data.totals.agencyReceivedCents === undefined
+      && after.data.totals.owedAgencyCents === undefined,
+    'and an advisor is not sent it',
+    JSON.stringify(advisorRow && [advisorRow.agency_received_cents, advisorRow.agency_cents]));
   check(payRow && payRow.payout_cents + payRow.agency_received_cents === payRow.received_cents,
     'the payout and the agency\'s half add up to the money that arrived',
     JSON.stringify({ payout: payRow?.payout_cents, agency: payRow?.agency_received_cents,
       received: payRow?.received_cents }));
-  check(after.data.totals.payoutCents + after.data.totals.agencyReceivedCents
-    === after.data.totals.paidCents,
+  check(ownerAfter.data.totals.payoutCents + ownerAfter.data.totals.agencyReceivedCents
+    === ownerAfter.data.totals.paidCents,
     'and so do the totals across the page',
-    `${after.data.totals.payoutCents} + ${after.data.totals.agencyReceivedCents} `
-    + `vs ${after.data.totals.paidCents}`);
+    `${ownerAfter.data.totals.payoutCents} + ${ownerAfter.data.totals.agencyReceivedCents} `
+    + `vs ${ownerAfter.data.totals.paidCents}`);
 
   const badStatus = await call(admin, 'POST', '/api/commissions/status',
     { ids: [recent.data.booking.id], status: 'nonsense' });
@@ -6550,9 +6557,12 @@ async function main() {
     || rc.receivedCents > rc.expectedCents,
     'and what is still out is the difference',
     JSON.stringify({ e: rc.expectedCents, r: rc.receivedCents, o: rc.outstandingCents }));
-  check(rc.payoutCents + rc.agencyCents === rc.receivedCents,
+  const rcOwner = (await call(admin, 'GET', `/api/bookings/${bookingId}/record`)).data?.commission || {};
+  check(rcOwner.payoutCents + rcOwner.agencyCents === rcOwner.receivedCents,
     'the payout and the agency\'s half add up to what arrived',
-    `${rc.payoutCents} + ${rc.agencyCents} vs ${rc.receivedCents}`);
+    `${rcOwner.payoutCents} + ${rcOwner.agencyCents} vs ${rcOwner.receivedCents}`);
+  check(rc.agencyCents === undefined && rec.data?.split?.agencyCents === undefined,
+    'and the associate reading it is not sent the agency\'s half');
   check(Array.isArray(rc.receipts), 'with the receipts behind the figure');
   check((rc.kinds || []).length >= 3, 'and the parts a vendor pays it in');
 
@@ -7999,7 +8009,7 @@ async function main() {
   check(agreed.status === 200 && agreed.data?.user?.defaultSplitPct === 50,
     'the owner sets a standing agreement', agreed.data?.user?.defaultSplitPct);
 
-  const onDeal = await call(advisor, 'GET', `/api/bookings/${halfId}/record`);
+  const onDeal = await call(admin, 'GET', `/api/bookings/${halfId}/record`);
   const sp = onDeal.data?.split || {};
   check(sp.pct === 50 && sp.overridden === false,
     'which every trip follows without being touched',
@@ -8029,7 +8039,7 @@ async function main() {
   const ownId = ownTrip.data?.booking?.id;
   if (ownId) cleanup('the advisor\'s own trip', () => dropBooking(ownId));
 
-  const ownRec = await call(advisor, 'GET', `/api/bookings/${ownId}/record`);
+  const ownRec = await call(admin, 'GET', `/api/bookings/${ownId}/record`);
   check(ownRec.data?.split?.pct === 100,
     'an advisor\'s own travel is not split, whatever the agreement says',
     JSON.stringify(ownRec.data?.split?.pct));
@@ -8107,7 +8117,7 @@ async function main() {
       ],
     });
 
-    const rec = await call(advisor, 'GET', `/api/bookings/${tcId}/record`);
+    const rec = await call(admin, 'GET', `/api/bookings/${tcId}/record`);
     const sp2 = rec.data?.split || {};
     check(rec.data?.booking?.commission_cents === 60000,
       'the three parts add up to one commission on the reservation',
