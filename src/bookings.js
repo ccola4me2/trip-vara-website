@@ -512,8 +512,8 @@ export async function handleBookingRecord(request, env, id) {
 
   // What the agency keeps is the agency's figure. An advisor is told what they
   // keep and not the other half, so it is left out of what is sent rather than
-  // hidden by the page. Not while acting as somebody either: that seat is theirs.
-  const ownerView = isAdmin(user) && !user.acting_as;
+  // hidden by the page.
+  const ownerView = isAdmin(user);
   const forReader = (o) => {
     if (ownerView) return o;
     const { agencyCents, ...rest } = o;

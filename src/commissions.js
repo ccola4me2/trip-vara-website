@@ -221,7 +221,7 @@ export async function handleListCommissions(request, env) {
 
   // The agency's side goes only to an owner. For an advisor it is not in the
   // answer at all, so it cannot be read off the page or the network.
-  const ownerView = isAdmin(user) && !user.acting_as;
+  const ownerView = isAdmin(user);
   const payload = {
     rows,
     buckets: BUCKETS,

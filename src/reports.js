@@ -290,7 +290,7 @@ export async function handleProduction(request, env) {
   const paid = byId(paidOut);
   const owed = byId(stillOwed);
   // What the agency keeps is for an owner. An advisor's row carries their own half.
-  if (!(isAdmin(user) && !user.acting_as)) {
+  if (!isAdmin(user)) {
     for (const row of byAdvisor) delete row.agency_share_cents;
   }
   for (const row of byAdvisor) {
