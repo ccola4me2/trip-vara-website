@@ -1351,6 +1351,8 @@ function watchMoneyFields() {
 export async function mountShell({ admin = false } = {}) {
   const { user } = await api('/api/auth/me');
   if (!user) { window.location.href = '/login'; throw new Error('Signed out'); }
+  // An owner not sitting in somebody else's seat. Everybody else has no choice of scope to remember.
+  scopeOwner = user.role === 'admin' && !actingAs ? user.id : null;
 
   const sidebar = document.getElementById('sidebar');
   if (!sidebar) return user;
@@ -1516,13 +1518,35 @@ export function mountScopePicker(host, data, reload) {
     if (e.target.value === 'all') url.searchParams.delete('advisor');
     else url.searchParams.set('advisor', e.target.value);
     history.replaceState(null, '', url);
+    saveScope(e.target.value);
     reload();
   });
 }
 
-/** The advisor query string for the current URL, to pass through to the API. */
+// Whose records an owner is looking at, kept for as long as they stay signed in on this browser so
+// that it follows them from page to page. It used to live only in the address bar, so every new
+// page opened on the whole agency again and an owner working their own book had to pick themselves
+// on each screen. Set by mountShell, which is the first thing every page does.
+let scopeOwner = null;
+const scopeKey = () => (scopeOwner ? `scope-advisor:${scopeOwner}` : null);
+
+function savedScope() {
+  try { const k = scopeKey(); return k ? localStorage.getItem(k) : null; } catch { return null; }
+}
+
+function saveScope(value) {
+  try { const k = scopeKey(); if (k) localStorage.setItem(k, value); } catch { /* it just will not follow them */ }
+}
+
+/**
+ * The advisor query string for the current URL, to pass through to the API.
+ *
+ * The address bar wins, so a link to a colleague's view still shows that. Without one, an owner gets
+ * what they last chose, and failing that their own book. An associate is always just themselves and
+ * the server ignores the value, so nothing is sent for them.
+ */
 export function advisorParam() {
-  const a = new URLSearchParams(location.search).get('advisor');
+  const a = new URLSearchParams(location.search).get('advisor') || (scopeOwner ? (savedScope() || scopeOwner) : '');
   return a ? `advisor=${encodeURIComponent(a)}` : '';
 }
 
