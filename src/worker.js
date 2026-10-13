@@ -261,6 +261,7 @@ import {
   handleSuggestHouseholds,
   handleHouseholdRecord,
 } from './households.js';
+import { handleFileGuests } from './guests.js';
 import {
   handleReadItineraryConfirmation,
   handleListItinerary,
@@ -1062,6 +1063,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/prefs/dashboard' && method === 'DELETE') return handleResetLayout(request, env);
   // Reading a vendor confirmation instead of retyping it.
   if (path === '/api/import/confirmation' && method === 'POST') return handleReadConfirmation(request, env);
+  if (path === '/api/import/guests' && method === 'POST') return handleFileGuests(request, env);
   if (path === '/api/dashboard' && method === 'GET') return handleDashboard(request, env);
   if (path === '/api/month' && method === 'GET') return handleMonth(request, env);
   if (path === '/api/goals' && method === 'GET') return handleGetGoals(request, env);
