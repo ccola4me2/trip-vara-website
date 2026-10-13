@@ -109,7 +109,6 @@ export const COLUMN_ORIGIN = {
   'agencies.locked_at': '0083_demo_agencies.sql',
   'agencies.logo_url': '0050_agencies.sql',
   'agencies.name': '0050_agencies.sql',
-  'agencies.payment_form_url': '0108_payment_form.sql',
   'agencies.payment_form_url': '0098_payment_form.sql',
   'agencies.phone': '0050_agencies.sql',
   'agencies.plan': '0083_demo_agencies.sql',
