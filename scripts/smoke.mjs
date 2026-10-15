@@ -6565,6 +6565,29 @@ async function main() {
     check(noSuchList.status === 400, 'a list nobody defined is refused',
       `status ${noSuchList.status}`);
 
+    // Is the key actually usable, rather than merely present? A key of the
+    // wrong length looks identical in the dashboard, and the first thing that
+    // would notice is a traveller's passport failing to save.
+    const health = await call(admin, 'GET', '/api/admin/health');
+    check(health.status === 200, 'the health page answers', `status ${health.status}`);
+    check(health.data?.protection?.pii?.configured === sealing,
+      'and says whether passports can be encrypted at all',
+      JSON.stringify(health.data?.protection?.pii));
+    if (sealing) {
+      check(health.data?.protection?.pii?.works === true,
+        'proved by sealing a value and opening it again, not by the key existing',
+        JSON.stringify(health.data?.protection?.pii));
+    } else {
+      check(/PII_KEY is not set/.test(health.data?.protection?.pii?.error || ''),
+        'and names the missing secret rather than failing silently',
+        health.data?.protection?.pii?.error);
+    }
+    check(typeof health.data?.protection?.turnstile?.configured === 'boolean',
+      'and whether the public forms are behind Turnstile',
+      JSON.stringify(health.data?.protection?.turnstile));
+    check(!JSON.stringify(health.data?.protection || {}).includes('trip-vara-health-probe'),
+      'the probe value it sealed is not in the response');
+
     // Working the list.
     const worked = await call(advisor, 'PUT', `/api/group-registrations/${patParty.id}`, {
       status: 'contacted', supplierRef: 'GRP-7781',
