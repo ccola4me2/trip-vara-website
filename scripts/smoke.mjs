@@ -6282,6 +6282,148 @@ async function main() {
   check(bookedTwice.status === 400, 'booking the same name twice is refused',
     `status ${bookedTwice.status}`);
 
+  // ------------------------------------------ registering, not enquiring --
+  step('Registering for a group trip');
+  {
+    // The same group, given the things a page has to be able to show: rate
+    // bands with a block size, the supplier's dates, an FAQ, and terms.
+    const dressed = await call(advisor, 'PUT', `/api/groups/${signupGroupId}`, {
+      name: `Parrothead ${stamp}`, groupCode: `ph-${stamp}`, vendor: 'Test Cruise Line',
+      productName: 'Allure', destination: 'Caribbean', departDate: isoDay(200),
+      returnDate: isoDay(207), cabinsHeld: 20, groupType: 'cruise', status: 'open',
+      registrationOpen: true, registrationBlurb: 'Seven nights. Put your name down.',
+      depositDue: isoDay(20), finalPaymentDue: isoDay(120), passportDue: isoDay(150),
+      groupNumber: '04589', agencyFee: '75.50',
+      tripTerms: 'Refundable until the deposit date.', feeTerms: 'Non refundable.',
+      terms: 'I have read the trip terms.',
+      faq: [{ q: 'Is airfare included?', a: 'No, the fare is cruise only.' },
+        { q: '', a: 'dropped because it has no question' }],
+      rates: [
+        { roomType: 'Inside', occupancy: '2', guests: 2, cabins: 4,
+          perGuestCents: 119900, taxesCents: 21400, totalCents: 282600 },
+        { roomType: 'Balcony', occupancy: '2', guests: 2, cabins: 1,
+          perGuestCents: 189900, taxesCents: 21400, totalCents: 422600 },
+      ],
+    });
+    check(dressed.status === 200, 'a group can carry its dates, fee, terms and rate bands',
+      `status ${dressed.status}`);
+    check(dressed.data?.group?.group_number === '04589',
+      'and a supplier number keeps its leading nought', dressed.data?.group?.group_number);
+    check(dressed.data?.group?.agency_fee_cents === 7550,
+      'and the fee is dollars in and cents stored', `${dressed.data?.group?.agency_fee_cents}`);
+    const faq = JSON.parse(dressed.data?.group?.faq_json || '[]');
+    check(faq.length === 1 && faq[0].q === 'Is airfare included?',
+      'a question with no answer is dropped rather than published blank', JSON.stringify(faq));
+
+    const rates = dressed.data?.rates || [];
+    const inside = rates.find((r) => r.room_type === 'Inside');
+    const balcony = rates.find((r) => r.room_type === 'Balcony');
+    check(Boolean(inside && balcony), 'both bands are stored', `${rates.length}`);
+
+    // The landing page, with no session at all.
+    const landing = await call(null, 'GET', `/g/ph-${stamp}`);
+    check(landing.status === 200, 'the trip page is public', `status ${landing.status}`);
+    check(landing.raw.includes('Inside') && landing.raw.includes('Balcony'),
+      'and shows the cabin grades');
+    check(landing.raw.includes('$1,199.00'),
+      'with the price carrying its cents, always');
+    check(landing.raw.includes('4 of 4 left') && landing.raw.includes('1 of 1 left'),
+      'and how many of each are left');
+    check(landing.raw.includes('Is airfare included?'), 'the FAQ is on it');
+    check(landing.raw.includes('Deposit due') && landing.raw.includes('Passports in by'),
+      'and the dates somebody is held to');
+    // The one thing this page must never do.
+    check(!/type="?(card|cc-number)/i.test(landing.raw) && !landing.raw.includes('cardnumber'),
+      'there is no card field anywhere on it');
+
+    const regPage = await call(null, 'GET', `/g/ph-${stamp}/register`);
+    check(regPage.status === 200, 'the registration page is public too',
+      `status ${regPage.status}`);
+    check(regPage.raw.includes('Our fee, per guest') && regPage.raw.includes('$75.50'),
+      'the agency fee is its own line, never folded into the trip cost');
+    check(regPage.raw.includes('Nothing is charged on this page'),
+      'and the page says plainly that it takes no money');
+
+    // Registering properly.
+    const reg = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: inside.id,
+      leadName: `Pat ${stamp}`, leadEmail: `pat-${stamp}@test.dev`, leadPhone: '555-0191',
+      emergencyName: 'Jo Morgan', emergencyPhone: '555-0192', emergencyRelation: 'Sister',
+      agree: true,
+      travellers: [
+        { name: `Pat ${stamp}`, dob: '1979-03-02', email: `pat-${stamp}@test.dev`,
+          passportNumber: 'P9988776', passportExpiry: '2031-08-14', passportCountry: 'US',
+          dietary: 'No shellfish', accessibility: 'Ground floor cabin' },
+        { name: `Alex ${stamp}`, dob: '1981-07-19' },
+      ],
+    });
+    check(reg.status === 200 && reg.data?.ok, 'somebody can register a party of two',
+      `status ${reg.status} ${JSON.stringify(reg.data)}`);
+
+    // Every guard, because this endpoint is open to the internet.
+    const noTerms = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: inside.id, leadName: 'No Tick', leadEmail: `nt-${stamp}@test.dev`,
+      travellers: [{ name: 'No Tick' }],
+    });
+    check(noTerms.status === 400, 'terms that exist have to be ticked',
+      `status ${noTerms.status}`);
+
+    const strangeRate = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: 'not-a-rate-on-this-trip', leadName: 'Poker', leadEmail: `pk-${stamp}@test.dev`,
+      agree: true, travellers: [{ name: 'Poker' }],
+    });
+    check(strangeRate.status === 400, 'a rate id from somewhere else is refused',
+      `status ${strangeRate.status}`);
+
+    const nobody = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: inside.id, leadName: 'Empty', leadEmail: `em-${stamp}@test.dev`,
+      agree: true, travellers: [{ name: '   ' }],
+    });
+    check(nobody.status === 400, 'a party with nobody in it is refused',
+      `status ${nobody.status}`);
+
+    const noWay = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: inside.id, leadName: 'No Email', leadEmail: '', agree: true,
+      travellers: [{ name: 'No Email' }],
+    });
+    check(noWay.status === 400, 'and so is one with no way to answer them',
+      `status ${noWay.status}`);
+
+    const trap = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: inside.id, leadName: 'Bot', leadEmail: `bot-${stamp}@test.dev`,
+      agree: true, company_website: 'spam.example', travellers: [{ name: 'Bot' }],
+    });
+    check(trap.status === 200, 'a bot is thanked rather than told', `status ${trap.status}`);
+
+    // The band with one cabin in it. The first party took it, so the second is
+    // refused by name rather than by a number nobody can act on.
+    const takeLast = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: balcony.id, leadName: `First ${stamp}`, leadEmail: `first-${stamp}@test.dev`,
+      agree: true, travellers: [{ name: `First ${stamp}` }],
+    });
+    check(takeLast.status === 200, 'the last balcony can be taken', `status ${takeLast.status}`);
+
+    const tooLate = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+      rate: balcony.id, leadName: `Second ${stamp}`, leadEmail: `second-${stamp}@test.dev`,
+      agree: true, travellers: [{ name: `Second ${stamp}` }],
+    });
+    check(tooLate.status === 400 && /Balcony/.test(tooLate.data?.error || ''),
+      'and the next party is told which grade has gone', JSON.stringify(tooLate.data));
+
+    const soldOut = await call(null, 'GET', `/g/ph-${stamp}`);
+    check(soldOut.raw.includes('None left'), 'the page says so as well');
+
+    // What the agency sees. Two real registrations and no bots.
+    const seen = await call(advisor, 'GET', `/api/groups/${signupGroupId}`);
+    const theirs = (seen.data?.registrations || [])
+      .filter((r) => (r.email || '').startsWith('pat-') || (r.email || '').startsWith('first-'));
+    check(theirs.length === 2, 'the agency sees both parties and neither bot',
+      `${(seen.data?.registrations || []).length} rows`);
+    const pat = theirs.find((r) => (r.email || '').startsWith('pat-'));
+    check(pat?.party_size === 2, 'the party size is counted from the people named',
+      `${pat?.party_size}`);
+  }
+
   // ------------------------------------------------ the mirrored catalog --
   step('Sailings borrowed from CruiseShoppers');
 

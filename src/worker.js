@@ -284,6 +284,7 @@ import {
 import {
   handleExport, handleExportSummary, handleRunBackup, backupAgencies,
 } from './exportdata.js';
+import { renderRegisterPage, handleRegister } from './grouppage.js';
 import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
   remindTrials, handleRunTrialNotices,
@@ -1330,6 +1331,17 @@ async function routePage(request, env, path) {
     return request.method === 'POST'
       ? handleGroupRegistration(request, env, code)
       : renderGroupPage(request, env, code);
+  }
+
+  // Registering, as opposed to asking. Its own address so somebody can be sent
+  // straight to it once they have decided, and so the short enquiry on the
+  // page above keeps the plain /g/<code> it has always had.
+  const groupRegister = path.match(/^\/g\/([^/]+)\/register\/?$/);
+  if (groupRegister) {
+    const code = decodeURIComponent(groupRegister[1]);
+    return request.method === 'POST'
+      ? handleRegister(request, env, code)
+      : renderRegisterPage(request, env, code);
   }
 
   const joinPage = path.match(/^\/join\/([^/]+)\/?$/);
