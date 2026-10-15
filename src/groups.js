@@ -9,7 +9,7 @@
 // Cabins sold is counted from the reservations pointing at the group rather
 // than stored on it. Two numbers that can disagree eventually will.
 
-import { json, badRequest, notFound, clean, cleanText, cleanDate, oneOf, uid, now, readJson } from './util.js';
+import { json, badRequest, notFound, clean, cleanText, cleanDate, oneOf, toCents, uid, now, readJson } from './util.js';
 import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { pdfRead } from './pdftext.js';
@@ -28,6 +28,8 @@ const COLUMNS = `
   g.group_type, g.registration_open, g.registration_blurb,
   g.proposal_id, g.sailing_id, g.vendor_contact, g.departure_port,
   g.passengers, g.proposal_expires,
+  g.deposit_due, g.final_payment_due, g.passport_due, g.group_number,
+  g.faq_json, g.terms, g.agency_fee_cents, g.fee_terms, g.trip_terms,
   g.created_at, g.updated_at
 `;
 
@@ -79,9 +81,47 @@ function parse(body) {
       departurePort: clean(body.departurePort, 120),
       passengers: Math.max(0, Math.min(Number(body.passengers) || 0, 99999)),
       proposalExpires: cleanDate(body.proposalExpires),
+      // The supplier's dates for the block, which are not any one
+      // reservation's. Deliberately not validated against each other beyond
+      // the obvious: a supplier who wants the balance before the deposit date
+      // has made a mistake, but it is their mistake and the advisor has to be
+      // able to record what they were actually told.
+      depositDue: cleanDate(body.depositDue),
+      finalPaymentDue: cleanDate(body.finalPaymentDue),
+      passportDue: cleanDate(body.passportDue),
+      groupNumber: clean(body.groupNumber, 60),
+      faqJson: faqOf(body.faq),
+      terms: cleanText(body.terms, 4000),
+      // Per person, and the agency's own. Dollars on the wire and cents in the
+      // record, the same as every other money field here: the page sends what
+      // was typed and toCents is the one place that decides what "1,250" means.
+      // Capped at a number that is clearly a typo rather than a fee.
+      agencyFeeCents: Math.max(0, Math.min(toCents(body.agencyFee) || 0, 10000000)),
+      feeTerms: cleanText(body.feeTerms, 1000),
+      tripTerms: cleanText(body.tripTerms, 1000),
     },
   };
 }
+
+/**
+ * The FAQ, as a page would write it.
+ *
+ * Stored as JSON on the group rather than as rows, because it is written and
+ * reordered as a whole and nothing ever asks a question of it. Empty pairs are
+ * dropped rather than saved blank: a form with three empty slots in it is how
+ * an FAQ ends up with three empty questions on the public page.
+ */
+function faqOf(value) {
+  if (!Array.isArray(value)) return null;
+  const pairs = [];
+  for (const item of value.slice(0, 30)) {
+    const q = clean(item && item.q, 200);
+    const a = cleanText(item && item.a, 2000);
+    if (q && a) pairs.push({ q, a });
+  }
+  return pairs.length ? JSON.stringify(pairs) : null;
+}
+
 
 /**
  * The rate grid, replaced wholesale.
@@ -357,14 +397,20 @@ export async function handleCreateGroup(request, env) {
        group_code, depart_date, return_date, option_date, cabins_held, status, notes,
        group_type, registration_open, registration_blurb,
        proposal_id, sailing_id, vendor_contact, departure_port, passengers, proposal_expires,
+       deposit_due, final_payment_due, passport_due, group_number,
+       faq_json, terms, agency_fee_cents, fee_terms, trip_terms,
        created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, user.id, fields.name, fields.vendor, fields.productName, fields.destination,
          fields.groupCode, fields.departDate, fields.returnDate, fields.optionDate,
          fields.cabinsHeld, fields.status, fields.notes,
          fields.groupType, fields.registrationOpen, fields.registrationBlurb,
          fields.proposalId, fields.sailingId, fields.vendorContact, fields.departurePort,
-         fields.passengers, fields.proposalExpires, ts, ts).run();
+         fields.passengers, fields.proposalExpires,
+         fields.depositDue, fields.finalPaymentDue, fields.passportDue, fields.groupNumber,
+         fields.faqJson, fields.terms, fields.agencyFeeCents, fields.feeTerms, fields.tripTerms,
+         ts, ts).run();
   await saveRates(env, id, user.id, raw.rates);
 
   await db.logActivity(env, user.id, 'group.create', `Opened group ${fields.name}`, { id });
@@ -391,13 +437,18 @@ export async function handleUpdateGroup(request, env, id) {
        group_code = ?, depart_date = ?, return_date = ?, option_date = ?,
        cabins_held = ?, status = ?, notes = ?, group_type = ?, registration_open = ?,
        registration_blurb = ?, proposal_id = ?, sailing_id = ?, vendor_contact = ?,
-       departure_port = ?, passengers = ?, proposal_expires = ?, updated_at = ?
+       departure_port = ?, passengers = ?, proposal_expires = ?,
+       deposit_due = ?, final_payment_due = ?, passport_due = ?, group_number = ?,
+       faq_json = ?, terms = ?, agency_fee_cents = ?, fee_terms = ?, trip_terms = ?,
+       updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(fields.name, fields.vendor, fields.productName, fields.destination, fields.groupCode,
          fields.departDate, fields.returnDate, fields.optionDate, fields.cabinsHeld,
          fields.status, fields.notes, fields.groupType, fields.registrationOpen,
          fields.registrationBlurb, fields.proposalId, fields.sailingId, fields.vendorContact,
          fields.departurePort, fields.passengers, fields.proposalExpires,
+         fields.depositDue, fields.finalPaymentDue, fields.passportDue, fields.groupNumber,
+         fields.faqJson, fields.terms, fields.agencyFeeCents, fields.feeTerms, fields.tripTerms,
          now(), id, owner.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Group not found.');
   // Only when the caller mentioned them. A save from the details form does not

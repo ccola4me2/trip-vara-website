@@ -124,6 +124,53 @@
                     <p class="field-hint">The terms and pricing lapse on this date, which is
                       usually well before the cabins do.</p></div>
                 </div>
+                <p class="label" style="margin:1.4rem 0 .5rem;">Dates the travellers are held
+                  to</p>
+                <div class="grid2">
+                  <div class="field"><label for="groupNumber">Group booking number</label>
+                    <input id="groupNumber" name="groupNumber" maxlength="60" placeholder="123456">
+                    <p class="field-hint">The one the supplier issues once the block is real, as
+                      opposed to the proposal number above.</p></div>
+                  <div class="field"><label for="depositDue">Deposit due</label>
+                    <input id="depositDue" name="depositDue" type="date">
+                    <p class="field-hint">The supplier's date for this block, which is not the
+                      deposit date on any one reservation out of it.</p></div>
+                  <div class="field"><label for="finalPaymentDue">Final payment due</label>
+                    <input id="finalPaymentDue" name="finalPaymentDue" type="date"></div>
+                  <div class="field"><label for="passportDue">Passport details due</label>
+                    <input id="passportDue" name="passportDue" type="date">
+                    <p class="field-hint">The one deadline somebody can miss without any money
+                      moving, and so the one nothing else chases.</p></div>
+                </div>
+
+                <p class="label" style="margin:1.4rem 0 .5rem;">What somebody is agreeing to</p>
+                <div class="grid2">
+                  <div class="field"><label for="agencyFee">Your fee, per person</label>
+                    <input id="agencyFee" name="agencyFee" class="money" inputmode="decimal"
+                      placeholder="0.00">
+                    <p class="field-hint">Shown on the registration form as its own total, beside
+                      the trip cost, never rolled into it.</p></div>
+                  <div class="field"><label for="tripTerms">Trip cost: what comes back</label>
+                    <input id="tripTerms" name="tripTerms" maxlength="1000"
+                      placeholder="Refundable until the deposit date, then the supplier's tiers"></div>
+                  <div class="field"><label for="feeTerms">Your fee: what comes back</label>
+                    <input id="feeTerms" name="feeTerms" maxlength="1000"
+                      placeholder="Non refundable"></div>
+                </div>
+                <div class="field"><label for="terms">Terms they tick to accept</label>
+                  <textarea id="terms" name="terms" maxlength="4000" rows="4"></textarea>
+                  <p class="field-hint">Left empty, the registration form asks for no
+                    acknowledgement at all. Anything here has to be ticked before somebody can
+                    register, and the time they did it is kept with their record.</p></div>
+
+                <p class="label" style="margin:1.4rem 0 .5rem;">Questions people ask</p>
+                <div class="field">
+                  <div id="faq-list"></div>
+                  <button class="btn btn-ghost btn-sm" type="button" id="faq-add">Add a question</button>
+                  <p class="field-hint">Shown on the group's own page, in this order. A question
+                    with no answer is dropped rather than published blank.</p>
+                </div>
+
                 <div id="rates-card"></div>
                 <div class="field"><label for="notes">Notes</label>
                   <textarea id="notes" name="notes" maxlength="4000"></textarea></div>
@@ -391,8 +438,74 @@ function fill(g) {
   set('proposalId', g.proposal_id); set('sailingId', g.sailing_id);
   set('vendorContact', g.vendor_contact); set('departurePort', g.departure_port);
   set('passengers', g.passengers || ''); set('proposalExpires', g.proposal_expires);
+  set('groupNumber', g.group_number); set('depositDue', g.deposit_due);
+  set('finalPaymentDue', g.final_payment_due); set('passportDue', g.passport_due);
+  // Cents in the record, dollars in the box. Empty rather than 0.00 when
+  // nothing has been set, so a fee of nothing and a fee nobody has decided on
+  // do not look the same.
+  set('agencyFee', g.agency_fee_cents ? (g.agency_fee_cents / 100).toFixed(2) : '');
+  set('tripTerms', g.trip_terms); set('feeTerms', g.fee_terms); set('terms', g.terms);
+  drawFaq(parseFaq(g.faq_json));
   regForm.elements.registrationOpen.checked = Boolean(g.registration_open);
 }
+
+// ------------------------------------------------------------------ faq --
+
+const faqList = document.getElementById('faq-list');
+
+// Declared before the function that assigns it. fill() runs long after this
+// module is evaluated, so the dead zone was never reachable, but a reader
+// should not have to work that out.
+let faqPairs = [];
+
+function parseFaq(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+/**
+ * The FAQ rows, rebuilt from the array.
+ *
+ * Redrawn wholesale on every change rather than patched, because the only
+ * operations are add and remove and a list of six is not worth the bookkeeping
+ * of keeping the DOM and the array in step by hand.
+ */
+function drawFaq(pairs) {
+  faqPairs = pairs.slice();
+  faqList.innerHTML = faqPairs.map((pair, i) => `
+    <div class="faq-row" style="display:grid;gap:.4rem;margin-bottom:.8rem;
+         padding-bottom:.8rem;border-bottom:1px solid var(--navy-100);">
+      <input class="faq-q" data-i="${i}" maxlength="200" placeholder="The question"
+        value="${esc(pair.q || '')}">
+      <textarea class="faq-a" data-i="${i}" maxlength="2000" rows="2"
+        placeholder="The answer">${esc(pair.a || '')}</textarea>
+      <div><button type="button" class="btn btn-ghost btn-sm faq-drop" data-i="${i}">Remove</button></div>
+    </div>`).join('') || '<p class="muted" style="margin:0 0 .6rem;">No questions yet.</p>';
+}
+
+function readFaq() {
+  const out = [];
+  for (const [i] of faqPairs.entries()) {
+    const q = faqList.querySelector(`.faq-q[data-i="${i}"]`);
+    const a = faqList.querySelector(`.faq-a[data-i="${i}"]`);
+    out.push({ q: q ? q.value : '', a: a ? a.value : '' });
+  }
+  return out;
+}
+
+document.getElementById('faq-add').addEventListener('click', () => {
+  drawFaq([...readFaq(), { q: '', a: '' }]);
+});
+
+faqList.addEventListener('click', (e) => {
+  const drop = e.target.closest('.faq-drop');
+  if (!drop) return;
+  const i = Number(drop.dataset.i);
+  drawFaq(readFaq().filter((_, n) => n !== i));
+});
 
 function renderHeader(g) {
   document.getElementById('title').textContent = g.name;
@@ -590,6 +703,15 @@ function allValues(values) {
     departurePort: form.elements.departurePort.value,
     passengers: form.elements.passengers.value,
     proposalExpires: form.elements.proposalExpires.value,
+    groupNumber: form.elements.groupNumber.value,
+    depositDue: form.elements.depositDue.value,
+    finalPaymentDue: form.elements.finalPaymentDue.value,
+    passportDue: form.elements.passportDue.value,
+    agencyFee: form.elements.agencyFee.value,
+    tripTerms: form.elements.tripTerms.value,
+    feeTerms: form.elements.feeTerms.value,
+    terms: form.elements.terms.value,
+    faq: readFaq(),
   } : {};
   // Only when a proposal was just read. A save that does not mention the grid
   // must leave it alone, or correcting a date would wipe the rates.
