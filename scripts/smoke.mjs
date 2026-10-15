@@ -6443,6 +6443,119 @@ async function main() {
     const soldOut = await call(null, 'GET', `/g/ph-${stamp}`);
     check(soldOut.raw.includes('None left'), 'the page says so as well');
 
+    // ---------------------------------------------- what the agency sees --
+    const roster = await call(advisor, 'GET', `/api/groups/${signupGroupId}/roster`);
+    check(roster.status === 200, 'the agency has a roster for the group',
+      `status ${roster.status}`);
+    const patParty = (roster.data?.registrations || [])
+      .find((r) => (r.email || '').startsWith('pat-'));
+    check(Boolean(patParty), 'with the party that registered on it');
+    check(patParty?.rate_name === 'Inside', 'and which grade they asked for', patParty?.rate_name);
+    check(patParty?.travellers?.length === 2, 'and both people on it',
+      `${patParty?.travellers?.length}`);
+    check(Boolean(patParty?.terms_at), 'and that they agreed the terms, with when');
+
+    const lead = (patParty?.travellers || []).find((t) => t.is_lead);
+    const second = (patParty?.travellers || []).find((t) => !t.is_lead);
+    check(lead?.dietary === 'No shellfish', 'what the lead cannot eat is on the record',
+      lead?.dietary);
+    check(lead?.emergency_name === 'Jo Morgan',
+      'and one emergency contact for the party, on the lead', lead?.emergency_name);
+
+    if (sealing) {
+      // The whole point of masking: an advisor can tell which passport is on
+      // file without the screen handing out the number.
+      check(lead?.hasPassport === true, 'the lead has a passport on file');
+      check(/^\u2022+776$/.test(lead?.passportMasked || ''),
+        'shown as the last three and nothing else', lead?.passportMasked);
+      check(!JSON.stringify(roster.data).includes('P9988776'),
+        'the full number is nowhere in the response');
+      check(lead?.passportExpiry === '2031-08-14',
+        'the expiry comes back in full, because it is what gets checked',
+        lead?.passportExpiry);
+      check(second?.hasPassport === false, 'and the second traveller has none yet');
+      check(patParty?.missingPassport === 1, 'which the roster counts for chasing',
+        `${patParty?.missingPassport}`);
+
+      // Filling one in later, which is what actually happens: the passport is
+      // in a drawer and the cabin is going.
+      const filled = await call(advisor, 'PUT', `/api/group-travellers/${second.id}`, {
+        name: second.name, passportNumber: 'P5544332', passportExpiry: '2032-02-28',
+        passportCountry: 'US', dietary: 'Vegetarian',
+      });
+      check(filled.status === 200, 'an advisor can add a passport that arrived later',
+        `status ${filled.status}`);
+
+      const after = await call(advisor, 'GET', `/api/groups/${signupGroupId}/roster`);
+      const again = (after.data?.registrations || [])
+        .find((r) => r.id === patParty.id)?.travellers?.find((t) => t.id === second.id);
+      check(again?.hasPassport === true && /332$/.test(again?.passportMasked || ''),
+        'and it is sealed and masked like the other one', again?.passportMasked);
+      check(again?.dob === '1981-07-19',
+        'a save that did not mention the date of birth left it alone', again?.dob);
+
+      // The partial-save rule, which this portal has got wrong before.
+      const quiet = await call(advisor, 'PUT', `/api/group-travellers/${second.id}`, {
+        name: second.name, dietary: 'Vegetarian, no nuts',
+      });
+      check(quiet.status === 200, 'a save with no passport box filled in is accepted',
+        `status ${quiet.status}`);
+      const kept = await call(advisor, 'GET', `/api/groups/${signupGroupId}/roster`);
+      const keptT = (kept.data?.registrations || [])
+        .find((r) => r.id === patParty.id)?.travellers?.find((t) => t.id === second.id);
+      check(keptT?.hasPassport === true && keptT?.passportExpiry === '2032-02-28',
+        'and a blank passport box means keep it, never delete it',
+        `${keptT?.hasPassport} ${keptT?.passportExpiry}`);
+      check(keptT?.dietary === 'Vegetarian, no nuts', 'while what did change, changed');
+    }
+
+    // Working the list.
+    const worked = await call(advisor, 'PUT', `/api/group-registrations/${patParty.id}`, {
+      status: 'contacted', supplierRef: 'GRP-7781',
+    });
+    check(worked.status === 200, 'a registration can be marked as worked',
+      `status ${worked.status}`);
+    const nonsense = await call(advisor, 'PUT', `/api/group-registrations/${patParty.id}`, {
+      status: 'invented-status',
+    });
+    check(nonsense.status === 200, 'a status nobody defined falls back rather than erroring',
+      `status ${nonsense.status}`);
+    const back = await call(advisor, 'GET', `/api/groups/${signupGroupId}/roster`);
+    check((back.data?.registrations || []).find((r) => r.id === patParty.id)?.status === 'new',
+      'to new, which is what an unrecognised status means');
+
+    // The fence. An advisor in another agency has no business here, and the
+    // roster is the one screen in this feature that holds a passport.
+    const rivalEmail = `groster-${stamp}@test.dev`;
+    const rivalAgency = await call(admin, 'POST', '/api/agencies',
+      { name: `Roster Fence ${stamp}` });
+    await call(null, 'POST', '/api/auth/signup', {
+      email: rivalEmail, password: 'fence-test-12345',
+      firstName: 'Other', lastName: 'Agency', agency: rivalAgency.data?.agency?.slug,
+    });
+    const rivalList = await call(admin, 'GET', '/api/admin/advisors');
+    const rivalUser = (rivalList.data?.users || []).find((u) => u.email === rivalEmail);
+    await call(admin, 'PUT', `/api/admin/advisors/${rivalUser.id}/status`, { status: 'active' });
+    cleanup('the roster fence advisor', () => call(admin, 'PUT',
+      `/api/admin/advisors/${rivalUser.id}/status`, { status: 'suspended' }));
+    const outsider = jar();
+    await call(outsider, 'POST', '/api/auth/login',
+      { email: rivalEmail, password: 'fence-test-12345' });
+
+    const outsiderRoster = await call(outsider, 'GET', `/api/groups/${signupGroupId}/roster`);
+    check(outsiderRoster.status === 404,
+      'another agency cannot read the roster', `status ${outsiderRoster.status}`);
+    const outsiderEdit = await call(outsider, 'PUT',
+      `/api/group-registrations/${patParty.id}`, { status: 'cancelled' });
+    check(outsiderEdit.status === 404,
+      'and cannot work somebody else\'s registration', `status ${outsiderEdit.status}`);
+    if (lead) {
+      const outsiderTrav = await call(outsider, 'PUT',
+        `/api/group-travellers/${lead.id}`, { name: 'Changed' });
+      check(outsiderTrav.status === 404,
+        'and cannot touch a traveller on it', `status ${outsiderTrav.status}`);
+    }
+
     // What the agency sees. Two real registrations and no bots.
     const seen = await call(advisor, 'GET', `/api/groups/${signupGroupId}`);
     const theirs = (seen.data?.registrations || [])

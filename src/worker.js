@@ -286,6 +286,9 @@ import {
 } from './exportdata.js';
 import { renderRegisterPage, handleRegister } from './grouppage.js';
 import {
+  handleRoster, handleUpdateRegistration, handleUpdateGroupTraveller, handleDeleteRegistration,
+} from './grouproster.js';
+import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
   remindTrials, handleRunTrialNotices,
 } from './demo.js';
@@ -709,6 +712,9 @@ async function routeApi(request, env, path, method) {
   const templateMatch = path.match(/^\/api\/task-templates\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const groupBookMatch = path.match(/^\/api\/groups\/registrations\/([^/]+)\/book$/);
+  const rosterMatch = path.match(/^\/api\/groups\/([^/]+)\/roster$/);
+  const groupRegMatch = path.match(/^\/api\/group-registrations\/([^/]+)$/);
+  const groupTravMatch = path.match(/^\/api\/group-travellers\/([^/]+)$/);
   const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
   const specialMatch = path.match(/^\/api\/specials\/([^/]+)$/);
   const myTplMatch = path.match(/^\/api\/form-templates\/([^/]+)$/);
@@ -1006,6 +1012,11 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/groups/quote' && method === 'POST') return handleParseQuote(request, env);
   if (path === '/api/groups' && method === 'POST') return handleCreateGroup(request, env);
   if (groupBookMatch && method === 'POST') return handleBookRegistration(request, env, groupBookMatch[1]);
+  // Who is coming on a group, and what is still missing from their record.
+  if (rosterMatch && method === 'GET') return handleRoster(request, env, rosterMatch[1]);
+  if (groupRegMatch && method === 'PUT') return handleUpdateRegistration(request, env, groupRegMatch[1]);
+  if (groupRegMatch && method === 'DELETE') return handleDeleteRegistration(request, env, groupRegMatch[1]);
+  if (groupTravMatch && method === 'PUT') return handleUpdateGroupTraveller(request, env, groupTravMatch[1]);
   if (groupMatch && method === 'GET') return handleGetGroup(request, env, groupMatch[1]);
   if (groupMatch && method === 'PUT') return handleUpdateGroup(request, env, groupMatch[1]);
   if (groupMatch && method === 'DELETE') return handleDeleteGroup(request, env, groupMatch[1]);

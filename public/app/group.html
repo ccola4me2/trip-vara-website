@@ -184,8 +184,10 @@
           </section>
 
           <section class="card" id="signups-card" hidden style="margin-top:1.5rem;">
-            <div class="card-head"><h2>Who has put their name down</h2>
+            <div class="card-head"><h2>Who is coming</h2>
               <span class="muted" id="signup-count"></span></div>
+            <div id="roster-stats" class="card-pad" hidden
+              style="display:flex;gap:1.6rem;flex-wrap:wrap;padding-bottom:0;"></div>
             <div id="signups"></div>
           </section>
 
@@ -578,37 +580,127 @@ function renderLink(g, codeShared) {
   });
 }
 
-function renderSignups(rows) {
+// ------------------------------------------------------------- the roster --
+//
+// Loaded separately from the group itself. The roster is the heavy read, with
+// a row per traveller and a decrypt per passport, and the details form above
+// should not wait on it to become editable.
+
+let roster = { registrations: [], statuses: [], counts: {}, canHoldPassports: false };
+
+function passportChip(t) {
+  if (t.hasPassport) {
+    return `<span class="pill pill-good" title="${esc(t.passportMasked)}">Passport on file</span>`;
+  }
+  return '<span class="pill pill-warn">No passport yet</span>';
+}
+
+function travellerLine(t) {
+  const bits = [
+    t.passportExpiry ? `expires ${esc(dateFmt(t.passportExpiry))}` : '',
+    t.dob ? `born ${esc(dateFmt(t.dob))}` : '',
+    t.passport_country ? esc(t.passport_country) : '',
+  ].filter(Boolean).join(' \u00b7 ');
+  const needs = [
+    t.dietary ? `Cannot eat: ${esc(t.dietary)}` : '',
+    t.accessibility ? esc(t.accessibility) : '',
+  ].filter(Boolean).join(' \u00b7 ');
+  return `<div style="display:flex;gap:.7rem;align-items:flex-start;
+       padding:.6rem 0;border-top:1px solid var(--navy-100);">
+    <div style="flex:1;min-width:0;">
+      <span class="name">${esc(t.name)}</span>${t.is_lead ? ' <span class="muted">(lead)</span>' : ''}
+      ${bits ? `<div class="muted">${bits}</div>` : ''}
+      ${needs ? `<div class="muted">${needs}</div>` : ''}
+      ${t.emergency_name ? `<div class="muted">In an emergency: ${esc(t.emergency_name)}${
+  t.emergency_phone ? `, ${esc(t.emergency_phone)}` : ''}${
+  t.emergency_relation ? ` (${esc(t.emergency_relation)})` : ''}</div>` : ''}
+    </div>
+    <div style="text-align:right;white-space:nowrap;">
+      ${passportChip(t)}
+      ${canEdit ? `<button class="btn btn-ghost btn-sm" data-trav="${esc(t.id)}"
+        style="margin-left:.4rem;">Edit</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function partyCard(r) {
+  const when = dateFmt(new Date(r.created_at * 1000).toISOString().slice(0, 10));
+  const chase = r.missingPassport
+    ? `<span class="pill pill-warn">${r.missingPassport} passport${
+      r.missingPassport === 1 ? '' : 's'} outstanding</span>`
+    : '';
+  return `<div class="card" style="margin:0 0 1rem;box-shadow:none;">
+    <div class="card-pad">
+      <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:12rem;">
+          <span class="name" style="font-size:1.02rem;">${esc(r.name)}</span>
+          <div class="muted">${esc(r.email || '')}${r.phone ? ` \u00b7 ${esc(r.phone)}` : ''}</div>
+          <div class="muted">Registered ${esc(when)}${
+  r.rate_name ? ` \u00b7 wants ${esc(r.rate_name)}` : ''}${
+  r.terms_at ? ' \u00b7 agreed the terms' : ''}</div>
+          ${r.notes ? `<div class="muted" style="white-space:normal;">${esc(r.notes)}</div>` : ''}
+        </div>
+        <div style="text-align:right;">
+          ${chase}
+          <div style="margin-top:.5rem;display:flex;gap:.4rem;justify-content:flex-end;">
+            ${canEdit ? `<select class="btn-sm" data-status="${esc(r.id)}"
+              style="padding:.3rem .5rem;">${roster.statuses.map((st) => `<option value="${esc(st)}"${
+  st === r.status ? ' selected' : ''}>${esc(st)}</option>`).join('')}</select>` : ''}
+            ${r.booking_id
+    ? `<a class="btn btn-ghost btn-sm" href="/app/reservation?id=${encodeURIComponent(r.booking_id)}">Booked</a>`
+    : canEdit
+      ? `<button class="btn btn-primary btn-sm" data-book="${esc(r.id)}">Book them</button>`
+      : ''}
+          </div>
+        </div>
+      </div>
+      ${r.travellers.map(travellerLine).join('')}
+      ${r.travellers.length === 0
+    ? '<p class="muted" style="margin:.6rem 0 0;">Nobody named yet. This came in through the short enquiry form.</p>'
+    : ''}
+    </div>
+  </div>`;
+}
+
+function renderRoster() {
   const card = document.getElementById('signups-card');
   const host = document.getElementById('signups');
+  const stats = document.getElementById('roster-stats');
   card.hidden = false;
 
-  const waiting = rows.filter((r) => !r.booking_id).length;
+  const rows = roster.registrations || [];
+  const c = roster.counts || {};
+  // Named, not travelling. A party that came in through the short enquiry form
+  // has a size and no names, so "3 travelling" across five parties would read
+  // as a count of people rather than a count of records that are complete.
   document.getElementById('signup-count').textContent = rows.length
-    ? `${rows.length} name${rows.length === 1 ? '' : 's'}, ${waiting} not yet booked`
+    ? `${c.parties} part${c.parties === 1 ? 'y' : 'ies'}, ${c.people} traveller${
+      c.people === 1 ? '' : 's'} named`
     : '';
 
   if (!rows.length) {
+    stats.hidden = true;
     host.innerHTML = `<div class="empty"><h3>Nobody yet</h3>
       <p>Turn the sign-up page on and share the link. Names arrive here.</p></div>`;
     return;
   }
 
-  host.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Name</th><th>Reach them on</th><th class="num">Party</th>
-      <th>What they said</th><th></th></tr></thead>
-    <tbody>${rows.map((r) => `<tr>
-      <td style="min-width:9rem;"><span class="name">${esc(r.name)}</span>
-        <div class="muted">${esc(dateFmt(new Date(r.created_at * 1000).toISOString().slice(0, 10)))}</div></td>
-      <td class="muted">${esc(r.email || '')}${r.phone ? `<div>${esc(r.phone)}</div>` : ''}</td>
-      <td class="num">${r.party_size || 1}</td>
-      <td class="muted" style="max-width:22rem;white-space:normal;">${esc(r.notes || '')}</td>
-      <td class="num">${r.booking_id
-        ? `<a class="btn btn-ghost btn-sm" href="/app/reservation?id=${encodeURIComponent(r.booking_id)}">Booked</a>`
-        : canEdit
-          ? `<button class="btn btn-primary btn-sm" data-book="${esc(r.id)}">Book them</button>`
-          : '<span class="muted">-</span>'}</td>
-    </tr>`).join('')}</tbody></table></div>`;
+  // The three numbers an advisor is actually working from. Missing passports
+  // first, because it is the only one of them with a deadline nothing else is
+  // chasing.
+  stats.hidden = false;
+  stats.innerHTML = [
+    ['Passports outstanding', c.missingPassport, c.missingPassport ? 'warn' : 'good'],
+    ['Parties registered', c.parties, ''],
+    ['Turned into reservations', c.booked, ''],
+  ].map(([label, value, tone]) => `<div>
+      <div class="muted" style="font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;">${esc(label)}</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--${
+  tone === 'warn' ? 'amber-600' : tone === 'good' ? 'green-600' : 'navy-800'});
+        font-variant-numeric:tabular-nums;">${Number(value) || 0}</div>
+    </div>`).join('');
+
+  host.innerHTML = `<div class="card-pad">${rows.map(partyCard).join('')}</div>`;
 
   host.querySelectorAll('[data-book]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -625,7 +717,83 @@ function renderSignups(rows) {
       }
     });
   });
+
+  host.querySelectorAll('[data-status]').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const row = rows.find((r) => r.id === sel.dataset.status);
+      try {
+        await api(`/api/group-registrations/${encodeURIComponent(sel.dataset.status)}`,
+          { method: 'PUT', body: { status: sel.value, supplierRef: row?.supplier_ref, notes: row?.notes } });
+        if (row) row.status = sel.value;
+      } catch (err) {
+        showError(document.getElementById('err'), err);
+      }
+    });
+  });
+
+  host.querySelectorAll('[data-trav]').forEach((btn) => {
+    btn.addEventListener('click', () => openTraveller(btn.dataset.trav));
+  });
 }
+
+async function loadRoster() {
+  if (!groupId) return;
+  try {
+    roster = await api(`/api/groups/${encodeURIComponent(groupId)}/roster`);
+    renderRoster();
+  } catch (err) {
+    showError(document.getElementById('err'), err);
+  }
+}
+
+// ---------------------------------------------------- one traveller's record --
+
+const travDlg = document.getElementById('trav-dlg');
+const travForm = document.getElementById('trav-form');
+const travErr = document.getElementById('trav-err');
+let editingTraveller = null;
+
+function openTraveller(id) {
+  const party = roster.registrations.find((r) => r.travellers.some((t) => t.id === id));
+  const t = party && party.travellers.find((x) => x.id === id);
+  if (!t) return;
+  editingTraveller = t;
+  travErr.hidden = true;
+  document.getElementById('trav-title').textContent = t.name;
+  const set = (n, v) => { travForm.elements[n].value = v ?? ''; };
+  set('name', t.name); set('email', t.email); set('dob', t.dob);
+  set('passportNumber', ''); set('passportExpiry', t.passportExpiry);
+  set('passportCountry', t.passport_country);
+  set('dietary', t.dietary); set('accessibility', t.accessibility);
+  set('emergencyName', t.emergency_name); set('emergencyPhone', t.emergency_phone);
+  set('emergencyRelation', t.emergency_relation);
+
+  // The passport box is deliberately empty even when one is on file, and the
+  // hint says what blank means. Prefilling it with a mask would save the mask.
+  document.getElementById('trav-passport-hint').textContent = t.hasPassport
+    ? `On file as ${t.passportMasked}. Leave blank to keep it.`
+    : 'Nothing on file yet.';
+  document.getElementById('trav-passport-fields').hidden = !roster.canHoldPassports;
+  travDlg.showModal();
+}
+
+document.getElementById('trav-cancel').addEventListener('click', () => travDlg.close());
+
+travForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!editingTraveller) return;
+  travErr.hidden = true;
+  const values = Object.fromEntries(new FormData(travForm).entries());
+  try {
+    await api(`/api/group-travellers/${encodeURIComponent(editingTraveller.id)}`,
+      { method: 'PUT', body: values });
+    travDlg.close();
+    await loadRoster();
+  } catch (err) {
+    travErr.textContent = err.message;
+    travErr.hidden = false;
+  }
+});
 
 function renderBookings(rows) {
   const card = document.getElementById('bookings-card');
@@ -665,7 +833,9 @@ async function load() {
     drawRates(d.rates);
     renderHeader(group);
     renderLink(group, d.codeShared);
-    renderSignups(d.registrations);
+    // Not awaited. The roster decrypts a passport per traveller and the
+    // details form above should be editable before that finishes.
+    loadRoster();
     renderBookings(d.bookings);
     deleteBtn.hidden = !canEdit;
 
@@ -799,4 +969,49 @@ deleteBtn.addEventListener('click', async () => {
 
 await load();
 </script>
+<dialog id="trav-dlg">
+  <form id="trav-form" method="dialog">
+    <div class="card-head"><h2 id="trav-title">Traveller</h2></div>
+    <div class="card-pad">
+      <div class="notice notice-error" id="trav-err" hidden></div>
+      <div class="field"><label for="trav-name">Name, as it is on the passport</label>
+        <input id="trav-name" name="name" maxlength="120" required></div>
+      <div class="grid2">
+        <div class="field"><label for="trav-dob">Date of birth</label>
+          <input id="trav-dob" name="dob" type="date"></div>
+        <div class="field"><label for="trav-email">Email</label>
+          <input id="trav-email" name="email" type="email" maxlength="254"></div>
+      </div>
+      <div id="trav-passport-fields">
+        <div class="grid2">
+          <div class="field"><label for="trav-passport">Passport number</label>
+            <input id="trav-passport" name="passportNumber" maxlength="40" autocomplete="off">
+            <p class="field-hint" id="trav-passport-hint">Leave blank to keep what is on file.</p></div>
+          <div class="field"><label for="trav-expiry">Passport expires</label>
+            <input id="trav-expiry" name="passportExpiry" type="date"></div>
+          <div class="field"><label for="trav-country">Country of issue</label>
+            <input id="trav-country" name="passportCountry" maxlength="60"></div>
+        </div>
+      </div>
+      <div class="field"><label for="trav-diet">Anything they cannot eat</label>
+        <input id="trav-diet" name="dietary" maxlength="300"></div>
+      <div class="field"><label for="trav-access">Anything that would make the trip easier</label>
+        <input id="trav-access" name="accessibility" maxlength="300"></div>
+      <div class="grid2">
+        <div class="field"><label for="trav-em-name">Emergency contact</label>
+          <input id="trav-em-name" name="emergencyName" maxlength="120"></div>
+        <div class="field"><label for="trav-em-phone">Their phone</label>
+          <input id="trav-em-phone" name="emergencyPhone" type="tel" maxlength="40"></div>
+        <div class="field"><label for="trav-em-rel">How they know them</label>
+          <input id="trav-em-rel" name="emergencyRelation" maxlength="60"></div>
+      </div>
+    </div>
+    <div class="card-foot">
+      <button class="btn btn-ghost" type="button" id="trav-cancel">Cancel</button>
+      <span style="flex:1;"></span>
+      <button class="btn btn-primary" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
 </body></html>

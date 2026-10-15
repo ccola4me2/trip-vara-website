@@ -609,6 +609,10 @@ const WRITABLE = new Set([
   // The book behind it: the people, the households they sit in, the groups
   // they travel with, and the money owed either way.
   'clients', 'households', 'travel_groups', 'group_registrations',
+  // The people named on a group registration. Theirs by the same rule as the
+  // registration above: an owner may work one of their agency's groups, which
+  // means filling in a passport that arrived by email after the fact.
+  'group_travellers',
   'client_credits', 'commission_statements', 'commission_receipts',
   // The work: a checklist item under a task, the deals an advisor publishes,
   // the enquiries those pull, a saved list and a mailing.
