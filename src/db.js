@@ -2251,7 +2251,11 @@ export const PAYMENT_COLUMNS = `
   p.id, p.booking_id, p.user_id, p.kind, p.payment_class, p.amount_cents,
   p.due_date, p.paid_date, p.method, p.reference, p.notes, p.created_at, p.updated_at,
   p.reminded_at, p.reminder_count, p.auto_lead_sent,
-  p.payment_type, p.paid_by, p.credit_id, p.card_last4, p.from_booking
+  p.payment_type, p.paid_by, p.credit_id, p.card_last4, p.from_booking,
+  -- Both null on every row today. Selected all the same, because a column the
+  -- table has and the code never reads comes back undefined silently, which is
+  -- what check-columns exists to stop. See 0101_group_payment_tracking.sql.
+  p.registration_id, p.owed_to
 `;
 
 export async function listPayments(env, scope,
