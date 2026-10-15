@@ -977,6 +977,24 @@ export const BOOKING_OWNED = BOOKING_CHILDREN.filter((t) => t !== 'client_credit
  * kilobytes nobody can reach, and only the first is visible to anybody.
  */
 export async function deleteBooking(env, id, userId) {
+  // A grandchild, and the only one.
+  //
+  // group_registrations is in the list below, so a reservation made from a
+  // group sign-up takes that sign-up with it. The people named on that sign-up
+  // hang off the registration rather than off the booking, so they are not in
+  // the list and nothing else would ever reach them: the registration would go
+  // and leave rows behind holding sealed passports that no screen can read and
+  // no delete can find.
+  //
+  // Done first, while the registration ids are still there to join on. Best
+  // effort like the batch below, for the same reason.
+  await env.DB.prepare(
+    `DELETE FROM group_travellers
+      WHERE user_id = ? AND registration_id IN
+        (SELECT r.id FROM group_registrations r WHERE r.booking_id = ? AND r.user_id = ?)`
+  ).bind(userId, id, userId).run()
+    .catch((e) => { console.error('delete group travellers', e); });
+
   const writes = BOOKING_OWNED.map((table) => env.DB.prepare(
     `DELETE FROM ${table} WHERE booking_id = ? AND user_id = ?`
   ).bind(id, userId));
@@ -2302,14 +2320,19 @@ export async function createPayment(env, userId, f) {
     `INSERT INTO booking_payments
        (id, booking_id, user_id, kind, payment_class, amount_cents, due_date,
         paid_date, method, reference, notes, payment_type, paid_by, credit_id,
-        card_last4, from_booking, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        card_last4, from_booking, registration_id, owed_to, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, f.bookingId, userId, f.kind, f.paymentClass || 'hard', f.amountCents,
          f.dueDate, f.paidDate, f.method || null, f.reference || null,
          f.notes || null, f.paymentType || null, f.paidBy || null, f.creditId || null,
          // Whether this row is a copy of a date on the reservation, and so
          // whether it moves when that date moves. Only the generator sets it.
-         f.cardLast4 || null, f.fromBooking ? 1 : 0, ts, ts).run();
+         f.cardLast4 || null, f.fromBooking ? 1 : 0,
+         // Which group sign-up this came from, and who is actually owed it.
+         // Both null for every ordinary reservation, which is every one that
+         // did not start on a group page. owed_to null is read as the
+         // supplier, because that is what a payment here has always meant.
+         f.registrationId || null, f.owedTo || null, ts, ts).run();
   return getPayment(env, id, userId);
 }
 

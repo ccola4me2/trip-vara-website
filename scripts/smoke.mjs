@@ -6293,7 +6293,7 @@ async function main() {
       returnDate: isoDay(207), cabinsHeld: 20, groupType: 'cruise', status: 'open',
       registrationOpen: true, registrationBlurb: 'Seven nights. Put your name down.',
       depositDue: isoDay(20), finalPaymentDue: isoDay(120), passportDue: isoDay(150),
-      groupNumber: '04589', agencyFee: '75.50',
+      depositPerGuest: '100.00', groupNumber: '04589', agencyFee: '75.50',
       tripTerms: 'Refundable until the deposit date.', feeTerms: 'Non refundable.',
       terms: 'I have read the trip terms.',
       faq: [{ q: 'Is airfare included?', a: 'No, the fare is cruise only.' },
@@ -6311,6 +6311,9 @@ async function main() {
       'and a supplier number keeps its leading nought', dressed.data?.group?.group_number);
     check(dressed.data?.group?.agency_fee_cents === 7550,
       'and the fee is dollars in and cents stored', `${dressed.data?.group?.agency_fee_cents}`);
+    check(dressed.data?.group?.deposit_per_guest_cents === 10000,
+      'and so is the per guest deposit, which the schedule needs an amount for',
+      `${dressed.data?.group?.deposit_per_guest_cents}`);
     const faq = JSON.parse(dressed.data?.group?.faq_json || '[]');
     check(faq.length === 1 && faq[0].q === 'Is airfare included?',
       'a question with no answer is dropped rather than published blank', JSON.stringify(faq));
@@ -6603,6 +6606,100 @@ async function main() {
     check((back.data?.registrations || []).find((r) => r.id === patParty.id)?.status === 'new',
       'to new, which is what an unrecognised status means');
 
+    // ------------------------------------ a sign-up becomes money owed --
+    //
+    // The whole point of Phase 2: booking a registration has to carry the
+    // price, the dates and the fee across, or the advisor retypes all of it
+    // and the schedule that chases the money never exists.
+    const booked = await call(advisor, 'POST',
+      `/api/groups/registrations/${patParty.id}/book`);
+    check(booked.status === 200 && booked.data?.bookingId,
+      'a registration becomes a reservation', `status ${booked.status}`);
+    const groupBookingId = booked.data?.bookingId;
+
+    // One request for the whole reservation. /api/bookings/:id answers with
+    // the row alone; the record endpoint is what the screen reads, and it is
+    // the only place pricing, travellers and the schedule come back together.
+    const made = await call(advisor, 'GET', `/api/bookings/${groupBookingId}/record`);
+    const b = made.data?.booking;
+    // Inside at 1199.00 per guest plus 214.00 taxes, two people named.
+    check(b?.gross_cents === (119900 + 21400) * 2,
+      'the cabin is priced from the band they picked, per guest named',
+      `${b?.gross_cents}`);
+    check(b?.travellers === 2, 'for the people on the registration, not the party size typed',
+      `${b?.travellers}`);
+    check(b?.cabin_category === 'Inside', 'and it remembers which grade', b?.cabin_category);
+    check(b?.deposit_due === isoDay(20) && b?.final_payment_due === isoDay(120),
+      'the supplier dates come off the group', `${b?.deposit_due} / ${b?.final_payment_due}`);
+
+    const fare = (made.data?.pricing || []).find((l) => l.kind === 'fare');
+    const taxes = (made.data?.pricing || []).find((l) => l.kind === 'taxes');
+    check(fare?.amount_cents === 119900 * 2 && fare?.commissionable === 1,
+      'the fare is a line of its own and it earns', JSON.stringify(fare));
+    check(taxes?.amount_cents === 21400 * 2 && taxes?.commissionable === 0,
+      'the taxes are a line of their own and they do not', JSON.stringify(taxes));
+
+    const rows = made.data?.payments || [];
+    const deposit = rows.find((x) => x.kind === 'deposit');
+    const finalHard = rows.find((x) => x.kind === 'final' && x.payment_class === 'hard');
+    const finalSoft = rows.find((x) => x.kind === 'final' && x.payment_class === 'soft');
+    check(deposit?.amount_cents === 10000 * 2,
+      'the deposit is the group amount times the people, not a guess',
+      `${deposit?.amount_cents}`);
+    check(deposit?.owed_to === 'supplier', 'and it is owed to the supplier', deposit?.owed_to);
+    check(deposit?.registration_id === patParty.id,
+      'and it names the sign-up it came from', deposit?.registration_id);
+    check(Boolean(finalHard) && Boolean(finalSoft),
+      'the balance has the vendor deadline and the reminder in front of it');
+    check(finalSoft?.due_date < finalHard?.due_date,
+      'with the reminder first', `${finalSoft?.due_date} then ${finalHard?.due_date}`);
+
+    // The fee, which is the half that is not the supplier's money.
+    const fee = rows.find((x) => x.owed_to === 'agency');
+    check(fee?.amount_cents === 7550 * 2,
+      'the agency fee is its own line, per guest', `${fee?.amount_cents}`);
+    check(fee?.registration_id === patParty.id, 'and it names the sign-up too');
+
+    // Hard rows only, like every other total here: the soft row is a reminder
+    // about the same money, not a second amount owed.
+    const supplierHard = rows.filter((x) => x.payment_class === 'hard'
+      && x.owed_to !== 'agency').reduce((n, x) => n + x.amount_cents, 0);
+    check(supplierHard === b.gross_cents,
+      'the supplier schedule adds up to the trip, with nothing counted twice',
+      `${supplierHard} vs ${b.gross_cents}`);
+
+    // And the roster says so without anybody opening the reservation.
+    const withMoney = await call(advisor, 'GET', `/api/groups/${signupGroupId}/roster`);
+    const paid = (withMoney.data?.registrations || []).find((r) => r.id === patParty.id);
+    check(paid?.money?.supplierOutstanding === b.gross_cents,
+      'the roster shows what the supplier is still waiting for',
+      `${paid?.money?.supplierOutstanding}`);
+    check(paid?.money?.agencyOutstanding === 7550 * 2,
+      'and what the agency is, separately, never added together',
+      `${paid?.money?.agencyOutstanding}`);
+    check(withMoney.data?.counts?.supplierDue === b.gross_cents,
+      'and the block totals them', `${withMoney.data?.counts?.supplierDue}`);
+
+    // Booking it twice would double the money.
+    const twice = await call(advisor, 'POST',
+      `/api/groups/registrations/${patParty.id}/book`);
+    check(twice.status === 400, 'booking the same party twice is refused',
+      `status ${twice.status}`);
+
+    // The travellers cross by name, and their passports deliberately do not:
+    // `travellers` is not an encrypted table.
+    const names = (made.data?.travellers || []).map((t) => t.name).sort();
+    check(names.length === 2, 'both people are on the reservation', JSON.stringify(names));
+    check((made.data?.travellers || []).filter((t) => t.is_lead).length === 1,
+      'one of them is the lead');
+    if (sealing) {
+      check(!JSON.stringify(made.data?.travellers || []).includes('P9988776'),
+        'and no passport was copied into the unencrypted table');
+      check(!(made.data?.travellers || []).some((t) => t.dob),
+        'nor a date of birth, for the same reason');
+    }
+
+
     // The fence. An advisor in another agency has no business here, and the
     // roster is the one screen in this feature that holds a passport.
     const rivalEmail = `groster-${stamp}@test.dev`;
@@ -6648,6 +6745,29 @@ async function main() {
     const pat = theirs.find((r) => (r.email || '').startsWith('pat-'));
     check(pat?.party_size === 2, 'the party size is counted from the people named',
       `${pat?.party_size}`);
+
+    // ------------------------------------------- and taking it away again --
+    //
+    // Last, after every other assertion, for two reasons. The dashboard's
+    // quote panel holds twelve rows, and a reservation left sitting in the
+    // quoted state pushed the one a later section asserts on straight off it.
+    // And deleting it is the case worth testing: group_registrations hangs off
+    // the booking, so the sign-up goes with the reservation, and the people
+    // named on that sign-up hang off the registration rather than the booking.
+    // Nothing would have reached them.
+    await dropBooking(groupBookingId);
+
+    const after = await call(advisor, 'GET', `/api/groups/${signupGroupId}/roster`);
+    const left = after.data?.registrations || [];
+    check(!left.some((r) => r.id === patParty.id),
+      'deleting the reservation takes the sign-up it came from with it');
+    check(left.every((r) => r.travellers.every((t) => t.registration_id === r.id)),
+      'and leaves nobody pointing at a sign-up that has gone');
+    check(after.data?.counts?.people === left.reduce((n, r) => n + r.travellers.length, 0),
+      'the headcount matches the people still there',
+      `${after.data?.counts?.people}`);
+    check(after.data?.counts?.supplierDue === 0,
+      'and the money goes with it', `${after.data?.counts?.supplierDue}`);
   }
 
   // ------------------------------------------------ the mirrored catalog --

@@ -63,6 +63,42 @@ export async function handleRoster(request, env, groupId) {
       ORDER BY t.is_lead DESC, t.created_at ASC`
   ).bind(groupId, ...tScoped.binds).all().catch(() => ({ results: [] }));
 
+  // The money, per party.
+  //
+  // Hard rows only, which is the rule everywhere in this portal: a soft row is
+  // the advisor's own reminder to chase the same amount, not a second amount
+  // owed. Counting both would double every balance.
+  //
+  // owed_to splits it in two because they are two different questions. What
+  // the supplier is waiting for decides whether a cabin survives; what the
+  // agency is waiting for is the agency's own invoice. A single "outstanding"
+  // number answers neither.
+  const pScoped = db.scopeWhere(scope, 'p.user_id');
+  const { results: money } = await env.DB.prepare(
+    `SELECT p.registration_id, COALESCE(p.owed_to, 'supplier') AS owed_to,
+            SUM(p.amount_cents) AS due_cents,
+            SUM(CASE WHEN p.paid_date IS NOT NULL THEN p.amount_cents ELSE 0 END) AS paid_cents,
+            MIN(CASE WHEN p.paid_date IS NULL THEN p.due_date END) AS next_due
+       FROM booking_payments p
+      WHERE p.registration_id IS NOT NULL AND p.payment_class = 'hard' AND ${pScoped.sql}
+      GROUP BY p.registration_id, COALESCE(p.owed_to, 'supplier')`
+  ).bind(...pScoped.binds).all().catch(() => ({ results: [] }));
+
+  const byMoney = new Map();
+  for (const row of money || []) {
+    if (!byMoney.has(row.registration_id)) {
+      byMoney.set(row.registration_id, {
+        supplier: { due: 0, paid: 0, nextDue: null },
+        agency: { due: 0, paid: 0, nextDue: null },
+      });
+    }
+    const side = row.owed_to === 'agency' ? 'agency' : 'supplier';
+    const bucket = byMoney.get(row.registration_id)[side];
+    bucket.due = Number(row.due_cents) || 0;
+    bucket.paid = Number(row.paid_cents) || 0;
+    bucket.nextDue = row.next_due || null;
+  }
+
   const byReg = new Map();
   for (const t of travellers || []) {
     if (!byReg.has(t.registration_id)) byReg.set(t.registration_id, []);
@@ -71,9 +107,18 @@ export async function handleRoster(request, env, groupId) {
 
   const rows = (regs || []).map((r) => {
     const party = byReg.get(r.id) || [];
+    const owed = byMoney.get(r.id) || {
+      supplier: { due: 0, paid: 0, nextDue: null },
+      agency: { due: 0, paid: 0, nextDue: null },
+    };
     return {
       ...r,
       travellers: party,
+      money: {
+        ...owed,
+        supplierOutstanding: owed.supplier.due - owed.supplier.paid,
+        agencyOutstanding: owed.agency.due - owed.agency.paid,
+      },
       // What an advisor is chasing. Counted here rather than on the page so
       // the number and the list cannot disagree.
       missingPassport: party.filter((t) => !t.hasPassport).length,
@@ -97,6 +142,13 @@ export async function handleRoster(request, env, groupId) {
       people: rows.reduce((n, r) => n + r.travellers.length, 0),
       missingPassport: rows.reduce((n, r) => n + r.missingPassport, 0),
       booked: rows.filter((r) => r.booking_id).length,
+      // The block's money, which is the number an owner asks for. Only the
+      // parties that have become reservations carry any, because a payment
+      // cannot exist before a booking does.
+      supplierDue: rows.reduce((n, r) => n + r.money.supplierOutstanding, 0),
+      supplierPaid: rows.reduce((n, r) => n + r.money.supplier.paid, 0),
+      agencyDue: rows.reduce((n, r) => n + r.money.agencyOutstanding, 0),
+      agencyPaid: rows.reduce((n, r) => n + r.money.agency.paid, 0),
     },
   });
 }

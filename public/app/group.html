@@ -135,6 +135,12 @@
                     <input id="depositDue" name="depositDue" type="date">
                     <p class="field-hint">The supplier's date for this block, which is not the
                       deposit date on any one reservation out of it.</p></div>
+                  <div class="field"><label for="depositPerGuest">Deposit, per guest</label>
+                    <input id="depositPerGuest" name="depositPerGuest" class="money"
+                      inputmode="decimal" placeholder="0.00">
+                    <p class="field-hint">What the supplier wants down per person. Without an
+                      amount a booking made from this group has nothing to chase before the
+                      balance falls due.</p></div>
                   <div class="field"><label for="finalPaymentDue">Final payment due</label>
                     <input id="finalPaymentDue" name="finalPaymentDue" type="date"></div>
                   <div class="field"><label for="passportDue">Passport details due</label>
@@ -445,6 +451,8 @@ function fill(g) {
   set('vendorContact', g.vendor_contact); set('departurePort', g.departure_port);
   set('passengers', g.passengers || ''); set('proposalExpires', g.proposal_expires);
   set('groupNumber', g.group_number); set('depositDue', g.deposit_due);
+  set('depositPerGuest', g.deposit_per_guest_cents
+    ? (g.deposit_per_guest_cents / 100).toFixed(2) : '');
   set('finalPaymentDue', g.final_payment_due); set('passportDue', g.passport_due);
   // Cents in the record, dollars in the box. Empty rather than 0.00 when
   // nothing has been set, so a fee of nothing and a fee nobody has decided on
@@ -627,6 +635,37 @@ function travellerLine(t) {
   </div>`;
 }
 
+/**
+ * What this party still owes, when there is anything to say.
+ *
+ * Nothing at all until they are a reservation, because a payment cannot exist
+ * before a booking does and an empty money line on every unbooked row would be
+ * noise on the screen an advisor reads most.
+ *
+ * The two sides are never added together. What the supplier is waiting for
+ * decides whether the cabin survives; what the agency is waiting for is the
+ * agency's own invoice, and a client can easily be straight with one and not
+ * the other.
+ */
+function moneyLine(r) {
+  const m = r.money || {};
+  if (!r.booking_id || (!m.supplierOutstanding && !m.agencyOutstanding
+    && !(m.supplier && m.supplier.paid) && !(m.agency && m.agency.paid))) return '';
+  const bits = [];
+  if (m.supplierOutstanding > 0) {
+    bits.push(`<span class="pill pill-warn">${money(m.supplierOutstanding)} to the supplier${
+      m.supplier.nextDue ? ` by ${esc(dateFmt(m.supplier.nextDue))}` : ''}</span>`);
+  } else if (m.supplier && m.supplier.due > 0) {
+    bits.push('<span class="pill pill-good">Supplier paid in full</span>');
+  }
+  if (m.agencyOutstanding > 0) {
+    bits.push(`<span class="pill pill-warn">${money(m.agencyOutstanding)} to you</span>`);
+  } else if (m.agency && m.agency.due > 0) {
+    bits.push('<span class="pill pill-good">Your fee paid</span>');
+  }
+  return bits.length ? `<div style="margin-bottom:.4rem;">${bits.join(' ')}</div>` : '';
+}
+
 function partyCard(r) {
   const when = dateFmt(new Date(r.created_at * 1000).toISOString().slice(0, 10));
   const chase = r.missingPassport
@@ -645,6 +684,7 @@ function partyCard(r) {
           ${r.notes ? `<div class="muted" style="white-space:normal;">${esc(r.notes)}</div>` : ''}
         </div>
         <div style="text-align:right;">
+          ${moneyLine(r)}
           ${chase}
           <div style="margin-top:.5rem;display:flex;gap:.4rem;justify-content:flex-end;">
             ${canEdit ? `<select class="btn-sm" data-status="${esc(r.id)}"
@@ -693,15 +733,25 @@ function renderRoster() {
   // first, because it is the only one of them with a deadline nothing else is
   // chasing.
   stats.hidden = false;
-  stats.innerHTML = [
-    ['Passports outstanding', c.missingPassport, c.missingPassport ? 'warn' : 'good'],
-    ['Parties registered', c.parties, ''],
-    ['Turned into reservations', c.booked, ''],
-  ].map(([label, value, tone]) => `<div>
+  // Counts first, then money. The money is only ever about the parties that
+  // became reservations, because a payment cannot exist before a booking does,
+  // so it is shown as its own pair rather than mixed in with the headcounts.
+  const tiles = [
+    ['Passports outstanding', c.missingPassport, c.missingPassport ? 'warn' : 'good', false],
+    ['Parties registered', c.parties, '', false],
+    ['Turned into reservations', c.booked, '', false],
+  ];
+  if (c.supplierDue || c.supplierPaid || c.agencyDue || c.agencyPaid) {
+    tiles.push(['Owed to the supplier', c.supplierDue, c.supplierDue ? 'warn' : 'good', true]);
+    if (c.agencyDue || c.agencyPaid) {
+      tiles.push(['Owed to you', c.agencyDue, c.agencyDue ? 'warn' : 'good', true]);
+    }
+  }
+  stats.innerHTML = tiles.map(([label, value, tone, isMoney]) => `<div>
       <div class="muted" style="font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;">${esc(label)}</div>
       <div style="font-size:1.4rem;font-weight:700;color:var(--${
   tone === 'warn' ? 'amber-600' : tone === 'good' ? 'green-600' : 'navy-800'});
-        font-variant-numeric:tabular-nums;">${Number(value) || 0}</div>
+        font-variant-numeric:tabular-nums;">${isMoney ? money(Number(value) || 0) : (Number(value) || 0)}</div>
     </div>`).join('');
 
   host.innerHTML = `<div class="card-pad">${rows.map(partyCard).join('')}</div>`;
@@ -905,6 +955,7 @@ function allValues(values) {
     proposalExpires: form.elements.proposalExpires.value,
     groupNumber: form.elements.groupNumber.value,
     depositDue: form.elements.depositDue.value,
+    depositPerGuest: form.elements.depositPerGuest.value,
     finalPaymentDue: form.elements.finalPaymentDue.value,
     passportDue: form.elements.passportDue.value,
     agencyFee: form.elements.agencyFee.value,

@@ -289,6 +289,7 @@ import {
   handleRoster, handleUpdateRegistration, handleUpdateGroupTraveller, handleDeleteRegistration,
 } from './grouproster.js';
 import { handleGroupList, LISTS as GROUP_LISTS } from './groupmanifest.js';
+import { remindGroups, handleRunGroupReminders } from './groupremind.js';
 import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
   remindTrials, handleRunTrialNotices,
@@ -614,6 +615,12 @@ export default {
     // And once a week, the calls nothing else is chasing anybody about. A
     // no-op on six days in seven, so this costs one query on almost every tick.
     job('call lists', () => sendCallLists(env));
+
+    // The four group deadlines nothing else chases: the option date, the
+    // proposal expiry, the deposit date and the passport date. One digest per
+    // group per day, and nothing at all on a group with nothing to act on, so
+    // this is a single query on almost every tick.
+    job('group deadlines', () => remindGroups(env));
 
     // Look for time based triggers, then advance whatever is due. Order
     // matters inside this one: scanning first means a payment that just came
@@ -1196,6 +1203,10 @@ async function routeApi(request, env, path, method) {
   // Write every agency's bundle now rather than waiting for Sunday. Whoever
   // runs the portal: it reaches every agency, so it is not an owner's button.
   if (path === '/api/admin/backup' && method === 'POST') return handleRunBackup(request, env);
+  // The group deadline digest, now rather than in the morning.
+  if (path === '/api/admin/group-reminders' && method === 'POST') {
+    return handleRunGroupReminders(request, env);
+  }
 
   // Agencies: who is on this portal, and what each of them looks like.
   // Whether the portal can reach the agency level at all, and what it could
