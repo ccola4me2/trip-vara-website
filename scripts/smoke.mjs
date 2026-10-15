@@ -6345,20 +6345,50 @@ async function main() {
       'and the page says plainly that it takes no money');
 
     // Registering properly.
+    //
+    // Whether the form asks for a passport depends on PII_KEY being set, and
+    // both ways round are real deployments: with a key it seals them, without
+    // one it leaves the boxes out and refuses the values rather than storing
+    // them in the clear. So the page is asked which it is, and both halves are
+    // checked. CI sets a throwaway key, so the sealing path runs there.
+    const sealing = regPage.raw.includes('Passport number');
+    const party = [
+      { name: `Pat ${stamp}`, dob: '1979-03-02', email: `pat-${stamp}@test.dev`,
+        dietary: 'No shellfish', accessibility: 'Ground floor cabin' },
+      { name: `Alex ${stamp}`, dob: '1981-07-19' },
+    ];
+    const withPassports = [
+      { ...party[0], passportNumber: 'P9988776', passportExpiry: '2031-08-14',
+        passportCountry: 'US' },
+      party[1],
+    ];
+
     const reg = await call(null, 'POST', `/g/ph-${stamp}/register`, {
       rate: inside.id,
       leadName: `Pat ${stamp}`, leadEmail: `pat-${stamp}@test.dev`, leadPhone: '555-0191',
       emergencyName: 'Jo Morgan', emergencyPhone: '555-0192', emergencyRelation: 'Sister',
       agree: true,
-      travellers: [
-        { name: `Pat ${stamp}`, dob: '1979-03-02', email: `pat-${stamp}@test.dev`,
-          passportNumber: 'P9988776', passportExpiry: '2031-08-14', passportCountry: 'US',
-          dietary: 'No shellfish', accessibility: 'Ground floor cabin' },
-        { name: `Alex ${stamp}`, dob: '1981-07-19' },
-      ],
+      travellers: sealing ? withPassports : party,
     });
     check(reg.status === 200 && reg.data?.ok, 'somebody can register a party of two',
       `status ${reg.status} ${JSON.stringify(reg.data)}`);
+    check(regPage.raw.includes('Passport number') === sealing,
+      sealing
+        ? 'the form asks for a passport, because there is a key to seal it with'
+        : 'the form does not ask for a passport, because there is no key to seal it with');
+
+    if (!sealing) {
+      // The important half of the no-key case: a passport sent anyway is
+      // refused with a message, never dropped quietly. Somebody who typed it
+      // in deserves to know it was not kept.
+      const sneaked = await call(null, 'POST', `/g/ph-${stamp}/register`, {
+        rate: inside.id, leadName: 'Sneak', leadEmail: `sneak-${stamp}@test.dev`,
+        agree: true, travellers: withPassports,
+      });
+      check(sneaked.status === 400 && /Passport/.test(sneaked.data?.error || ''),
+        'and a passport sent anyway is refused rather than quietly dropped',
+        JSON.stringify(sneaked.data));
+    }
 
     // Every guard, because this endpoint is open to the internet.
     const noTerms = await call(null, 'POST', `/g/ph-${stamp}/register`, {

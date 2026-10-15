@@ -239,6 +239,12 @@ jobs:
 
       - name: Start the Worker
         run: |
+          # A throwaway encryption key, generated per run and never reused, so
+          # the group registration path that seals a passport is exercised
+          # rather than skipped. Nothing encrypted with it outlives the job.
+          # The suite also covers the other side, where no key is set and the
+          # form leaves those boxes out.
+          echo "PII_KEY=$(openssl rand -base64 32)" > .dev.vars
           # --test-scheduled exposes /__scheduled, so the smoke suite can run
           # the cron rather than leaving the whole scheduled handler as the one
           # part of this Worker nothing ever executes.
