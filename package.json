@@ -20,6 +20,7 @@
     "check:shapes": "node scripts/check-shapes.mjs",
     "check:smoke": "node scripts/smoke.mjs",
     "db:migrate": "wrangler d1 migrations apply trip-vara --remote",
+    "seed:sample": "node scripts/seed-sample.mjs",
     "db:migrate:local": "wrangler d1 migrations apply trip-vara --local",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",

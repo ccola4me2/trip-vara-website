@@ -65,6 +65,20 @@ account":
 
     backups/<agency id>/
 
+## Sample data
+
+`npm run seed:sample > sample.sql` prints a worked example: one agency, an
+owner and an advisor, four clients, a household, a lead, a group with three
+rate bands and three sign-ups, two reservations priced by their parts, and a
+payment schedule with a line already past due. Apply it with
+
+    ./node_modules/.bin/wrangler d1 execute trip-vara --local --file sample.sql
+
+Nothing in it hides what it is. The agency is `Sample Travel Co`, every person
+is named Sample, and the ids all begin `sample-`. Dates are relative to the day
+it is generated, so the example keeps making sense months later. Never run it
+against production.
+
 ## Personal detail an agency holds
 
 Clients and travellers carry names, dates of birth, passport numbers and
