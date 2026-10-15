@@ -1349,7 +1349,13 @@ function watchMoneyFields() {
 }
 
 export async function mountShell({ admin = false } = {}) {
-  const { user } = await api('/api/auth/me');
+  // actingAs is always null here and is destructured all the same, with a
+  // default, so this function reads identically to the cttagents copy where
+  // the borrowed seat is real. It arrived without this line once: the scope
+  // memory was ported across the fork and the destructuring was not, which
+  // made every signed-in page throw a ReferenceError before its own script ran.
+  // See borrowedSeat() in src/auth.js for why the answer is always no here.
+  const { user, actingAs = null } = await api('/api/auth/me');
   if (!user) { window.location.href = '/login'; throw new Error('Signed out'); }
   // An owner not sitting in somebody else's seat. Everybody else has no choice of scope to remember.
   scopeOwner = user.role === 'admin' && !actingAs ? user.id : null;
