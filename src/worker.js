@@ -282,6 +282,9 @@ import {
   handleSaveGoals,
 } from './goals.js';
 import {
+  handleExport, handleExportSummary, handleRunBackup, backupAgencies,
+} from './exportdata.js';
+import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
   remindTrials, handleRunTrialNotices,
 } from './demo.js';
@@ -551,6 +554,16 @@ export default {
     const job = (name, fn) => ctx.waitUntil(runJob(env, name, fn));
 
     job('purge sessions', () => purgeExpiredSessions(env));
+    // One bundle per agency into the private bucket, Sundays. A no-op on the
+    // other six days and on every tick but the first of that one, so this
+    // costs a date comparison on almost every run.
+    job('weekly backup', async () => {
+      const d = new Date();
+      if (d.getUTCDay() !== 0 || d.getUTCHours() !== 4) return;
+      // backupAgencies skips an agency whose bundle for the day is already
+      // there, so the twelve ticks inside this hour write once.
+      await backupAgencies(env, { today: d });
+    });
     // Locks the demos that ran out, and removes the ones locked long enough.
     // Every guard is inside sweepDemos: it cannot touch a live agency, the
     // house agency, or one with a portal owner in it.
@@ -1072,6 +1085,10 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/month' && method === 'GET') return handleMonth(request, env);
   if (path === '/api/goals' && method === 'GET') return handleGetGoals(request, env);
   if (path === '/api/goals' && method === 'PUT') return handleSaveGoals(request, env);
+  // Their own records, in one file. Scoped like every screen is: an owner gets
+  // the agency, an advisor gets themselves.
+  if (path === '/api/export' && method === 'GET') return handleExport(request, env);
+  if (path === '/api/export/summary' && method === 'GET') return handleExportSummary(request, env);
   if (path === '/api/client' && method === 'GET') return handleClientRecord(request, env);
   // Two records that are one person. Above the list so neither is shadowed by
   // a future /api/clients/:id matcher.
@@ -1160,6 +1177,9 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/admin/task-reminders' && method === 'POST') return handleRunTaskReminders(request, env);
   if (path === '/api/admin/payment-reminders' && method === 'POST') return handleRunPaymentReminders(request, env);
   if (path === '/api/admin/call-lists' && method === 'POST') return handleRunCallLists(request, env);
+  // Write every agency's bundle now rather than waiting for Sunday. Whoever
+  // runs the portal: it reaches every agency, so it is not an owner's button.
+  if (path === '/api/admin/backup' && method === 'POST') return handleRunBackup(request, env);
 
   // Agencies: who is on this portal, and what each of them looks like.
   // Whether the portal can reach the agency level at all, and what it could

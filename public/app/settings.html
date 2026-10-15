@@ -221,6 +221,20 @@
           </label>
         </div>
       </section>
+      <section class="card" id="export-card">
+        <div class="card-head"><h2>Take your records with you</h2>
+          <span id="export-covers" class="muted"></span></div>
+        <div class="card-pad">
+          <div class="notice notice-error" id="export-err" hidden></div>
+          <p class="field-hint" style="margin-top:0;">This portal holds the only copy of most of
+            what is below. One file, in a format a person can read and a machine can put back:
+            clients, reservations, pricing, payments, travellers, groups, vendors and your
+            documents list. The files themselves stay in the portal, so the list names what to
+            come back for.</p>
+          <div id="export-counts" class="muted" style="margin:.6rem 0;">Counting...</div>
+          <button class="btn btn-secondary btn-sm" id="export-go">Download everything</button>
+        </div>
+      </section>
       <section class="card" id="templates-card">
         <div class="card-head"><h2>Tasks that follow every trip</h2>
           <div class="toolbar" style="margin:0;">
@@ -775,6 +789,44 @@ document.getElementById('fwd-copy').addEventListener('click', async (e) => {
   try { await navigator.clipboard.writeText(fwdAddress.value); e.target.textContent = 'Copied'; }
   catch { fwdAddress.select(); }
   setTimeout(() => { e.target.textContent = 'Copy it'; }, 2000);
+});
+
+// ------------------------------------------------------- take it with you --
+
+const exportCovers = document.getElementById('export-covers');
+const exportCounts = document.getElementById('export-counts');
+const exportErr = document.getElementById('export-err');
+
+// What a word for a table is, in the words the screens use.
+const EXPORT_NAMES = {
+  clients: 'clients', households: 'households', vendors: 'vendors',
+  travel_groups: 'groups', group_rates: 'group rates',
+  group_registrations: 'group sign-ups', trips: 'trips', bookings: 'reservations',
+  booking_pricing: 'price lines', booking_payments: 'payments',
+  travellers: 'travellers', amenities: 'amenities', quote_options: 'quote options',
+  penalty_tiers: 'penalty tiers', client_credits: 'credits',
+  itinerary_items: 'itinerary days', documents: 'documents', tasks: 'tasks',
+};
+
+api('/api/export/summary').then((d) => {
+  exportCovers.textContent = `Covers ${d.covers}`;
+  // Only what there is any of. A list of eighteen noughts tells somebody
+  // nothing except that the screen is working.
+  const some = (d.tables || [])
+    .filter((t) => d.counts[t])
+    .map((t) => `${d.counts[t].toLocaleString()} ${EXPORT_NAMES[t] || t}`);
+  exportCounts.textContent = some.length ? some.join(', ') : 'Nothing recorded yet.';
+}).catch((e) => {
+  exportCounts.textContent = '';
+  exportErr.textContent = e.message;
+  exportErr.hidden = false;
+});
+
+// A plain navigation rather than fetch and a blob. The response is a download
+// with its own filename, and letting the browser do what it already does means
+// a book of business never has to be held in a tab's memory first.
+document.getElementById('export-go').addEventListener('click', () => {
+  window.location.href = '/api/export';
 });
 
 // Looked at, not created. Opening this page should not quietly issue anybody

@@ -9767,6 +9767,78 @@ async function main() {
 
   }
 
+  // ------------------------------------------- taking the records away --
+  step('An agency can take its own records with it');
+  {
+    const summary = await call(advisor, 'GET', '/api/export/summary');
+    check(summary.status === 200, 'an advisor can see what an export would hold',
+      `status ${summary.status}`);
+    check(summary.data?.covers === 'just you',
+      'and it says it covers them alone', String(summary.data?.covers));
+    check(Array.isArray(summary.data?.tables) && summary.data.tables.includes('bookings'),
+      'reservations are in the list of what comes out');
+
+    const mine = await call(advisor, 'GET', '/api/export');
+    check(mine.status === 200, 'and the export itself downloads', `status ${mine.status}`);
+    const bundle = mine.data;
+    check(bundle?.format === 'trip-vara-export' && bundle?.version === 1,
+      'the bundle names its own format and version', String(bundle?.format));
+    check(Array.isArray(bundle?.failed) && bundle.failed.length === 0,
+      'every table could be read', JSON.stringify(bundle?.failed));
+    check(bundle?.covers === 'one advisor',
+      'an advisor exports themselves and not the agency', String(bundle?.covers));
+
+    // The fence, which is the only thing here worth testing hard. Every row an
+    // advisor exports is their own, whatever else is in the agency.
+    const ids = new Set((bundle?.tables?.bookings || []).map((b) => b.id));
+    check(ids.has(bookingId), 'their own reservations are in it', `${ids.size} rows`);
+    for (const table of ['bookings', 'clients', 'travellers', 'booking_payments']) {
+      const owners = new Set((bundle?.tables?.[table] || []).map((r) => r.user_id));
+      check(owners.size <= 1 && (owners.size === 0 || owners.has(advisorId)),
+        `every ${table} row in it belongs to the advisor who asked`,
+        [...owners].join(', ') || 'no rows');
+    }
+
+    // Hashes are no use outside this database and should not travel.
+    check(!(bundle?.tables?.clients || []).some((c) => 'ip_hash' in c),
+      'hashes are left behind');
+    check(bundle?.agency && !('trial_ends_at' in bundle.agency) && !('demo_ip_hash' in bundle.agency),
+      'and so is how the portal runs its own business');
+    check(Array.isArray(bundle?.people) && !bundle.people.some((u) => 'password_hash' in u),
+      'no password hash is in anybody\'s export');
+
+    // An owner gets the agency, which is the other half of the same scope.
+    const theirs = await call(admin, 'GET', '/api/export');
+    check(theirs.status === 200 && theirs.data?.covers === 'the whole agency',
+      'an owner exports the agency', String(theirs.data?.covers));
+    // Wider, not different: the owner's bundle reaches the advisor's rows,
+    // which is the whole point of an agency-scoped export.
+    const allIds = new Set((theirs.data?.tables?.bookings || []).map((b) => b.id));
+    check(allIds.has(bookingId),
+      'and the advisor\'s reservations are in the owner\'s copy');
+    check(allIds.size >= ids.size,
+      'the agency bundle is never smaller than one advisor\'s',
+      `${allIds.size} vs ${ids.size}`);
+
+    // Narrowing by advisor is deliberately not honoured: an export is not a
+    // screen, and the audit line would not describe it correctly.
+    const narrowed = await call(admin, 'GET', `/api/export?advisor=${advisorId}`);
+    check(narrowed.status === 200 && narrowed.data?.covers === 'the whole agency',
+      'and asking for one advisor does not narrow it', String(narrowed.data?.covers));
+
+    // Signed out is signed out.
+    const stranger = await call(null, 'GET', '/api/export');
+    check(stranger.status === 401, 'nobody signed out can export anything',
+      `status ${stranger.status}`);
+
+    // The backup run is the portal operator's, not an owner's. The local admin
+    // is a platform owner, so this proves the route exists and answers; the
+    // refusal for an ordinary owner is covered by the demo section.
+    const backup = await call(advisor, 'POST', '/api/admin/backup');
+    check(backup.status === 403, 'an advisor cannot run the portal backup',
+      `status ${backup.status}`);
+  }
+
   // ---------------------------------------------------------------- tidy --
   step('Clean up');
   await runCleanups();

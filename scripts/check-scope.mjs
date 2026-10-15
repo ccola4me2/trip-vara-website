@@ -324,6 +324,16 @@ const INTERPOLATED_ALLOWED = [
     + 'from BOOKING_OWNED in db.js and nowhere else; it returns a count and never a row, '
     + 'and it names x.user_id against the reader\'s agency in its own text rather than '
     + 'interpolating a scope helper, so the rule below can still read the fence'],
+  ['SELECT * FROM ${table} WHERE user_id IN (SELECT id FROM users WHERE agency_id = ?)',
+    'exportdata.readTable, which reads one table for the data export. The table comes '
+    + 'from EXPORT_TABLES in exportdata.js and nowhere else, a written list of names a '
+    + 'request cannot influence; every table on it is owned by user_id, and the '
+    + 'statement names that column against the reader\'s own agency in its own text '
+    + 'rather than through a scope helper, so the fence is still readable here'],
+  ['SELECT * FROM ${table} WHERE user_id = ?',
+    'exportdata.readTable again, the narrow half of the same pair. Same list of table '
+    + 'names, and the advisor exporting is the only id it is ever given: the handler '
+    + 'builds the scope from the signed-in user and does not honour ?advisor='],
   ['SELECT t.user_id AS user_id FROM ${table} t',
     'db.writerFor, which resolves whose a reservation row is. The table comes from '
     + 'the WRITABLE set in db.js and nowhere else; the statement names t.user_id and '
