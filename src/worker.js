@@ -288,6 +288,7 @@ import { renderRegisterPage, handleRegister } from './grouppage.js';
 import {
   handleRoster, handleUpdateRegistration, handleUpdateGroupTraveller, handleDeleteRegistration,
 } from './grouproster.js';
+import { handleGroupList, LISTS as GROUP_LISTS } from './groupmanifest.js';
 import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
   remindTrials, handleRunTrialNotices,
@@ -713,6 +714,7 @@ async function routeApi(request, env, path, method) {
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const groupBookMatch = path.match(/^\/api\/groups\/registrations\/([^/]+)\/book$/);
   const rosterMatch = path.match(/^\/api\/groups\/([^/]+)\/roster$/);
+  const groupListMatch = path.match(/^\/api\/groups\/([^/]+)\/list$/);
   const groupRegMatch = path.match(/^\/api\/group-registrations\/([^/]+)$/);
   const groupTravMatch = path.match(/^\/api\/group-travellers\/([^/]+)$/);
   const creditMatch = path.match(/^\/api\/credits\/([^/]+)$/);
@@ -1014,6 +1016,8 @@ async function routeApi(request, env, path, method) {
   if (groupBookMatch && method === 'POST') return handleBookRegistration(request, env, groupBookMatch[1]);
   // Who is coming on a group, and what is still missing from their record.
   if (rosterMatch && method === 'GET') return handleRoster(request, env, rosterMatch[1]);
+  // The four lists a group gets asked for, as CSV. ?list= picks one.
+  if (groupListMatch && method === 'GET') return handleGroupList(request, env, groupListMatch[1]);
   if (groupRegMatch && method === 'PUT') return handleUpdateRegistration(request, env, groupRegMatch[1]);
   if (groupRegMatch && method === 'DELETE') return handleDeleteRegistration(request, env, groupRegMatch[1]);
   if (groupTravMatch && method === 'PUT') return handleUpdateGroupTraveller(request, env, groupTravMatch[1]);

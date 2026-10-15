@@ -19,6 +19,7 @@ import { requireUser } from './auth.js';
 import * as db from './db.js';
 import { seal, open, masked, piiReady } from './pii.js';
 import { REGISTRATION_STATUSES } from './grouppage.js';
+import { LISTS as GROUP_LISTS } from './groupmanifest.js';
 
 /**
  * Everything on one group's roster.
@@ -84,6 +85,9 @@ export async function handleRoster(request, env, groupId) {
     group,
     registrations: rows,
     statuses: REGISTRATION_STATUSES,
+    // What the page offers to download, named here rather than in the markup
+    // so a new list appears on the screen by being added to one array.
+    lists: GROUP_LISTS,
     // Whether a passport can be recorded at all. The page hides the boxes when
     // it cannot, the same as the public form does, rather than offering
     // somewhere to type that quietly drops what is typed.
@@ -181,14 +185,44 @@ export async function handleUpdateGroupTraveller(request, env, id) {
   }
 
   const current = await env.DB.prepare(
-    `SELECT dob_enc, passport_number_enc, passport_expiry_enc
+    `SELECT dob_enc, passport_number_enc, passport_expiry_enc, passport_country
        FROM group_travellers WHERE id = ? AND user_id = ?`
   ).bind(id, owner.id).first();
 
-  const keepOr = async (value, existing) => {
-    const text = clean(value, 60);
-    return text ? seal(env, text) : (existing || null);
-  };
+  // The passport is one thing, not three fields.
+  //
+  // The screen cannot prefill a passport number: what it holds is masked, and
+  // putting the mask in the box would save the mask. So the box is always
+  // empty when the dialog opens, and an empty box has to mean "I did not touch
+  // this" rather than "delete it". The expiry and the country go with it,
+  // because a save that kept the number and dropped its expiry would leave a
+  // record that is worse than either answer.
+  //
+  // Type a number and all three are taken. Leave it blank and all three are
+  // left exactly as they were. There is no path here that clears a passport,
+  // which nobody has asked for and which a stray empty form would otherwise do
+  // silently. That is the partial-save bug this portal has had before.
+  const typedPassport = Boolean(clean(body.passportNumber, 40));
+  const passportNumber = typedPassport
+    ? await seal(env, clean(body.passportNumber, 40))
+    : (current?.passport_number_enc || null);
+  const passportExpiry = typedPassport
+    ? await seal(env, cleanDate(body.passportExpiry))
+    : (current?.passport_expiry_enc || null);
+  const passportCountry = typedPassport
+    ? (clean(body.passportCountry, 60) || null)
+    : (current?.passport_country || null);
+
+  // The date of birth is its own field, and the dialog does prefill it, so a
+  // box somebody emptied really does mean "clear this". A caller that never
+  // mentioned it at all is a different thing and leaves it alone: a save that
+  // omits a field must not wipe it, which is the rule this portal learned the
+  // expensive way on client profiles.
+  const saidDob = Object.prototype.hasOwnProperty.call(body, 'dob');
+  const dobText = cleanDate(body.dob);
+  const dob = saidDob
+    ? (dobText ? await seal(env, dobText) : null)
+    : (current?.dob_enc || null);
 
   const res = await env.DB.prepare(
     `UPDATE group_travellers
@@ -196,13 +230,11 @@ export async function handleUpdateGroupTraveller(request, env, id) {
             emergency_name = ?, emergency_phone = ?, emergency_relation = ?,
             dob_enc = ?, passport_number_enc = ?, passport_expiry_enc = ?, updated_at = ?
       WHERE id = ? AND user_id = ?`
-  ).bind(name, clean(body.email, 254) || null, clean(body.passportCountry, 60) || null,
+  ).bind(name, clean(body.email, 254) || null, passportCountry,
          cleanText(body.dietary, 300) || null, cleanText(body.accessibility, 300) || null,
          clean(body.emergencyName, 120) || null, clean(body.emergencyPhone, 40) || null,
          clean(body.emergencyRelation, 60) || null,
-         await keepOr(cleanDate(body.dob), current?.dob_enc),
-         await keepOr(body.passportNumber, current?.passport_number_enc),
-         await keepOr(cleanDate(body.passportExpiry), current?.passport_expiry_enc),
+         dob, passportNumber, passportExpiry,
          now(), id, owner.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Traveller not found.');
 

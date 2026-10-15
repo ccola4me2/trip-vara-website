@@ -79,6 +79,20 @@ is named Sample, and the ids all begin `sample-`. Dates are relative to the day
 it is generated, so the example keeps making sense months later. Never run it
 against production.
 
+## The lists a group sends out
+
+Four, from the group's own screen: a supplier manifest, a rooming list, a
+flight list and a dining list. All CSV, because the other end is always a
+spreadsheet and a cruise line's group desk will take a CSV from anybody.
+
+**The manifest is the only one carrying a passport number in full**, and taking
+one is written to the activity log with the group and how many people were on
+it. The other three decrypt nothing.
+
+Every field is escaped against spreadsheet formula injection: a value starting
+`=`, `+`, `-` or `@` is prefixed with an apostrophe. These files go to other
+companies, so that is not optional.
+
 ## Personal detail an agency holds
 
 Clients and travellers carry names, dates of birth, passport numbers and

@@ -6494,6 +6494,22 @@ async function main() {
       check(again?.dob === '1981-07-19',
         'a save that did not mention the date of birth left it alone', again?.dob);
 
+      // The other half of the same rule: a box somebody emptied on purpose is
+      // not the same as a field a caller never mentioned.
+      const cleared = await call(advisor, 'PUT', `/api/group-travellers/${second.id}`, {
+        name: second.name, dob: '',
+      });
+      check(cleared.status === 200, 'and a date of birth can be cleared on purpose',
+        `status ${cleared.status}`);
+      const afterClear = await call(advisor, 'GET', `/api/groups/${signupGroupId}/roster`);
+      const clearedT = (afterClear.data?.registrations || [])
+        .find((r) => r.id === patParty.id)?.travellers?.find((t) => t.id === second.id);
+      check(clearedT?.dob === null, 'when the box is sent empty rather than left out',
+        String(clearedT?.dob));
+      await call(advisor, 'PUT', `/api/group-travellers/${second.id}`, {
+        name: second.name, dob: '1981-07-19',
+      });
+
       // The partial-save rule, which this portal has got wrong before.
       const quiet = await call(advisor, 'PUT', `/api/group-travellers/${second.id}`, {
         name: second.name, dietary: 'Vegetarian, no nuts',
@@ -6506,8 +6522,48 @@ async function main() {
       check(keptT?.hasPassport === true && keptT?.passportExpiry === '2032-02-28',
         'and a blank passport box means keep it, never delete it',
         `${keptT?.hasPassport} ${keptT?.passportExpiry}`);
+      check(keptT?.passport_country === 'US',
+        'the country of issue goes with it rather than being dropped on its own',
+        String(keptT?.passport_country));
       check(keptT?.dietary === 'Vegetarian, no nuts', 'while what did change, changed');
     }
+
+    // ------------------------------------------- the lists people ask for --
+    const manifest = await call(advisor, 'GET',
+      `/api/groups/${signupGroupId}/list?list=manifest`);
+    check(manifest.status === 200, 'a supplier manifest comes out as CSV',
+      `status ${manifest.status}`);
+    check(manifest.raw.startsWith('Cabin grade,Party,'),
+      'with a header row', manifest.raw.slice(0, 40));
+    check(manifest.raw.includes('\r\n'), 'and CRLF line endings, which is what a spreadsheet wants');
+    if (sealing) {
+      // The one list that carries a passport in full, which is the whole
+      // reason it is a separate, deliberate request.
+      check(manifest.raw.includes('P9988776'),
+        'the manifest is the one list with the passport number on it');
+    }
+
+    const rooming = await call(advisor, 'GET',
+      `/api/groups/${signupGroupId}/list?list=rooming`);
+    check(rooming.status === 200 && rooming.raw.startsWith('Cabin grade,Occupancy,'),
+      'a rooming list is one row per cabin', rooming.raw.slice(0, 40));
+    check(!rooming.raw.includes('P9988776'), 'and carries no passport number');
+
+    const flight = await call(advisor, 'GET',
+      `/api/groups/${signupGroupId}/list?list=flight`);
+    check(flight.status === 200 && !flight.raw.includes('P9988776'),
+      'nor does the flight list');
+
+    const dining = await call(advisor, 'GET',
+      `/api/groups/${signupGroupId}/list?list=dining`);
+    check(dining.status === 200 && dining.raw.includes('No shellfish'),
+      'the dining list carries what somebody cannot eat');
+    check(!dining.raw.includes('P9988776'), 'and no passport either');
+
+    const noSuchList = await call(advisor, 'GET',
+      `/api/groups/${signupGroupId}/list?list=invented`);
+    check(noSuchList.status === 400, 'a list nobody defined is refused',
+      `status ${noSuchList.status}`);
 
     // Working the list.
     const worked = await call(advisor, 'PUT', `/api/group-registrations/${patParty.id}`, {
@@ -6545,6 +6601,10 @@ async function main() {
     const outsiderRoster = await call(outsider, 'GET', `/api/groups/${signupGroupId}/roster`);
     check(outsiderRoster.status === 404,
       'another agency cannot read the roster', `status ${outsiderRoster.status}`);
+    const outsiderList = await call(outsider, 'GET',
+      `/api/groups/${signupGroupId}/list?list=manifest`);
+    check(outsiderList.status === 404,
+      'nor take a manifest off it', `status ${outsiderList.status}`);
     const outsiderEdit = await call(outsider, 'PUT',
       `/api/group-registrations/${patParty.id}`, { status: 'cancelled' });
     check(outsiderEdit.status === 404,

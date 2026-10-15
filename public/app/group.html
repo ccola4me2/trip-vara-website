@@ -185,7 +185,11 @@
 
           <section class="card" id="signups-card" hidden style="margin-top:1.5rem;">
             <div class="card-head"><h2>Who is coming</h2>
-              <span class="muted" id="signup-count"></span></div>
+              <span class="muted" id="signup-count"></span>
+              <div class="toolbar" style="margin:0;" id="list-tools" hidden>
+                <select id="list-pick" class="btn-sm" style="padding:.3rem .5rem;"></select>
+                <button class="btn btn-ghost btn-sm" type="button" id="list-get">Download</button>
+              </div></div>
             <div id="roster-stats" class="card-pad" hidden
               style="display:flex;gap:1.6rem;flex-wrap:wrap;padding-bottom:0;"></div>
             <div id="signups"></div>
@@ -734,7 +738,33 @@ function renderRoster() {
   host.querySelectorAll('[data-trav]').forEach((btn) => {
     btn.addEventListener('click', () => openTraveller(btn.dataset.trav));
   });
+
+  drawListPicker();
 }
+
+// ------------------------------------------------- the lists people ask for --
+
+function drawListPicker() {
+  const tools = document.getElementById('list-tools');
+  const pick = document.getElementById('list-pick');
+  const lists = roster.lists || [];
+  if (!lists.length || !(roster.registrations || []).length) { tools.hidden = true; return; }
+  tools.hidden = false;
+  // Rebuilt rather than appended, because the roster reloads after every edit
+  // and a picker that grew by four options each time would be absurd.
+  pick.innerHTML = lists.map((l) => `<option value="${esc(l.key)}"
+    title="${esc(l.hint)}">${esc(l.name)}</option>`).join('');
+}
+
+// A plain navigation. The response is a download with its own filename, and
+// letting the browser do what it already does means a manifest with passports
+// on it never sits in a tab's memory first.
+document.getElementById('list-get').addEventListener('click', () => {
+  const list = document.getElementById('list-pick').value;
+  if (!groupId || !list) return;
+  window.location.href = `/api/groups/${encodeURIComponent(groupId)}/list?list=${
+    encodeURIComponent(list)}`;
+});
 
 async function loadRoster() {
   if (!groupId) return;
