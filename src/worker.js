@@ -215,6 +215,7 @@ import {
   handleParseQuote,
   handleUpdateGroup,
   handleDeleteGroup,
+  handleRepeatGroup,
 } from './groups.js';
 import {
   handleListCredits,
@@ -726,6 +727,7 @@ async function routeApi(request, env, path, method) {
   const templateMatch = path.match(/^\/api\/task-templates\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const groupSlugMatch = path.match(/^\/api\/groups\/([^/]+)\/slug$/);
+  const groupRepeatMatch = path.match(/^\/api\/groups\/([^/]+)\/repeat$/);
   const groupBookMatch = path.match(/^\/api\/groups\/registrations\/([^/]+)\/book$/);
   const rosterMatch = path.match(/^\/api\/groups\/([^/]+)\/roster$/);
   const groupListMatch = path.match(/^\/api\/groups\/([^/]+)\/list$/);
@@ -1032,6 +1034,7 @@ async function routeApi(request, env, path, method) {
   // A group's short name: the part of its link after the shared domain.
   if (path === '/api/group-slugs/check' && method === 'GET') return handleSlugCheck(request, env);
   if (groupSlugMatch && method === 'PUT') return handleSetSlug(request, env, groupSlugMatch[1]);
+  if (groupRepeatMatch && method === 'POST') return handleRepeatGroup(request, env, groupRepeatMatch[1]);
   if (path === '/api/groups' && method === 'GET') return handleListGroups(request, env);
   if (path === '/api/groups/quote' && method === 'POST') return handleParseQuote(request, env);
   if (path === '/api/groups' && method === 'POST') return handleCreateGroup(request, env);
