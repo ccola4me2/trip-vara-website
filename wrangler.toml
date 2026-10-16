@@ -61,6 +61,12 @@ bucket_name = "trip-vara-docs"
 # there sends that address to this Worker.
 # INVITE_DOMAIN = "cal.tripvaratravel.com"
 APP_URL = "https://tripvaratravel.com"
+# The shared domain group pages are shared on. It is attached to the CTT Worker, which hands a
+# name that is not its own to this portal through its PEER binding; this portal answers for the
+# names it holds. Set here too so the same code recognises the host when a request is passed on.
+GROUP_HOST = "cruisegrouppage.com"
+# Off until the domain answers. On, /g/<group number> redirects to the group's short name.
+GROUP_REDIRECT = "0"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
 # Where operator notifications go (new advisor signups awaiting approval).
 NOTIFY_EMAIL = "brentb@cruisestoursandtravel.com"
@@ -73,5 +79,11 @@ RESET_TTL_MINUTES = "60"
 # Keeps the local CRM copy current. Each run advances whichever sync jobs still
 # have work and no-ops cheaply once everything is complete and recently
 # refreshed, so idle runs cost almost nothing. Every 5 minutes.
+# The other portal, for the one question that spans both: is this group name already taken
+# there. Must name a Worker that already exists, or the deploy fails.
+[[services]]
+binding = "PEER"
+service = "cttagents"
+
 [triggers]
 crons = ["*/5 * * * *"]
