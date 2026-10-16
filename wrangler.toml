@@ -65,8 +65,8 @@ APP_URL = "https://tripvaratravel.com"
 # name that is not its own to this portal through its PEER binding; this portal answers for the
 # names it holds. Set here too so the same code recognises the host when a request is passed on.
 GROUP_HOST = "cruisegrouppage.com"
-# Off until the domain answers. On, /g/<group number> redirects to the group's short name.
-GROUP_REDIRECT = "0"
+# On: /g/<group number> redirects to the group's short name.
+GROUP_REDIRECT = "1"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
 # Where operator notifications go (new advisor signups awaiting approval).
 NOTIFY_EMAIL = "brentb@cruisestoursandtravel.com"
