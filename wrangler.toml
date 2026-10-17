@@ -65,6 +65,9 @@ APP_URL = "https://tripvaratravel.com"
 # name that is not its own to this portal through its PEER binding; this portal answers for the
 # names it holds. Set here too so the same code recognises the host when a request is passed on.
 GROUP_HOST = "cruisegrouppage.com"
+# What this portal's links on that domain start with: Trip Vara's groups are under /tv, each page
+# carrying its own agency's name, logo and colours. Cruises Tours and Travel's are at the root.
+GROUP_PREFIX = "/tv"
 # On: /g/<group number> redirects to the group's short name.
 GROUP_REDIRECT = "1"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
