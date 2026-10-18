@@ -121,6 +121,9 @@ const AGENCY_OWNED = new Set([
   // with their user_id on, and the agency's standard has none, so the agency is the predicate on every
   // statement and the advisor is only ever added to it.
   'statement_wording',
+  // An advisor's request to sell into another advisor's group, and the answer. The agency is the
+  // predicate; the requester and the group's advisor each read their own side of it.
+  'group_access',
 ]);
 
 // Carries a user_id, and is not reached through one.
