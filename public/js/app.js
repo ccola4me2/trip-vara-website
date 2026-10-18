@@ -328,6 +328,7 @@ const ADMIN_NAV = [
   // for you is worse than no nav item, and it puts the operator's own
   // procedures in front of somebody trying the product out.
   { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield, owner: true },
+  { href: '/admin/groups', label: 'Group pages', icon: I.chart },
   { href: '/admin/training', label: 'Training', icon: I.book },
   { href: '/admin/manual', label: 'Running the agency', icon: I.book },
   { href: '/app/', label: 'Back to portal', icon: I.back },

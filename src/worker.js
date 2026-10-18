@@ -80,6 +80,7 @@ import {
   handleTrainingDone,
   handleTrainingBoard,
 } from './training.js';
+import { handleGroupStats } from './groupstats.js';
 import { handleDuplicates, handleMergeClients, handleNotDuplicate } from './merge.js';
 import { renderPortal, handlePortalSignIn } from './portal.js';
 import { handleClientLinkRedeem, handleClientSignOut } from './clientauth.js';
@@ -453,6 +454,7 @@ const PAGE_FILES = {
   '/admin/agencies': '/admin/agencies.html',
   '/admin/onboarding': '/admin/onboarding.html',
   '/admin/training': '/admin/training.html',
+  '/admin/groups': '/admin/groups.html',
   '/app/specials': '/app/specials.html',
   '/app/special': '/app/special.html',
   '/app/goals': '/app/goals.html',
@@ -1009,6 +1011,7 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/training' && method === 'GET') return handleTraining(request, env);
   if (path === '/api/training' && method === 'POST') return handleTrainingDone(request, env);
   if (path === '/api/admin/training' && method === 'GET') return handleTrainingBoard(request, env);
+  if (path === '/api/admin/group-stats' && method === 'GET') return handleGroupStats(request, env);
   if (path === '/api/suppressions/restore' && method === 'POST') return handleRestoreSuppression(request, env);
   if (path === '/api/trips' && method === 'GET') return handleListTrips(request, env);
   if (path === '/api/trips' && method === 'POST') return handleCreateTrip(request, env);
