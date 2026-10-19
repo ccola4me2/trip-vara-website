@@ -179,11 +179,11 @@ export const LESSONS = [
   {
     key: 'groups',
     section: 'reservation',
-    title: 'Group space',
-    why: 'A vendor is holding cabins for you and there is a date they take them back. This tracks how many are sold and how long you have. It can start from the cruise line\'s own proposal: upload the PDF and the details fill in for you to check.',
+    title: 'Groups',
+    why: 'A vendor is holding cabins for you and there is a date they take them back. This tracks how many are sold and how long you have, and gives the group a page of its own to share. It can start from the cruise line\'s own proposal: upload the PDF and the details fill in for you to check.',
     manual: 'reservations',
     page: '/app/groups',
-    doing: 'Start a group by uploading a proposal or contract, and read what it says it filled in and what it left blank. Margaritaville, Norwegian and Celebrity are read in full; any other line only where the document labels a detail clearly. Nothing saves until you press the button. Then tick the sign-up page, look at the short link in the box at the top, and open it to see what your people will see. When the same group runs again, use Repeat this group instead of starting over. Add a picture by uploading one. If you run no groups yet, know it exists for when you do.',
+    doing: 'Start a group by uploading a proposal or contract, and read what it says it filled in and what it left blank. Margaritaville, Norwegian and Celebrity are read in full; any other line only where the document labels a detail clearly. Nothing saves until you press the button. Then, on the Sign-up page card, tick the page on and fill in what the group gets: amenities such as onboard credit, drink packages, enhancements, the itinerary, a shore excursions link and PDFs to download. Look at the short link in the box at the top, and read What is on the group\'s page at the bottom to see everything your people will see. Selling this group says whether other advisors may put clients into it, and what they are told. When the same group runs again, use Repeat this group instead of starting over. If you run no groups yet, know it exists for when you do.',
   },
   {
     key: 'payments-due',
@@ -264,7 +264,7 @@ export const LESSONS = [
     why: 'Five reasons to pick up the phone, drawn from what the portal already knows: gone quiet, a credit running out, a birthday, a trip just home.',
     manual: 'selling',
     page: '/app/hotlists',
-    doing: 'Open it on a Monday and ring one person from it.',
+    doing: 'Open it on a Monday and ring one person from it. The same list is part of your morning email on Mondays.',
   },
   {
     key: 'dashboard',
@@ -288,7 +288,7 @@ export const LESSONS = [
     key: 'tasks',
     section: 'day',
     title: 'To do',
-    why: 'Your working list. Anything with a date on it chases you rather than waiting to be found, and one email each morning says what is due and what is late.',
+    why: 'Your working list. Anything with a date on it chases you rather than waiting to be found, and one email each morning carries everything: what is due and late, the deadlines on your groups, anybody asking for you in chat, and on Mondays who to call.',
     manual: 'daily',
     page: '/app/tasks',
     doing: 'Put a dated task on the reservation you took and let the morning email chase it.',
@@ -381,7 +381,7 @@ export const LESSONS = [
     why: 'What you set out to do this year and whether you are on course for it today, which is the half a number on its own never tells you.',
     manual: 'money',
     page: '/app/goals',
-    doing: 'Set one target, even a rough one. The pace mark is the useful part.',
+    doing: 'Set one target, even a rough one. The pace mark is the useful part. If you run the agency, Corporate targets under Report does the same for the whole agency, and only owners see it.',
   },
   {
     key: 'account',
