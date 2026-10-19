@@ -246,6 +246,7 @@ const I = {
   chevron: 'm6 9 6 6 6-6',
   calendar: 'M8 3v3m8-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z',
   chat: 'M21 12a7 7 0 0 1-7 7H8l-4 3v-4.2A7 7 0 0 1 4 12a7 7 0 0 1 7-7h3a7 7 0 0 1 7 7Z',
+  groups: 'M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2.5 19v-1a4.5 4.5 0 0 1 4.5-4.5h2a4.5 4.5 0 0 1 4.5 4.5v1m1.5-5.2a4.5 4.5 0 0 1 4.5 4.2v1',
   handshake: 'M7 11.5 4 8.5l3-2.5h4l2 1.5 2-1.5h4l3 2.5-3 3-1.5-1.2-3.2 3.4a1.6 1.6 0 0 1-2.3 0l-.6-.6-.9.8a1.5 1.5 0 0 1-2.1-2.1M7 11.5l2 2',
 };
 
@@ -261,9 +262,20 @@ const NAV = [
   // and two clicks away is where it would be missed.
   { href: '/app/chat', label: 'Chat', icon: I.chat, badge: 'chat-count' },
   {
+    hub: 'Clients', icon: I.people, items: [
+      { href: '/app/tasks', label: 'To do' },
+      { href: '/app/hotlists', label: 'Who to call' },
+      { href: '/app/leads', label: 'Leads' },
+      { href: '/app/clients', label: 'Clients' },
+      { href: '/app/households', label: 'Households' },
+      { href: '/app/import-clients', label: 'Import clients' },
+      { href: '/app/credits', label: 'Client credits' },
+      { href: '/app/pipeline', label: 'Reservation board' },
+    ],
+  },
+  {
     hub: 'Reservation', icon: I.ship, items: [
       { href: '/app/reservations', label: 'Reservations' },
-      { href: '/app/groups', label: 'Group space' },
       { href: '/app/complete', label: 'Fill in the gaps' },
       { href: '/app/import', label: 'Import' },
       { href: '/app/payments', label: 'Payments Due' },
@@ -275,24 +287,15 @@ const NAV = [
       { href: '/app/proposals', label: 'Proposals out' },
     ],
   },
+  // On its own line. A group is where a block of cabins is sold from and where its page, its sign-ups and
+  // who may sell into it are kept, which is opened as often as the reservations are.
+  { href: '/app/groups', label: 'Groups', icon: I.groups, alsoOn: ['/app/group'] },
   // A page of its own, next to the dashboard. A supplier directory is opened
   // to look somebody up, which is a thing you do between other things: behind
   // a hub it takes two clicks and reads as a setting for reservations rather
   // than the place you go to find a manager's phone number.
   { href: '/app/vendors', label: 'Vendors', icon: I.handshake },
   { href: '/app/cruise-search', label: 'Cruise search', icon: I.ship },
-  {
-    hub: 'Client', icon: I.people, items: [
-      { href: '/app/tasks', label: 'To do' },
-      { href: '/app/hotlists', label: 'Who to call' },
-      { href: '/app/leads', label: 'Leads' },
-      { href: '/app/clients', label: 'Clients' },
-      { href: '/app/households', label: 'Households' },
-      { href: '/app/import-clients', label: 'Import clients' },
-      { href: '/app/credits', label: 'Client credits' },
-      { href: '/app/pipeline', label: 'Reservation board' },
-    ],
-  },
   {
     hub: 'Marketing', icon: I.megaphone, items: [
       { href: '/app/reviews', label: 'Reviews' },
@@ -350,7 +353,7 @@ function icon(d) {
 }
 
 function navLink(item, current) {
-  const active = item.href === current ? ' aria-current="page"' : '';
+  const active = item.href === current || (item.alsoOn || []).includes(current) ? ' aria-current="page"' : '';
   // An empty span rather than none at all, so the thing that fills it later
   // has somewhere to go and does not have to rebuild the sidebar to appear.
   const badge = item.badge
