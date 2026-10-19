@@ -319,11 +319,7 @@ const NAV = [
       { href: '/app/manual', label: 'How this works' },
     ],
   },
-  {
-    hub: 'Setup', icon: I.gear, items: [
-      { href: '/app/settings', label: 'Settings' },
-    ],
-  },
+  { href: '/app/settings', label: 'Settings', icon: I.gear },
 ];
 
 const ADMIN_NAV = [
