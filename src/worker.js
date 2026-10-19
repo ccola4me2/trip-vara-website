@@ -51,8 +51,6 @@ import { handleProposals, handleMarkBooked, handleSetDeclined } from './proposal
 } from './quotenudge.js'; import {
   remindDuePayments,
 } from './payremind.js'; import {
-  sendCallLists,
-} from './calllist.js'; import {
   handleShareTrip,
   handleShareDocument,
   handleTripMessages,
@@ -296,7 +294,7 @@ import {
   handleRoster, handleUpdateRegistration, handleUpdateGroupTraveller, handleDeleteRegistration,
 } from './grouproster.js';
 import { handleGroupList, LISTS as GROUP_LISTS } from './groupmanifest.js';
-import { remindGroups, handleRunGroupReminders } from './groupremind.js';
+import { handleRunGroupReminders } from './groupremind.js';
 import { handleSlugCheck, handleSetSlug, handleReleaseSlug, handlePublicSlugTaken } from './groupslug.js';
 import { handleUploadPicture, handleRemovePicture, serveGroupPicture } from './grouppicture.js';
 import { handleUploadGroupFile, handleDeleteGroupFile, serveGroupFile } from './groupfiles.js';
@@ -625,15 +623,8 @@ export default {
     // advisors who turned it on, and only on real vendor deadlines.
     job('payment reminders', () => remindDuePayments(env));
 
-    // And once a week, the calls nothing else is chasing anybody about. A
-    // no-op on six days in seven, so this costs one query on almost every tick.
-    job('call lists', () => sendCallLists(env));
-
-    // The four group deadlines nothing else chases: the option date, the
-    // proposal expiry, the deposit date and the passport date. One digest per
-    // group per day, and nothing at all on a group with nothing to act on, so
-    // this is a single query on almost every tick.
-    job('group deadlines', () => remindGroups(env));
+    // The call list and the deadlines on groups used to be emails of their own. They go in the one
+    // morning message with the task list now, so there is nothing further to run for either.
 
     // Look for time based triggers, then advance whatever is due. Order
     // matters inside this one: scanning first means a payment that just came
