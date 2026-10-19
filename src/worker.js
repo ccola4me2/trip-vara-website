@@ -79,6 +79,7 @@ import {
   handleTrainingBoard,
 } from './training.js';
 import { handleGroupStats } from './groupstats.js';
+import { handleGetCorporate, handleSaveCorporate } from './corporate.js';
 import {
   handleBookableGroups, handleRequestAccess, handleGroupAccess, handleDecideAccess,
 } from './groupaccess.js';
@@ -480,6 +481,7 @@ const PAGE_FILES = {
   '/app/form': '/app/form.html',
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
+  '/app/corporate-targets': '/app/corporate-targets.html',
   '/app/settings': '/app/settings.html',
   '/admin/manual': '/admin/manual.html',
   '/admin/commissions': '/admin/commissions.html',
@@ -1009,6 +1011,8 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/training' && method === 'POST') return handleTrainingDone(request, env);
   if (path === '/api/admin/training' && method === 'GET') return handleTrainingBoard(request, env);
   if (path === '/api/admin/group-stats' && method === 'GET') return handleGroupStats(request, env);
+  if (path === '/api/corporate-targets' && method === 'GET') return handleGetCorporate(request, env);
+  if (path === '/api/corporate-targets' && method === 'PUT') return handleSaveCorporate(request, env);
   if (path === '/api/suppressions/restore' && method === 'POST') return handleRestoreSuppression(request, env);
   if (path === '/api/trips' && method === 'GET') return handleListTrips(request, env);
   if (path === '/api/trips' && method === 'POST') return handleCreateTrip(request, env);
