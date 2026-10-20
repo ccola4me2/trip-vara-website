@@ -86,6 +86,13 @@ import {
   handleSaveSupplierSpecial,
   handleDeleteSupplierSpecial,
 } from './supplierspecials.js';
+import {
+  handleListAgencyEvents,
+  handleAdminAgencyEvents,
+  handleSaveAgencyEvent,
+  handleDeleteAgencyEvent,
+  handleGoing,
+} from './agencyevents.js';
 import { handleGroupStats } from './groupstats.js';
 import { handleGetCorporate, handleSaveCorporate } from './corporate.js';
 import {
@@ -471,6 +478,7 @@ const PAGE_FILES = {
   '/admin/onboarding': '/admin/onboarding.html',
   '/admin/training': '/admin/training.html',
   '/admin/groups': '/admin/groups.html',
+  '/admin/events': '/admin/events.html',
   '/app/specials': '/app/specials.html',
   '/app/special': '/app/special.html',
   '/app/goals': '/app/goals.html',
@@ -752,6 +760,8 @@ async function routeApi(request, env, path, method) {
   const qpQuoteMatch = path.match(/^\/api\/quick-proposals\/([^/]+)\/quote$/);
   const supplierSpecialMatch = path.match(/^\/api\/supplier-specials\/([^/]+)$/);
   const supplierListMatch = path.match(/^\/api\/supplier-specials\/lists\/([^/]+)$/);
+  const agencyEventMatch = path.match(/^\/api\/agency-events\/([^/]+)$/);
+  const agencyGoingMatch = path.match(/^\/api\/agency-events\/([^/]+)\/going$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const groupAccessMatch = path.match(/^\/api\/groups\/([^/]+)\/access$/);
   const groupAskMatch = path.match(/^\/api\/groups\/([^/]+)\/access-request$/);
@@ -1044,6 +1054,26 @@ async function routeApi(request, env, path, method) {
   if (supplierListMatch && method === 'DELETE') return handleUndoSpecialsList(request, env, supplierListMatch[1]);
   if (supplierSpecialMatch && method === 'PUT') return handleSaveSupplierSpecial(request, env, supplierSpecialMatch[1]);
   if (supplierSpecialMatch && method === 'DELETE') return handleDeleteSupplierSpecial(request, env, supplierSpecialMatch[1]);
+  // What the whole agency does together: a vendor training, a webinar, a meeting.
+  if (path === '/api/agency-events' && method === 'GET') return handleListAgencyEvents(request, env);
+  if (path === '/api/agency-events' && method === 'POST') return handleSaveAgencyEvent(request, env, null);
+  if (path === '/api/admin/agency-events' && method === 'GET') return handleAdminAgencyEvents(request, env);
+  if (path === '/api/admin/group-stats' && method === 'GET') return handleGroupStats(request, env);
+  if (path === '/api/quick-proposals' && method === 'GET') return handleListQuickProposals(request, env);
+  if (path === '/api/quick-proposals' && method === 'POST') return handleCreateQuickProposal(request, env);
+  if (qpImageMatch && method === 'POST') return handleUploadProposalImage(request, env, qpImageMatch[1]);
+  if (qpImageDropMatch && method === 'DELETE') return handleRemoveProposalImage(request, env, qpImageDropMatch[1], qpImageDropMatch[2]);
+  if (qpSendMatch && method === 'POST') return handleSendQuickProposal(request, env, qpSendMatch[1]);
+  if (qpQuoteMatch && method === 'POST') return handleProposalToQuote(request, env, qpQuoteMatch[1]);
+  if (qpMatch && method === 'GET') return handleGetQuickProposal(request, env, qpMatch[1]);
+  if (qpMatch && method === 'PUT') return handleSaveQuickProposal(request, env, qpMatch[1]);
+  if (qpMatch && method === 'DELETE') return handleDeleteQuickProposal(request, env, qpMatch[1]);
+  if (path === '/api/corporate-targets' && method === 'GET') return handleGetCorporate(request, env);
+  if (path === '/api/corporate-targets' && method === 'PUT') return handleSaveCorporate(request, env);
+  if (agencyGoingMatch && method === 'PUT') return handleGoing(request, env, agencyGoingMatch[1]);
+  if (agencyEventMatch && method === 'PUT') return handleSaveAgencyEvent(request, env, agencyEventMatch[1]);
+  if (agencyEventMatch && method === 'DELETE') return handleDeleteAgencyEvent(request, env, agencyEventMatch[1]);
+
   if (path === '/api/quick-proposals' && method === 'GET') return handleListQuickProposals(request, env);
   if (path === '/api/quick-proposals' && method === 'POST') return handleCreateQuickProposal(request, env);
   if (qpImageMatch && method === 'POST') return handleUploadProposalImage(request, env, qpImageMatch[1]);

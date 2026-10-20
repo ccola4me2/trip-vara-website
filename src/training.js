@@ -282,7 +282,7 @@ export const LESSONS = [
     why: 'A birds eye view you can rearrange. What is on it is your choice, so it is worth setting up once rather than scrolling past it every morning.',
     manual: 'daily',
     page: '/app/',
-    doing: 'Press Customise and move the panels into the order you actually read.',
+    doing: 'Press Customise and move the panels into the order you actually read. Read the Notices panel too: it tells you when something has changed, such as the supplier specials being updated, and Trainings and events shows what the agency has arranged.',
   },
   {
     key: 'calendar',
@@ -291,7 +291,7 @@ export const LESSONS = [
     why: 'Your appointments and everything else that lands on a day: departures, deadlines, tasks. It syncs with Google and Outlook.',
     manual: 'daily',
     page: '/app/calendar',
-    doing: 'Put one appointment on it and see it appear in tomorrow morning\'s email. After it has happened, open it, tick Completed and write what came of it.',
+    doing: 'Put one appointment on it and see it appear in tomorrow morning\'s email. After it has happened, open it, tick Completed and write what came of it. A training or meeting the owner has arranged for the whole agency shows in teal: press I\'m going so they know you are coming.',
   },
   {
     key: 'tasks',

@@ -128,6 +128,10 @@ const AGENCY_OWNED = new Set([
   // An advisor's request to sell into another advisor's group, and the answer. The agency is the
   // predicate; the requester and the group's advisor each read their own side of it.
   'group_access',
+  // What the whole agency does together: a vendor training, a webinar, a meeting. An owner makes them and
+  // every advisor in the agency reads them, so agency_id is the predicate. The going table records who said
+  // so, one row per advisor, and every change to it names agency_id too.
+  'agency_events', 'agency_event_going',
   // The agency's own targets for a year. An owner's to read and set, one row per agency and year, so the
   // agency is the predicate on every statement.
   'agency_goals',

@@ -338,6 +338,7 @@ const ADMIN_NAV = [
   // procedures in front of somebody trying the product out.
   { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield, owner: true },
   { href: '/admin/groups', label: 'Group pages', icon: I.chart },
+  { href: '/admin/events', label: 'Trainings and events', icon: I.calendar },
   { href: '/admin/specials', label: 'Supplier specials', icon: I.megaphone },
   { href: '/admin/training', label: 'Training', icon: I.book },
   { href: '/admin/manual', label: 'Running the agency', icon: I.book },
