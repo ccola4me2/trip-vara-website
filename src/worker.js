@@ -321,6 +321,7 @@ import {
 } from './quickproposal.js';
 import { renderQuickProposal, serveProposalImage } from './quickproposalpage.js';
 import { handleWaiver, renderWaiverPage, handleSignWaiver } from './waiver.js';
+import { handleGetWaiverWording, handleSaveWaiverWording, handleResetWaiverWording } from './waiverwording.js';
 import { handleSaveWording, handleClearWording } from './wording.js';
 import { isGroupHost, serveGroupHost, serveSlug, redirectForCode } from './grouphost.js';
 import {
@@ -480,6 +481,7 @@ const PAGE_FILES = {
   '/admin/training': '/admin/training.html',
   '/admin/groups': '/admin/groups.html',
   '/admin/events': '/admin/events.html',
+  '/admin/waiver': '/admin/waiver.html',
   '/app/specials': '/app/specials.html',
   '/app/special': '/app/special.html',
   '/app/goals': '/app/goals.html',
@@ -1072,6 +1074,10 @@ async function routeApi(request, env, path, method) {
   if (qpMatch && method === 'GET') return handleGetQuickProposal(request, env, qpMatch[1]);
   if (qpMatch && method === 'PUT') return handleSaveQuickProposal(request, env, qpMatch[1]);
   if (qpMatch && method === 'DELETE') return handleDeleteQuickProposal(request, env, qpMatch[1]);
+  // The words of the travel insurance waiver, an owner's to read and set for their own agency.
+  if (path === '/api/waiver-wording' && method === 'GET') return handleGetWaiverWording(request, env);
+  if (path === '/api/waiver-wording' && method === 'PUT') return handleSaveWaiverWording(request, env);
+  if (path === '/api/waiver-wording' && method === 'DELETE') return handleResetWaiverWording(request, env);
   if (path === '/api/corporate-targets' && method === 'GET') return handleGetCorporate(request, env);
   if (path === '/api/corporate-targets' && method === 'PUT') return handleSaveCorporate(request, env);
   if (agencyGoingMatch && method === 'PUT') return handleGoing(request, env, agencyGoingMatch[1]);
