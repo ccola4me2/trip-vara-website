@@ -320,6 +320,7 @@ import {
   handleProposalToQuote, purgeExpiredProposals,
 } from './quickproposal.js';
 import { renderQuickProposal, serveProposalImage } from './quickproposalpage.js';
+import { handleWaiver, renderWaiverPage, handleSignWaiver } from './waiver.js';
 import { handleSaveWording, handleClearWording } from './wording.js';
 import { isGroupHost, serveGroupHost, serveSlug, redirectForCode } from './grouphost.js';
 import {
@@ -709,6 +710,7 @@ async function routeApi(request, env, path, method) {
   const statementMatch = path.match(/^\/api\/bookings\/([^/]+)\/statement$/);
   const welcomedMatch = path.match(/^\/api\/bookings\/([^/]+)\/welcomed$/);
   const shareMatch = path.match(/^\/api\/bookings\/([^/]+)\/share$/);
+  const waiverMatch = path.match(/^\/api\/bookings\/([^/]+)\/waiver$/);
   const clientHubMatch = path.match(/^\/api\/clients\/([^/]+)\/hub$/);
   const tripPlanMatch = path.match(/^\/api\/trips\/([^/]+)$/);
   const tripPlanShareMatch = path.match(/^\/api\/trips\/([^/]+)\/share$/);
@@ -1039,6 +1041,8 @@ async function routeApi(request, env, path, method) {
   // Tasks: the advisor's own working list, not the CRM's.
   // Sharing a trip with the person it is for.
   if (shareMatch && method === 'POST') return handleShareTrip(request, env, shareMatch[1]);
+  // The travel insurance waiver on a reservation or quote: its link, and sending it to the client.
+  if (waiverMatch && method === 'POST') return handleWaiver(request, env, waiverMatch[1]);
   if (clientHubMatch && method === 'POST') return handleShareClient(request, env, clientHubMatch[1]);
   // Several reservations, one trip, and the one link a client is sent for it.
   // The course over the manual, and who has got how far through it.
@@ -1476,6 +1480,14 @@ async function routePage(request, env, path) {
   // A proposal an advisor sent, and its pictures: public for as long as the proposal is live.
   const proposalOf = path.match(/^\/p\/([a-z0-9]+)\/?$/i);
   if (proposalOf) return renderQuickProposal(request, env, decodeURIComponent(proposalOf[1]));
+  // The travel insurance waiver a client signs, on the same terms: the code is the credential.
+  const waiverPage = path.match(/^\/w\/([a-z0-9]+)\/?$/i);
+  if (waiverPage) {
+    const waiverCodeIn = decodeURIComponent(waiverPage[1]);
+    return request.method === 'POST'
+      ? handleSignWaiver(request, env, waiverCodeIn)
+      : renderWaiverPage(request, env, waiverCodeIn);
+  }
   const proposalPicture = path.match(/^\/pi\/([^/]+)\/?$/);
   if (proposalPicture) return serveProposalImage(request, env, decodeURIComponent(proposalPicture[1]));
 
