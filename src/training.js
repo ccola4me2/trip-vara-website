@@ -330,6 +330,15 @@ export const LESSONS = [
     doing: 'Search a week you are being asked about and see what comes back.',
   },
   {
+    key: 'supplierspecials',
+    section: 'market',
+    title: 'Supplier specials',
+    why: 'What every supplier is running this week, in one place you can search. Check it before you quote, so a client is never told about an offer that ended on Friday.',
+    manual: 'selling',
+    page: '/app/supplier-specials',
+    doing: 'Search for a supplier one of your clients sails with, then try a code or words like free air. Press a promotion code to copy it. When the list has been updated, a banner at the top of the page, an item in the bell and a notice on the dashboard say so, and See the latest list shows what is new.',
+  },
+  {
     key: 'reviews',
     section: 'market',
     title: 'Reviews',

@@ -78,6 +78,14 @@ import {
   handleTrainingDone,
   handleTrainingBoard,
 } from './training.js';
+import {
+  handleListSupplierSpecials,
+  handleReadSpecialsFile,
+  handleImportSpecials,
+  handleUndoSpecialsList,
+  handleSaveSupplierSpecial,
+  handleDeleteSupplierSpecial,
+} from './supplierspecials.js';
 import { handleGroupStats } from './groupstats.js';
 import { handleGetCorporate, handleSaveCorporate } from './corporate.js';
 import {
@@ -488,6 +496,8 @@ const PAGE_FILES = {
   '/app/bookings': '/app/reservations.html',
   '/app/reports': '/app/reports.html',
   '/app/corporate-targets': '/app/corporate-targets.html',
+  '/app/supplier-specials': '/app/supplier-specials.html',
+  '/admin/specials': '/admin/specials.html',
   '/app/quick-proposals': '/app/quick-proposals.html',
   '/app/quick-proposal': '/app/quick-proposal.html',
   '/app/settings': '/app/settings.html',
@@ -740,6 +750,8 @@ async function routeApi(request, env, path, method) {
   const qpImageDropMatch = path.match(/^\/api\/quick-proposals\/([^/]+)\/image\/([^/]+)$/);
   const qpSendMatch = path.match(/^\/api\/quick-proposals\/([^/]+)\/send$/);
   const qpQuoteMatch = path.match(/^\/api\/quick-proposals\/([^/]+)\/quote$/);
+  const supplierSpecialMatch = path.match(/^\/api\/supplier-specials\/([^/]+)$/);
+  const supplierListMatch = path.match(/^\/api\/supplier-specials\/lists\/([^/]+)$/);
   const groupMatch = path.match(/^\/api\/groups\/([^/]+)$/);
   const groupAccessMatch = path.match(/^\/api\/groups\/([^/]+)\/access$/);
   const groupAskMatch = path.match(/^\/api\/groups\/([^/]+)\/access-request$/);
@@ -1024,6 +1036,14 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/training' && method === 'POST') return handleTrainingDone(request, env);
   if (path === '/api/admin/training' && method === 'GET') return handleTrainingBoard(request, env);
   if (path === '/api/admin/group-stats' && method === 'GET') return handleGroupStats(request, env);
+  // What the suppliers are running this week: everyone reads it, the owner keeps it.
+  if (path === '/api/supplier-specials' && method === 'GET') return handleListSupplierSpecials(request, env);
+  if (path === '/api/supplier-specials' && method === 'POST') return handleSaveSupplierSpecial(request, env, null);
+  if (path === '/api/supplier-specials/read' && method === 'POST') return handleReadSpecialsFile(request, env);
+  if (path === '/api/supplier-specials/import' && method === 'POST') return handleImportSpecials(request, env);
+  if (supplierListMatch && method === 'DELETE') return handleUndoSpecialsList(request, env, supplierListMatch[1]);
+  if (supplierSpecialMatch && method === 'PUT') return handleSaveSupplierSpecial(request, env, supplierSpecialMatch[1]);
+  if (supplierSpecialMatch && method === 'DELETE') return handleDeleteSupplierSpecial(request, env, supplierSpecialMatch[1]);
   if (path === '/api/quick-proposals' && method === 'GET') return handleListQuickProposals(request, env);
   if (path === '/api/quick-proposals' && method === 'POST') return handleCreateQuickProposal(request, env);
   if (qpImageMatch && method === 'POST') return handleUploadProposalImage(request, env, qpImageMatch[1]);

@@ -301,7 +301,8 @@ const NAV = [
   {
     hub: 'Marketing', icon: I.megaphone, items: [
       { href: '/app/reviews', label: 'Reviews' },
-      { href: '/app/specials', label: 'Specials' },
+      { href: '/app/supplier-specials', label: 'Supplier specials' },
+      { href: '/app/specials', label: 'My deals' },
       { href: '/app/formbuilder', label: 'Forms' },
       { href: '/app/qr', label: 'QR codes' },
       { href: '/app/automations', label: 'Automations' },
@@ -337,6 +338,7 @@ const ADMIN_NAV = [
   // procedures in front of somebody trying the product out.
   { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield, owner: true },
   { href: '/admin/groups', label: 'Group pages', icon: I.chart },
+  { href: '/admin/specials', label: 'Supplier specials', icon: I.megaphone },
   { href: '/admin/training', label: 'Training', icon: I.book },
   { href: '/admin/manual', label: 'Running the agency', icon: I.book },
   { href: '/app/', label: 'Back to portal', icon: I.back },
@@ -594,7 +596,7 @@ function mountBell(sidebar) {
 
   const KIND = {
     task: 'Task', lead: 'Lead', appointment: 'Appointment', form: 'Form',
-    mention: 'Chat', chat: 'Chat',
+    mention: 'Chat', chat: 'Chat', specials: 'Specials',
   };
 
   /** "3 days ago", "in 2 hours": how somebody would say it out loud. */

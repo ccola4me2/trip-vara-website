@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supplier specials | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .ss-search { position: relative; }
+  .ss-search input {
+    width: 100%; font-size: 1.1rem; padding: .95rem 3rem .95rem 3rem; border-radius: 14px;
+    border: 1.5px solid var(--navy-200); background: #fff; box-shadow: var(--shadow-sm);
+  }
+  .ss-search input:focus { border-color: var(--teal-500); outline: 0; box-shadow: 0 0 0 3px var(--teal-50); }
+  .ss-search svg { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--ink-400); pointer-events: none; }
+  .ss-search .ss-clear {
+    position: absolute; right: .6rem; top: 50%; transform: translateY(-50%);
+    border: 0; background: var(--navy-100); color: var(--navy-700); border-radius: 999px;
+    width: 1.9rem; height: 1.9rem; cursor: pointer; font-size: 1rem; line-height: 1;
+  }
+  .ss-tip { font-size: .78rem; color: var(--ink-400); margin: .55rem .2rem 0; }
+  .ss-tip kbd { font: inherit; font-size: .72rem; border: 1px solid var(--navy-200); border-radius: 5px; padding: 0 .35rem; background: #fff; }
+
+  .ss-filters { display: flex; flex-wrap: wrap; gap: .6rem 1.4rem; align-items: center; margin: 1.1rem 0 .4rem; }
+  .ss-group { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+  .ss-group > .lbl { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-400); margin-right: .15rem; }
+  .ss-pill {
+    font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+    border: 1px solid var(--navy-200); background: #fff; color: var(--navy-700);
+    border-radius: 999px; padding: .3rem .85rem;
+  }
+  .ss-pill:hover { border-color: var(--navy-400); }
+  .ss-pill[aria-pressed="true"] { background: var(--navy-800); border-color: var(--navy-800); color: #fff; }
+  .ss-pill .n { font-weight: 400; opacity: .7; margin-left: .3rem; font-size: .76rem; }
+  .ss-filters select { width: auto; min-width: 0; font-size: .85rem; padding: .35rem 2rem .35rem .7rem; }
+
+  .ss-count { display: flex; align-items: baseline; gap: .8rem; margin: 1.2rem 0 .7rem; flex-wrap: wrap; }
+  .ss-count strong { font-size: 1rem; color: var(--navy-800); }
+  .ss-count .m { font-size: .84rem; color: var(--ink-500); }
+  .ss-count button { margin-left: auto; }
+
+  .ss-brand { margin-bottom: 1rem; overflow: hidden; }
+  .ss-brand-head {
+    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    padding: .8rem 1.25rem; background: var(--navy-50); border-bottom: 1px solid var(--navy-100);
+  }
+  .ss-brand-head h3 { margin: 0; font-size: 1.05rem; color: var(--navy-800); }
+  .ss-brand-head .tag { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-400); }
+  .ss-brand-head .n { margin-left: auto; font-size: .78rem; color: var(--ink-500); }
+  .ss-brand-head a { font-size: .8rem; font-weight: 600; }
+
+  .ss-offer {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem 1.25rem;
+    padding: .95rem 1.25rem; border-bottom: 1px solid var(--navy-100); align-items: start;
+  }
+  .ss-offer:last-child { border-bottom: 0; }
+  .ss-offer.over { background: #fafbfc; }
+  .ss-offer.over .ss-text { color: var(--ink-500); }
+  .ss-text { font-size: .95rem; line-height: 1.5; color: var(--ink-900); }
+  .ss-prog { display: inline-block; font-size: .72rem; font-weight: 700; color: var(--teal-600); background: var(--teal-50); border-radius: 6px; padding: .1rem .5rem; margin-right: .4rem; vertical-align: .08rem; }
+  .ss-meta { font-size: .82rem; color: var(--ink-500); margin-top: .3rem; display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
+  .ss-meta b { color: var(--ink-700); font-weight: 600; }
+  .ss-side { display: flex; flex-direction: column; align-items: flex-end; gap: .45rem; }
+  .ss-side .row { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .ss-code {
+    font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; font-weight: 600;
+    color: var(--navy-800); background: #fff; border: 1px dashed var(--navy-400); border-radius: 7px;
+    padding: .15rem .55rem; cursor: pointer;
+  }
+  .ss-code:hover { background: var(--navy-50); }
+  .ss-headline { font-weight: 650; color: var(--navy-800); margin-bottom: .15rem; }
+  .ss-links { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  mark { background: #fff1b8; color: inherit; border-radius: 3px; padding: 0 .1rem; }
+  .ss-new { font-size: .68rem; font-weight: 800; letter-spacing: .06em; color: var(--teal-600); margin-left: .4rem; text-transform: uppercase; }
+
+  .ss-updated { margin: .9rem .1rem 0; font-size: .86rem; color: var(--ink-500); }
+  .ss-updated strong { color: var(--navy-800); font-weight: 650; }
+
+  .ss-drop {
+    border: 2px dashed var(--navy-300); border-radius: 14px; padding: 2.2rem 1.2rem; text-align: center;
+    color: var(--ink-500); background: var(--navy-50); transition: background .15s, border-color .15s;
+  }
+  .ss-drop.over { background: var(--teal-50); border-color: var(--teal-500); }
+  .ss-drop strong { display: block; font-size: 1.05rem; color: var(--navy-800); margin-bottom: .3rem; }
+
+  .ss-prev { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  .ss-prev th { text-align: left; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-400); padding: .4rem .5rem; border-bottom: 1px solid var(--navy-100); position: sticky; top: 0; background: #fff; }
+  .ss-prev td { padding: .5rem; border-bottom: 1px solid var(--navy-100); vertical-align: top; }
+  .ss-prev tr.same td { color: var(--ink-400); }
+  .ss-scroll { max-height: 46vh; overflow: auto; border: 1px solid var(--navy-100); border-radius: 10px; }
+  .ss-chips { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .8rem; }
+  .ss-hist { list-style: none; margin: 0; padding: 0; }
+  .ss-hist li { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: .65rem 1.25rem; border-bottom: 1px solid var(--navy-100); font-size: .86rem; }
+  .ss-hist li:last-child { border-bottom: 0; }
+  .ss-hist .grow { flex: 1; min-width: 12rem; }
+
+  @media (max-width: 640px) {
+    .ss-offer { grid-template-columns: 1fr; }
+    .ss-side { align-items: flex-start; }
+    .ss-side .row { justify-content: flex-start; }
+    .ss-search input { font-size: 1rem; }
+  }
+  @media print { .noprint { display: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Supplier specials</h1>
+        <p class="sub">What the suppliers are running right now. Search by brand, offer, code or anything else.</p></div>
+      <div class="toolbar" style="margin:0;">
+        <a class="btn btn-ghost btn-sm" id="manage" href="/admin/specials" hidden>Manage the list</a>
+      </div>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <div class="notice notice-info" id="ss-banner" role="status" hidden style="margin-bottom:1rem;"></div>
+      <section id="stats" class="stat-grid"></section>
+
+      <p class="ss-updated" id="updated" hidden></p>
+
+      <div class="ss-search" role="search" style="margin-top:1.1rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" autocomplete="off" spellcheck="false" aria-label="Search supplier specials"
+          placeholder="Try: sandals, free air, OBC, BOGO60, 2027 europe">
+        <button class="ss-clear" id="clear" type="button" aria-label="Clear the search" hidden>&times;</button>
+      </div>
+      <p class="ss-tip">Press <kbd>/</kbd> to search from anywhere. More words narrow it down. Put
+        "quotes" around a phrase, and a minus sign in front of a word leaves it out.</p>
+
+      <div class="ss-filters" id="filters"></div>
+      <div class="ss-count" id="count"></div>
+      <div id="results"><p class="spinner">Loading specials...</p></div>
+
+    </div>
+  </div>
+</div>
+
+
+<script type="module">
+import { api, mountShell, esc, dateFmt, showError, onSubmit } from '/js/app.js';
+await mountShell();
+
+const $ = (id) => document.getElementById(id);
+const errEl = $('err');
+const resultsEl = $('results');
+
+let d = null;
+const state = { q: '', category: '', status: 'live', brand: '', sort: 'ending', view: 'brand' };
+
+try {
+  const saved = JSON.parse(localStorage.getItem('ss-view') || 'null');
+  if (saved && (saved === 'brand' || saved === 'list')) state.view = saved;
+} catch { /* a remembered view is a convenience, not a requirement */ }
+
+// ---------------------------------------------------------------------------
+// Dates
+// ---------------------------------------------------------------------------
+
+const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '');
+const days = (a, b) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86400000);
+const isOver = (s) => Boolean(s.ends_on && s.ends_on < d.today);
+const isLive = (s) => !isOver(s);
+
+/** How long it has left, which is the thing worth reading first. */
+function deadline(s) {
+  if (s.ends_on) {
+    const left = days(s.ends_on, d.today);
+    if (left < 0) return { text: `Ended ${short(s.ends_on)}`, tone: 'badge-navy' };
+    if (left === 0) return { text: 'Ends today', tone: 'badge-red' };
+    if (left === 1) return { text: 'Ends tomorrow', tone: 'badge-red' };
+    if (left <= 3) return { text: `${left} days left`, tone: 'badge-red' };
+    if (left <= 14) return { text: `${left} days left`, tone: 'badge-amber' };
+    return { text: `Until ${dateFmt(s.ends_on)}`, tone: 'badge-green' };
+  }
+  if (s.starts_on && s.starts_on > d.today) return { text: `Starts ${short(s.starts_on)}`, tone: 'badge-navy' };
+  return { text: s.window_text ? 'Date not stated' : 'No end date', tone: 'badge-navy' };
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+/** Lower case, accents off, everything that is not a letter or digit a space. */
+function flat(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Words a supplier and an advisor use for the same thing.
+const SAME = [
+  ['obc', 'onboard credit', 'on board credit', 'shipboard credit'],
+  ['ncl', 'norwegian'],
+  ['rci', 'royal caribbean'],
+  ['bogo', 'buy one get one', '2 for 1'],
+  ['pp', 'per person'],
+  ['commission', 'comm'],
+  ['air', 'airfare', 'flights'],
+  ['kids', 'children', 'child'],
+  ['3rd', 'third'],
+  ['2nd', 'second'],
+];
+
+function alternatives(word) {
+  const w = flat(word);
+  const group = SAME.find((g) => g.includes(w));
+  return group ? group.map(flat) : [w];
+}
+
+/** "free air" -sandals "75% off"  ->  what must match, and what must not. */
+function parseQuery(raw) {
+  const must = [];
+  const not = [];
+  const re = /(-?)"([^"]+)"|(-?)(\S+)/g;
+  let m;
+  while ((m = re.exec(raw))) {
+    const neg = (m[1] || m[3]) === '-';
+    const text = m[2] || m[4];
+    const f = flat(text);
+    if (!f) continue;
+    if (neg) not.push(f);
+    else must.push(m[2] ? [f] : alternatives(text));
+  }
+  return { must, not };
+}
+
+function haystack(s) {
+  return {
+    brand: flat(`${s.brand} ${s.program || ''}`),
+    code: flat(s.code),
+    offer: flat(`${s.headline || ''} ${s.offer}`),
+    rest: flat(`${s.notes || ''} ${s.window_text || ''} ${s.category || ''} ${s.travel_period || ''}`),
+  };
+}
+
+/**
+ * Does a word in the text begin with this? "sand" finds Sandals; "ncl" does not find
+ * "inclusives", which a plain substring search would, and which put Hilton under NCL.
+ */
+function starts(text, term) {
+  return ` ${text}`.includes(` ${term}`);
+}
+
+/** Null when it does not match; otherwise a score, so the best answer is first. */
+function scoreOf(s, parsed) {
+  const h = haystack(s);
+  const all = `${h.brand} ${h.code} ${h.offer} ${h.rest}`;
+  if (parsed.not.some((t) => starts(all, t))) return null;
+  let score = 0;
+  for (const alts of parsed.must) {
+    let best = 0;
+    for (const a of alts) {
+      if (h.code === a) best = Math.max(best, 12);
+      else if (h.code.includes(a)) best = Math.max(best, 9);
+      if (h.brand.startsWith(a)) best = Math.max(best, 10);
+      else if (starts(h.brand, a)) best = Math.max(best, 7);
+      if (starts(h.offer, a)) best = Math.max(best, 4);
+      if (starts(h.rest, a)) best = Math.max(best, 2);
+    }
+    if (!best) return null;
+    score += best;
+  }
+  return score;
+}
+
+/** The raw text with the searched words picked out. */
+function mark(text, words) {
+  const s = String(text || '');
+  if (!words.length) return esc(s);
+  const re = new RegExp(`\\b(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'ig');
+  return s.split(re).map((part, i) => (i % 2 ? `<mark>${esc(part)}</mark>` : esc(part))).join('');
+}
+
+function highlightWords(parsed) {
+  const out = new Set();
+  for (const alts of parsed.must) for (const a of alts) if (a.length > 1) out.add(a);
+  return [...out];
+}
+
+// ---------------------------------------------------------------------------
+// What to show
+// ---------------------------------------------------------------------------
+
+function passesStatus(s) {
+  switch (state.status) {
+    case 'live': return isLive(s);
+    case 'week': return Boolean(s.ends_on) && s.ends_on >= d.today && days(s.ends_on, d.today) <= 7;
+    case 'latest': return Boolean(d.latestListId) && s.list_id === d.latestListId;
+    case 'featured': return Boolean(s.featured) && isLive(s);
+    case 'ended': return isOver(s);
+    default: return true;
+  }
+}
+
+function sorted(rows, scores) {
+  const byEnd = (a, b) => (a.ends_on || '9999') < (b.ends_on || '9999') ? -1
+    : (a.ends_on || '9999') > (b.ends_on || '9999') ? 1 : 0;
+  const byBrand = (a, b) => a.brand.localeCompare(b.brand) || byEnd(a, b);
+  const out = [...rows];
+  if (state.sort === 'match' && state.q) {
+    out.sort((a, b) => (scores.get(b.id) - scores.get(a.id)) || byEnd(a, b));
+  } else if (state.sort === 'brand') out.sort(byBrand);
+  else if (state.sort === 'new') out.sort((a, b) => (b.created_at - a.created_at) || byBrand(a, b));
+  else out.sort((a, b) => (isOver(a) - isOver(b)) || (Boolean(b.featured) - Boolean(a.featured)) || byEnd(a, b) || a.brand.localeCompare(b.brand));
+  return out;
+}
+
+function filtered() {
+  const parsed = parseQuery(state.q);
+  const scores = new Map();
+  const base = d.specials.filter((s) => {
+    if (!passesStatus(s)) return false;
+    if (state.category && s.category !== state.category) return false;
+    if (state.brand && s.brand !== state.brand) return false;
+    if (!parsed.must.length && !parsed.not.length) { scores.set(s.id, 0); return true; }
+    const sc = scoreOf(s, parsed);
+    if (sc === null) return false;
+    scores.set(s.id, sc);
+    return true;
+  });
+  return { rows: sorted(base, scores), parsed, scores };
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+
+function drawStats() {
+  const live = d.specials.filter(isLive);
+  const soon = live.filter((s) => s.ends_on && days(s.ends_on, d.today) <= 7);
+  const brands = new Set(live.map((s) => s.brand));
+  const fresh = d.latestListId ? d.specials.filter((s) => s.first_list_id === d.latestListId && isLive(s)).length : 0;
+  $('stats').innerHTML = `
+    <div class="stat"><p class="label">Running now</p><p class="value">${live.length}</p>
+      <p class="meta">across ${brands.size} brand${brands.size === 1 ? '' : 's'}</p></div>
+    <div class="stat"><p class="label">Ending this week</p>
+      <p class="value" style="${soon.length ? 'color:var(--coral-500);' : ''}">${soon.length}</p>
+      <p class="meta">worth a call today</p></div>
+    <div class="stat"><p class="label">New on the latest list</p><p class="value">${fresh}</p>
+      <p class="meta">${d.updatedOn ? `updated ${esc(dateFmt(d.updatedOn))}` : 'no list yet'}</p></div>`;
+}
+
+/** When the list was last updated, and nothing else about how it got here. */
+function drawUpdated() {
+  const el = $('updated');
+  if (!d.updatedOn) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `Updated <strong>${esc(dateFmt(d.updatedOn))}</strong>`;
+}
+
+function pill(group, value, label, n) {
+  const on = state[group] === value;
+  return `<button type="button" class="ss-pill" data-g="${group}" data-v="${esc(value)}" aria-pressed="${on}">${
+    esc(label)}${n === undefined ? '' : `<span class="n">${n}</span>`}</button>`;
+}
+
+function drawFilters() {
+  // Counts follow the status chosen, so a shelf never promises offers the list below will not show.
+  const inStatus = d.specials.filter(passesStatus);
+  const cats = [...new Set(d.specials.map((s) => s.category).filter(Boolean))].sort();
+  const brands = [...new Set(inStatus.map((s) => s.brand))].sort((a, b) => a.localeCompare(b));
+  if (state.brand && !brands.includes(state.brand)) state.brand = '';
+
+  const statuses = [
+    ['live', 'Running now'], ['featured', 'Featured'], ['week', 'Ending this week'], ['latest', 'Latest list'],
+    ['ended', 'Ended'], ['all', 'Everything'],
+  ];
+  $('filters').innerHTML = `
+    <div class="ss-group"><span class="lbl">Show</span>${statuses.map(([v, l]) => pill('status', v, l)).join('')}</div>
+    <div class="ss-group"><span class="lbl">Shelf</span>${pill('category', '', 'All')}${
+  cats.map((c) => pill('category', c, c, inStatus.filter((s) => s.category === c).length)).join('')}</div>
+    <div class="ss-group"><label class="lbl" for="brand-pick">Brand</label>
+      <select id="brand-pick"><option value="">All brands (${brands.length})</option>${
+  brands.map((b) => `<option value="${esc(b)}" ${b === state.brand ? 'selected' : ''}>${esc(b)}</option>`).join('')
+}</select></div>
+    <div class="ss-group"><label class="lbl" for="sort-pick">Order</label>
+      <select id="sort-pick">
+        ${state.q ? `<option value="match" ${state.sort === 'match' ? 'selected' : ''}>Best match</option>` : ''}
+        <option value="ending" ${state.sort === 'ending' ? 'selected' : ''}>Ending soonest</option>
+        <option value="brand" ${state.sort === 'brand' ? 'selected' : ''}>Brand A to Z</option>
+        <option value="new" ${state.sort === 'new' ? 'selected' : ''}>Newest first</option>
+      </select></div>
+    <div class="ss-group"><span class="lbl">View</span>${pill('view', 'brand', 'By brand')}${pill('view', 'list', 'One list')}</div>`;
+}
+
+function offerHtml(s, words, showBrand) {
+  const dl = deadline(s);
+  const isNew = d.latestListId && s.first_list_id === d.latestListId && (d.listCount || 0) > 1;
+  const meta = [];
+  if (s.window_text) meta.push(`<span><b>Book by</b> ${mark(s.window_text, words)}</span>`);
+  else if (s.ends_on) meta.push(`<span><b>Book by</b> ${esc(dateFmt(s.ends_on))}</span>`);
+  if (s.travel_period) meta.push(`<span><b>Travel</b> ${mark(s.travel_period, words)}</span>`);
+  if (s.notes) meta.push(`<span>${mark(s.notes, words)}</span>`);
+  return `<div class="ss-offer ${isOver(s) ? 'over' : ''}">
+    <div>
+      ${s.headline ? `<div class="ss-headline">${showBrand ? `${mark(s.brand, words)}: ` : ''}${mark(s.headline, words)}</div>` : ''}
+      <div class="ss-text">${showBrand && !s.headline ? `<strong>${mark(s.brand, words)}</strong> ` : ''}${
+  s.program ? `<span class="ss-prog">${mark(s.program, words)}</span>` : ''}${mark(s.offer, words)}${
+  isNew ? '<span class="ss-new">New</span>' : ''}</div>
+      ${meta.length ? `<div class="ss-meta">${meta.join('')}</div>` : ''}
+    </div>
+    <div class="ss-side">
+      <div class="row">${s.featured ? '<span class="badge badge-coral">Featured</span>' : ''}<span class="badge ${dl.tone}">${esc(dl.text)}</span></div>
+      <div class="ss-links noprint">${s.link ? `<a class="btn btn-secondary btn-sm" href="${esc(s.link)}" target="_blank"
+        rel="noopener noreferrer">See details</a>
+        <button class="btn btn-ghost btn-sm" type="button" data-copylink="${esc(s.id)}">Copy link</button>` : ''}</div>
+      <div class="row noprint">
+        ${s.code ? `<button class="ss-code" type="button" data-copycode="${esc(s.code)}" title="Copy the code">${mark(s.code, words)}</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function draw() {
+  drawFilters();
+  const { rows, parsed } = filtered();
+  const words = highlightWords(parsed);
+  const brands = new Set(rows.map((s) => s.brand));
+  const narrowed = Boolean(state.q || state.category || state.brand || state.status !== 'live');
+
+  $('count').innerHTML = `<strong>${rows.length} special${rows.length === 1 ? '' : 's'}</strong>
+    <span class="m">from ${brands.size} brand${brands.size === 1 ? '' : 's'}${state.q ? ` matching "${esc(state.q)}"` : ''}</span>
+    ${narrowed ? '<button class="btn btn-ghost btn-sm" type="button" id="reset">Reset</button>' : ''}`;
+
+  if (!d.specials.length) {
+    resultsEl.innerHTML = `<div class="card"><div class="empty"><h3>No specials yet</h3>
+      <p>${d.canEdit
+    ? 'Upload the weekly list under Admin, Supplier specials, and every offer will be searchable here.'
+    : 'Once the weekly list is uploaded, every offer will be searchable here.'}</p></div></div>`;
+    return;
+  }
+  if (!rows.length) {
+    resultsEl.innerHTML = `<div class="card"><div class="empty"><h3>Nothing matches</h3>
+      <p>${state.status === 'live' && d.specials.some(isOver) && state.q
+    ? 'Nothing running matches that. Try Everything above to include offers that have ended.'
+    : 'Try fewer words, or a different spelling. Searching for a brand, a code, or words like "free air" works best.'}</p></div></div>`;
+    return;
+  }
+
+  if (state.view === 'list') {
+    resultsEl.innerHTML = `<div class="card">${rows.map((s) => offerHtml(s, words, true)).join('')}</div>`;
+  } else {
+    const groups = new Map();
+    for (const s of rows) {
+      if (!groups.has(s.brand)) groups.set(s.brand, []);
+      groups.get(s.brand).push(s);
+    }
+    const order = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+    resultsEl.innerHTML = order.map((b) => {
+      const list = groups.get(b);
+      const first = list[0];
+      return `<section class="card ss-brand">
+        <div class="ss-brand-head">
+          <h3>${mark(b, words)}</h3><span class="tag">${esc(first.category || '')}</span>
+          ${first.vendor_id ? `<a href="/app/vendor?id=${encodeURIComponent(first.vendor_id)}">Supplier page</a>` : ''}
+          <span class="n">${list.length} special${list.length === 1 ? '' : 's'}</span>
+        </div>
+        ${list.map((s) => offerHtml(s, words, false)).join('')}
+      </section>`;
+    }).join('');
+  }
+}
+
+// Said at the top of the page when the list has been updated since this browser last looked, and put
+// away until the next list. Kept per browser: it is a nudge, not a record.
+function drawBanner() {
+  const box = $('ss-banner');
+  let seen = null;
+  try { seen = localStorage.getItem('ss-seen'); } catch { /* no storage, so the banner just shows */ }
+  if (!d.latestListId || seen === d.latestListId) { box.hidden = true; return; }
+  const fresh = d.specials.filter((s) => s.first_list_id === d.latestListId && isLive(s)).length;
+  box.hidden = false;
+  box.innerHTML = `<div style="display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;">
+    <span style="flex:1;min-width:14rem;"><strong>The specials have been updated${
+    d.updatedOn ? ` (${esc(dateFmt(d.updatedOn))})` : ''}.</strong>${
+    (d.listCount || 0) > 1 && fresh ? ` ${fresh} new offer${fresh === 1 ? '' : 's'} to look at.` : ''}</span>
+    <button class="btn btn-primary btn-sm" type="button" id="ss-banner-show">See the latest list</button>
+    <button class="btn btn-ghost btn-sm" type="button" id="ss-banner-close">Dismiss</button></div>`;
+  const put = () => { try { localStorage.setItem('ss-seen', d.latestListId); } catch { /* fine */ } box.hidden = true; };
+  $('ss-banner-close').addEventListener('click', put);
+  $('ss-banner-show').addEventListener('click', () => { state.status = 'latest'; put(); drawAll(); });
+}
+
+function drawAll() {
+  drawStats();
+  drawUpdated();
+  drawBanner();
+  draw();
+}
+
+// ---------------------------------------------------------------------------
+// Doing things
+// ---------------------------------------------------------------------------
+
+async function copied(btn, text, back) {
+  try { await navigator.clipboard.writeText(text); } catch { return; }
+  btn.textContent = 'Copied';
+  setTimeout(() => { btn.textContent = back; }, 1400);
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.dataset.g) {
+    state[t.dataset.g] = t.dataset.v;
+    if (t.dataset.g === 'view') { try { localStorage.setItem('ss-view', JSON.stringify(state.view)); } catch { /* fine */ } }
+    if (t.dataset.g === 'status' && state.sort === 'match' && !state.q) state.sort = 'ending';
+    draw();
+  } else if (t.id === 'reset') {
+    Object.assign(state, { q: '', category: '', status: 'live', brand: '', sort: 'ending' });
+    $('q').value = '';
+    syncUrl();
+    draw();
+    $('clear').hidden = true;
+  } else if (t.dataset.copylink) {
+    const s = d.specials.find((x) => x.id === t.dataset.copylink);
+    if (s && s.link) copied(t, s.link, 'Copy link');
+  } else if (t.dataset.copycode) {
+    copied(t, t.dataset.copycode, t.dataset.copycode);
+  }
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'brand-pick') { state.brand = e.target.value; draw(); }
+  if (e.target.id === 'sort-pick') { state.sort = e.target.value; draw(); }
+});
+
+function syncUrl() {
+  const u = new URL(location.href);
+  if (state.q) u.searchParams.set('q', state.q); else u.searchParams.delete('q');
+  history.replaceState(null, '', u);
+}
+
+const qEl = $('q');
+let timer = null;
+qEl.addEventListener('input', () => {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    state.q = qEl.value.trim();
+    // A search with words in it is about relevance, so lead with that; clearing it goes back.
+    if (state.q && state.sort === 'ending') state.sort = 'match';
+    if (!state.q && state.sort === 'match') state.sort = 'ending';
+    $('clear').hidden = !qEl.value;
+    syncUrl();
+    draw();
+  }, 90);
+});
+$('clear').addEventListener('click', () => {
+  qEl.value = ''; qEl.dispatchEvent(new Event('input')); qEl.focus();
+});
+document.addEventListener('keydown', (e) => {
+  const typing = /^(input|textarea|select)$/i.test(document.activeElement && document.activeElement.tagName);
+  if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); qEl.focus(); qEl.select(); }
+  if (e.key === 'Escape' && document.activeElement === qEl && qEl.value) { qEl.value = ''; qEl.dispatchEvent(new Event('input')); }
+});
+
+
+// ---------------------------------------------------------------------------
+
+async function load() {
+  try {
+    d = await api('/api/supplier-specials');
+    $('manage').hidden = !d.canEdit;
+    drawAll();
+  } catch (e) { showError(resultsEl, e); }
+}
+
+const asked = new URLSearchParams(location.search).get('q');
+if (asked) { qEl.value = asked; state.q = asked.trim(); state.sort = 'match'; $('clear').hidden = false; }
+await load();
+</script>
+</body></html>
