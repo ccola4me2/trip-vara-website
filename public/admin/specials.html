@@ -163,7 +163,7 @@
           <input id="category" name="category" maxlength="60" list="shelf-names" placeholder="Cruise lines"></div>
       </div>
       <div class="field"><label for="program">Programme <span class="muted">(optional)</span></label>
-        <input id="program" name="program" maxlength="120" placeholder="TLN AmaMAX"></div>
+        <input id="program" name="program" maxlength="120" placeholder="Group program or club"></div>
       <div class="field"><label for="headline">Headline <span class="muted">(optional)</span></label>
         <input id="headline" name="headline" maxlength="160"></div>
       <div class="field"><label for="offer">The offer</label>
@@ -181,7 +181,7 @@
         <div class="field"><label for="travelPeriod">Travel period</label>
           <input id="travelPeriod" name="travelPeriod" maxlength="160" placeholder="1/1/2027 - 12/31/2027"></div>
         <div class="field"><label for="link">Link to the offer</label>
-          <input id="link" name="link" maxlength="600" placeholder="https://www.travelleaders.com/promotions/..." autocomplete="off">
+          <input id="link" name="link" maxlength="600" placeholder="https://" autocomplete="off">
           <p class="field-hint">Leave it exactly as it was given. The agent id in it credits the lead.</p></div>
       </div>
       <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;margin-bottom:.8rem;">
@@ -329,10 +329,9 @@ function drawDrop(message) {
   upBody.innerHTML = `${message ? `<div class="notice notice-error">${esc(message)}</div>` : ''}
     <div class="ss-drop" id="drop">
       <strong>Drop the weekly specials file here</strong>
-      <p style="margin:.2rem 0 1rem;">The weekly Word document (.docx), or the Travel Leaders Network
-        specials file (.json) with its links.</p>
+      <p style="margin:.2rem 0 1rem;">The weekly specials list as a Word document (.docx).</p>
       <label class="btn btn-primary btn-sm" for="file" style="cursor:pointer;">Choose a file</label>
-      <input id="file" type="file" accept=".docx,.json,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      <input id="file" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
     </div>
     <p class="field-hint" style="margin-top:.9rem;">You will see exactly what it found before anything is added.
       An offer that is already here is updated, not doubled.</p>`;

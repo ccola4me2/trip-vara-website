@@ -223,7 +223,7 @@ export async function handleReadSpecialsFile(request, env) {
   const head = new TextDecoder().decode(new Uint8Array(buf).subarray(0, 40)).trimStart();
   const isJson = /\.json$/i.test(name) || (!name && /^[{[]/.test(head));
   if (name && !isJson && !/\.docx$/i.test(name)) {
-    return badRequest('I can read the weekly Word document (.docx) and the Travel Leaders Network specials file (.json). Open a Word file in Word or Google Docs and save it as .docx, then upload that.');
+    return badRequest('I can read the weekly specials list as a Word document (.docx). Open the file in Word or Google Docs, save it as .docx, then upload that.');
   }
 
   let doc = null;

@@ -402,7 +402,7 @@ export function readSpecialsJson(text) {
   const pulled = issuedOn ? `${Number(issuedOn.slice(5, 7))}/${Number(issuedOn.slice(8, 10))}/${issuedOn.slice(0, 4)}` : null;
 
   const out = {
-    title: 'Cruise specials from the Travel Leaders Network',
+    title: 'Supplier specials',
     issuedOn,
     intro: data && data.source ? String(data.source).slice(0, 300) : '',
     rows: [],
