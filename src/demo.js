@@ -24,7 +24,7 @@ import {
 import { requireAdmin } from './auth.js';
 import * as db from './db.js';
 import { EXPECTED_SCHEMA } from './schema-expected.js';
-import { sendTrialNoticeEmail } from './email.js';
+import { sendTrialNoticeEmail, sendDemoStartedEmail } from './email.js';
 
 export const TRIAL_DAYS = 7;
 // How long a locked demo is kept before it is removed. Long enough that
@@ -136,6 +136,23 @@ export async function handleStartDemo(request, env) {
 
   await db.logActivity(env, user.id, 'demo.start', `Started a demo for ${agencyName}`,
     { agencyId, trialDays: TRIAL_DAYS });
+
+  // Tell whoever runs the portal, now rather than on the one day warning.
+  //
+  // Best effort, and nothing it does can fail the signup: the agency and the
+  // account are already written, and a prospect turned away because a mail
+  // service was rate limiting would be a far worse trade than a notice that
+  // did not arrive.
+  try {
+    await sendDemoStartedEmail(env, {
+      name: [firstName, lastName].filter(Boolean).join(' '),
+      email,
+      agencyName,
+      trialDays: TRIAL_DAYS,
+    });
+  } catch (e) {
+    console.error('demo started notice', e);
+  }
 
   return json({
     ok: true,

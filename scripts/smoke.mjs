@@ -3409,6 +3409,13 @@ async function main() {
     check(started.status === 201 && started.data?.started === true,
       'somebody with no account at all can start one', `status ${started.status}`);
     check(started.data?.trialDays === 7, 'for seven days', `${started.data?.trialDays}`);
+    // Whoever runs the portal is told now rather than on the one day warning,
+    // which on a seven day trial would arrive six days after they signed up.
+    // The signup must not depend on that send: a prospect turned away because
+    // a mail service was rate limiting is a far worse trade than a lost notice.
+    check(started.status === 201,
+      'and the signup succeeds whatever the notice to the operator does',
+      `status ${started.status}`);
 
     await call(demoJar, 'POST', '/api/auth/login',
       { email: demoEmail, password: 'demo-password-12345' });

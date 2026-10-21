@@ -279,6 +279,46 @@ export function sendAdvisorApprovedEmail(env, user) {
   });
 }
 
+/**
+ * Somebody started a demo.
+ *
+ * To whoever runs the portal, and nobody else. This did not exist: a demo wrote
+ * its agency and said nothing, so the first anybody heard of a prospect was the
+ * one day warning, which on a seven day trial arrives six days after they
+ * signed up. The one event most worth knowing about was the one event that
+ * went unannounced.
+ *
+ * reply-to is the person who signed up, so answering is one keystroke rather
+ * than a trip through the admin screen to copy an address. The same shape as
+ * sendSignupNoticeEmail, for the same reason.
+ */
+export function sendDemoStartedEmail(env, { name, email, agencyName, trialDays, phone }) {
+  const to = env.NOTIFY_EMAIL;
+  if (!to) return Promise.resolve({ skipped: true });
+  const rows = [
+    ['Email', email],
+    ['Phone', phone],
+    ['Agency', agencyName],
+  ].filter(([, v]) => v);
+
+  return send(env, {
+    to,
+    replyTo: email || undefined,
+    subject: `Demo started: ${agencyName}`,
+    html: layout(env, {
+      heading: 'Somebody started a demo',
+      body: `<p style="margin:0 0 12px;"><strong>${escapeHtml(name || email)}</strong>
+             started a ${trialDays} day demo as
+             <strong>${escapeHtml(agencyName)}</strong>.</p>
+             <p style="margin:0 0 12px;">${rows.map(([k, v]) =>
+    `${escapeHtml(k)}: ${escapeHtml(v)}`).join('<br>')}</p>
+             <p style="margin:0;">Reply to this to answer them directly. They are not told
+             you were sent anything.</p>`,
+      cta: { label: 'See the agencies', href: `${appUrl(env)}/admin/agencies` },
+    }),
+  });
+}
+
 export function sendAdminNewSignupEmail(env, user) {
   const to = env.NOTIFY_EMAIL;
   if (!to) return Promise.resolve({ skipped: true });
@@ -772,6 +812,15 @@ export function sendQuoteDeclinedEmail(env, {
  * Somebody who has spent a fortnight putting real clients in wants to know
  * that before they want to know anything about pricing.
  */
+/**
+ * Telling somebody their demo is running out.
+ *
+ * replyTo matters more here than anywhere else in this file. The ended version
+ * says "Reply to this and we will switch it back on", and the portal sends as
+ * noreply@, so without it the one sentence asking a warm prospect to get in
+ * touch pointed them at an address nobody reads. It goes to NOTIFY_EMAIL,
+ * which is whoever runs the portal rather than any agency.
+ */
 export function sendTrialNoticeEmail(env, { to, copyTo, agencyName, days, appUrl }) {
   if (!to) return Promise.resolve({ skipped: true });
 
@@ -797,6 +846,7 @@ export function sendTrialNoticeEmail(env, { to, copyTo, agencyName, days, appUrl
 
   return send(env, {
     to: copyTo ? [to, copyTo] : to,
+    replyTo: env.NOTIFY_EMAIL || undefined,
     subject,
     html: layout(env, {
       heading: ended ? 'Your demo has ended' : `Your demo ends ${when}`,
