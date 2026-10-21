@@ -16,6 +16,7 @@
 //
 //   node scripts/check-trial.mjs
 
+import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { annotate } from './lib/annotate.mjs';
@@ -92,6 +93,51 @@ check(noticeFor(NOW - (30 * DAY), NOW, TRIAL_ENDED) === null, 'however long ago 
 check(noticeFor(endsIn(0), NOW, Math.min(...TRIAL_NOTICES)) === TRIAL_ENDED,
   'having had the last warning does not swallow the ended one',
   String(noticeFor(endsIn(0), NOW, Math.min(...TRIAL_NOTICES))));
+
+console.log('\nWhat somebody is told once it has run out');
+// The trial length changed from fourteen days to seven on 2026-10-21, and the
+// two sentences people read after it ends were written with the number in
+// them. An agency that signed up for a fortnight was then told its fourteen
+// days had been seven. Both are read off TRIAL_DAYS as it is today, and the
+// reader signed up under whatever it was then, so neither may name a length.
+const NUMBER_WORDS = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty)\b/i;
+
+const authSrc = readFileSync(join(ROOT, 'src', 'auth.js'), 'utf8');
+// Anchored on the function rather than on the words, so changing the sentence
+// still gets it checked. Anchoring on the wording meant putting the number
+// back failed this as "the message moved" instead of "the message names a
+// number", which is a true complaint about the wrong thing.
+const trialOverBody = authSrc.match(/export async function trialOver[\s\S]*?\n\}/);
+check(Boolean(trialOverBody), 'trialOver is still a function in auth.js');
+// Comments go first. The body is full of prose with apostrophes in it, and a
+// string literal matcher run over that reads "portal's own operator" as the
+// start of a quote and everything after it as one long string.
+const withoutComments = trialOverBody
+  ? trialOverBody[0].replace(/^\s*\/\/[^\n]*$/gm, '') : '';
+// The sentence itself: the one return that hands back text rather than null.
+const returned = withoutComments.match(/return\s+((?:'[^']*'\s*\+?\s*)+);/);
+const locked = returned
+  ? [...returned[1].matchAll(/'([^']*)'/g)].map((m) => m[1]).join('')
+  : '';
+check(/still here/i.test(locked), 'the lockout message still says their work is safe', locked);
+{
+  const text = locked;
+  check(!/\d/.test(text), 'and names no number of days', text);
+  check(!NUMBER_WORDS.test(text), 'nor spells one out', text);
+}
+
+const emailSrc = readFileSync(join(ROOT, 'src', 'email.js'), 'utf8');
+// Anchored on the branch rather than the wording, for the same reason as
+// above: changing the sentence must still get it checked, not skipped.
+const ended = emailSrc.match(
+  /const body = ended\s*\n(?:\s*\/\/[^\n]*\n)*\s*\? `([\s\S]*?)<\/p>/);
+check(Boolean(ended), 'the ended email is where this check expects it',
+  ended ? 'found' : 'the ended branch of sendTrialNoticeEmail has moved');
+if (ended) {
+  const text = ended[1].replace(/<[^>]*>/g, '');
+  check(!/\d/.test(text), 'and it names no number of days either', text.trim());
+  check(!NUMBER_WORDS.test(text), 'nor spells one out', text.trim());
+}
 
 console.log('\nNo trial, nothing to say');
 check(noticeFor(null, NOW, null) === null, 'an agency with no end date is silent');

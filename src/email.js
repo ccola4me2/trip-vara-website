@@ -867,7 +867,9 @@ export function sendTrialNoticeEmail(env, { to, copyTo, agencyName, days, appUrl
     : `Your ${agencyName} demo ends ${when}`;
 
   const body = ended
-    ? `<p style="margin:0 0 12px;">Your seven days are up, so the portal is closed for now.</p>
+    // No number here either, for the reason in trialOver: whoever is reading
+    // it signed up under whatever the trial length was that day.
+    ? `<p style="margin:0 0 12px;">Your demo has ended, so the portal is closed for now.</p>
        <p style="margin:0 0 12px;"><strong>Everything you put in is still there.</strong> Every
        client, every reservation, every payment. Nothing has been deleted and nothing will be
        while we are talking.</p>

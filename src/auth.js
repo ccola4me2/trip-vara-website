@@ -146,7 +146,13 @@ export async function trialOver(env, user) {
   }
   if (!agency || !agency.trial_ends_at) return null;
   if (agency.trial_ends_at > now()) return null;
-  return 'Your 7 day demo has ended. Everything you entered is still here. '
+  // No number in this sentence, deliberately. It is read off TRIAL_DAYS as it
+  // is today, and the person reading it signed up under whatever it was then:
+  // the length changed from fourteen to seven on 2026-10-21 and an agency
+  // mid-trial was told its fourteen days had been seven. Their own end date is
+  // on the record and the one they were told about; this message only has to
+  // say that it has passed.
+  return 'Your demo has ended. Everything you entered is still here. '
     + 'Get in touch and we will switch the account on.';
 }
 
