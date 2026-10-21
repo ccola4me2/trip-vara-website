@@ -71,11 +71,15 @@ GROUP_PREFIX = "/tv"
 # On: /g/<group number> redirects to the group's short name.
 GROUP_REDIRECT = "1"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
-# Where operator notifications go (new advisor signups awaiting approval).
-NOTIFY_EMAIL = "brentb@cruisestoursandtravel.com"
-# Where "Get in touch" goes. Its own address rather than NOTIFY_EMAIL: a demo
-# asking how to carry on is a sales conversation and an advisor whose schedule
-# looks wrong is not, and the two want to land in different places.
+# Where everything the portal has to tell its operator goes: a new advisor
+# waiting for approval, a demo starting, a demo running out, an automation set
+# to notify. One address by Brent's decision on 2026-10-21, rather than the two
+# this briefly had.
+NOTIFY_EMAIL = "brentb@cruiseshoppers.com"
+# Where "Get in touch" goes. Still its own setting even though it currently
+# holds the same address: a support queue and an operator alert are different
+# things, and keeping the two names means splitting them later is a variable
+# rather than a code change.
 SUPPORT_EMAIL = "brentb@cruiseshoppers.com"
 SESSION_TTL_DAYS = "30"
 RESET_TTL_MINUTES = "60"
