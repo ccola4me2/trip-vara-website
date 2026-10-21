@@ -306,6 +306,7 @@ import {
   handleExport, handleExportSummary, handleRunBackup, backupAgencies,
 } from './exportdata.js';
 import { renderRegisterPage, handleRegister } from './grouppage.js';
+import { handleSupport, handleSupportWho } from './support.js';
 import {
   handleRoster, handleUpdateRegistration, handleUpdateGroupTraveller, handleDeleteRegistration,
 } from './grouproster.js';
@@ -446,6 +447,9 @@ const PUBLIC_PAGES = new Set([
   '/pending', '/pending.html',
   '/join', '/join.html',
   '/demo', '/demo.html',
+  // Public on purpose: a demo whose trial has ended cannot sign in at all, and
+  // they are the likeliest person to want this page.
+  '/support', '/support.html',
   '/privacy', '/privacy.html',
 ]);
 
@@ -476,6 +480,7 @@ const PAGE_FILES = {
   '/app/hotlists': '/app/hotlists.html',
   '/join': '/join.html',
   '/demo': '/demo.html',
+  '/support': '/support.html',
   '/admin/agencies': '/admin/agencies.html',
   '/admin/onboarding': '/admin/onboarding.html',
   '/admin/training': '/admin/training.html',
@@ -1338,6 +1343,9 @@ async function routeApi(request, env, path, method) {
   // A fourteen day demo, started by somebody with no account at all. Before
   // the agency routes, none of which a stranger may reach.
   if (path === '/api/demo' && method === 'POST') return handleStartDemo(request, env);
+  // Deliberately not behind requireUser: see the note in support.js.
+  if (path === '/api/support' && method === 'POST') return handleSupport(request, env);
+  if (path === '/api/support/who' && method === 'GET') return handleSupportWho(request, env);
   if (path === '/api/demo/sweep' && method === 'POST') return handleRunDemoSweep(request, env);
   if (path === '/api/demo/notices' && method === 'POST') return handleRunTrialNotices(request, env);
   if (convertMatch && method === 'POST') return handleConvertAgency(request, env, convertMatch[1]);

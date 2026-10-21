@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get in touch | Trip Vara</title>
+<meta name="description" content="Ask us anything about Trip Vara, whether you are on a demo or running an agency on it.">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="auth-page">
+<div class="auth-wrap">
+  <a class="auth-brand" href="/">
+    <img src="/logo-mark.svg" alt="">
+    <span><b>TripVara</b><small>From first inquiry to welcome home.</small></span>
+  </a>
+  <div class="auth-card">
+    <div class="auth-card-head">
+      <h1>Get in touch</h1>
+      <p id="lede">Tell us what you need and we will come back to you by email.</p>
+    </div>
+    <div class="auth-card-body">
+      <div class="notice notice-error" id="err" hidden></div>
+      <div id="done" hidden>
+        <div class="notice notice-ok">
+          <p style="margin:0 0 .4rem;"><strong>Got it.</strong></p>
+          <p style="margin:0;" id="done-note">We will come back to you by email.</p>
+        </div>
+        <a class="btn btn-secondary" href="/app/" style="margin-top:1.2rem;">Back to the portal</a>
+      </div>
+
+      <form id="f" novalidate>
+        <!-- Hidden once we know who is asking: a session answers this better
+             than a text box, and asking somebody their own name while they are
+             signed in reads as a form that is not listening. -->
+        <div id="who">
+          <div class="field">
+            <label for="name">Your name</label>
+            <input id="name" name="name" maxlength="120" autocomplete="name">
+          </div>
+          <div class="field">
+            <label for="email">Email <span class="req">*</span></label>
+            <input id="email" name="email" type="email" maxlength="254" autocomplete="email" required>
+            <p class="field-hint">Where the answer goes.</p>
+          </div>
+          <div class="field">
+            <label for="agencyName">Your agency</label>
+            <input id="agencyName" name="agencyName" maxlength="160">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="subject">What is it about</label>
+          <select id="subject" name="subject">
+            <option>A question about how something works</option>
+            <option>Something is not working</option>
+            <option>Carrying on after the demo</option>
+            <option>Pricing and plans</option>
+            <option>Something else</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="message">What do you need <span class="req">*</span></label>
+          <textarea id="message" name="message" rows="6" maxlength="4000" required
+            placeholder="Even roughly. If something went wrong, what you were doing when it did
+helps more than anything else."></textarea>
+        </div>
+
+        <div class="hp" style="position:absolute;left:-9999px;" aria-hidden="true">
+          <label>Company website<input name="company_website" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <div id="turnstile"></div>
+        <button class="btn btn-primary" type="submit" id="go" style="margin-top:1rem;">Send it</button>
+        <p class="field-hint" style="margin-top:.8rem;">If your demo has ended, say so here. Nothing
+          you entered has been deleted and we can switch the account back on.</p>
+      </form>
+    </div>
+  </div>
+  <p class="auth-foot"><a href="/">Back to the home page</a> &middot; <a href="/login">Sign in</a></p>
+</div>
+
+<script type="module">
+const form = document.getElementById('f');
+const err = document.getElementById('err');
+const done = document.getElementById('done');
+const go = document.getElementById('go');
+
+// Who the portal thinks is asking. Works for an expired demo, which is the
+// whole point: requireUser would turn that person away and they are the one
+// most likely to be here.
+try {
+  const res = await fetch('/api/support/who', { credentials: 'same-origin' });
+  const who = await res.json();
+  if (who && who.signedIn) {
+    document.getElementById('who').hidden = true;
+    document.getElementById('lede').textContent =
+      `Signed in as ${who.email}. Tell us what you need and we will come back to you there.`;
+  }
+} catch {
+  // Signed out, or the call failed. The form asks for a name and an email
+  // either way, so there is nothing to recover from.
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  err.hidden = true;
+  go.disabled = true;
+  go.textContent = 'Sending...';
+
+  const raw = Object.fromEntries(new FormData(form).entries());
+  try {
+    const res = await fetch('/api/support', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(raw),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      err.textContent = data.error || 'That did not send.';
+      err.hidden = false;
+      go.disabled = false;
+      go.textContent = 'Send it';
+      return;
+    }
+    if (data.message) document.getElementById('done-note').textContent = data.message;
+    form.hidden = true;
+    done.hidden = false;
+  } catch {
+    err.textContent = 'That did not send. Check your connection and try again.';
+    err.hidden = false;
+    go.disabled = false;
+    go.textContent = 'Send it';
+  }
+});
+</script>
+</body></html>

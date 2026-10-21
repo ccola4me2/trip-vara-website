@@ -325,6 +325,10 @@ const NAV = [
     ],
   },
   { href: '/app/settings', label: 'Settings', icon: I.gear },
+  // Top level rather than inside Training, and it leaves /app on purpose: the
+  // page is public so a demo whose trial has ended can still reach it, and
+  // they are the likeliest person to want it.
+  { href: '/support', label: 'Get in touch', icon: I.chat },
 ];
 
 const ADMIN_NAV = [

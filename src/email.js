@@ -292,6 +292,41 @@ export function sendAdvisorApprovedEmail(env, user) {
  * than a trip through the admin screen to copy an address. The same shape as
  * sendSignupNoticeEmail, for the same reason.
  */
+/**
+ * Somebody asking for help.
+ *
+ * To SUPPORT_EMAIL, which is deliberately its own address rather than
+ * NOTIFY_EMAIL: a demo asking how to carry on is a sales conversation, and an
+ * advisor whose payment schedule looks wrong is not, and the two want to land
+ * in different places.
+ *
+ * reply-to is the person asking, so answering is one keystroke. The context
+ * block is everything whoever answers would otherwise have to go and look up:
+ * which agency, whether they are on a demo, and how long is left of it.
+ */
+export function sendSupportEmail(env, { name, email, agencyName, subject, message, context }) {
+  const to = env.SUPPORT_EMAIL || env.NOTIFY_EMAIL;
+  if (!to) return Promise.resolve({ skipped: true });
+
+  const lines = (context || []).filter(([, v]) => v)
+    .map(([k, v]) => `${escapeHtml(k)}: ${escapeHtml(String(v))}`).join('<br>');
+
+  return send(env, {
+    to,
+    replyTo: email || undefined,
+    subject: `Support: ${subject}`,
+    html: layout(env, {
+      heading: subject,
+      body: `<p style="margin:0 0 12px;"><strong>${escapeHtml(name || email || 'Somebody')}</strong>
+             wrote in.</p>
+             <div style="margin:0 0 16px;padding:12px 14px;background:#f3f7fb;border-radius:8px;
+             white-space:pre-wrap;">${escapeHtml(message)}</div>
+             ${lines ? `<p style="margin:0 0 12px;color:#5c7286;font-size:14px;">${lines}</p>` : ''}
+             <p style="margin:0;">Reply to this to answer them directly.</p>`,
+    }),
+  });
+}
+
 export function sendDemoStartedEmail(env, { name, email, agencyName, trialDays, phone }) {
   const to = env.NOTIFY_EMAIL;
   if (!to) return Promise.resolve({ skipped: true });

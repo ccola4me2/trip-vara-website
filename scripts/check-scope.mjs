@@ -148,6 +148,10 @@ const EXEMPT = new Map([
   ['sessions', 'found by its token, which is the secret; the user_id is the answer, not the question'],
   ['password_reset_tokens', 'same: the token is the credential'],
   ['activity_log', 'written with a user id and read only through a scoped query'],
+  ['support_messages', 'somebody writing in through Get in touch. Not an advisor\'s record: it is '
+    + 'the portal operator\'s inbox, and the user_id is a breadcrumb saying who was signed in when '
+    + 'they wrote, null for the stranger or the expired demo this page mostly exists for. Nothing '
+    + 'reads it by user, only the hourly count by hashed address that the page rate limits on'],
 ]);
 
 // Statements that touch an owned table without naming a user, and why that is

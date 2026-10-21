@@ -3496,6 +3496,58 @@ async function main() {
 
 
 
+  // --------------------------------------------------- getting in touch ---
+  step('Getting hold of somebody');
+  {
+    // Public on purpose. A demo whose trial has ended cannot sign in at all,
+    // so a contact form behind a session would be shut to the one person it
+    // was built for.
+    const page = await call(null, 'GET', '/support');
+    check(page.status === 200, 'the page opens with no session at all',
+      `status ${page.status}`);
+
+    const whoOut = await call(null, 'GET', '/api/support/who');
+    check(whoOut.status === 200 && whoOut.data?.signedIn === false,
+      'and says it does not know who is asking', JSON.stringify(whoOut.data));
+
+    const sent = await call(null, 'POST', '/api/support', {
+      name: `Stranger ${stamp}`, email: `stranger-${stamp}@test.dev`,
+      agencyName: 'Nowhere Travel', subject: 'Carrying on after the demo',
+      message: 'My trial ended. Can you switch it back on?',
+    });
+    check(sent.status === 200 && sent.data?.ok,
+      'a stranger can write in', `status ${sent.status} ${JSON.stringify(sent.data)}`);
+
+    // Guards, because this is open to the internet.
+    const noMessage = await call(null, 'POST', '/api/support',
+      { email: `a-${stamp}@test.dev`, message: '   ' });
+    check(noMessage.status === 400, 'an empty message is refused',
+      `status ${noMessage.status}`);
+    const noWay = await call(null, 'POST', '/api/support',
+      { email: 'not-an-address', message: 'hello' });
+    check(noWay.status === 400, 'and so is one with no way to answer it',
+      `status ${noWay.status}`);
+    const bot = await call(null, 'POST', '/api/support', {
+      email: `bot-${stamp}@test.dev`, message: 'spam', company_website: 'spam.example',
+    });
+    check(bot.status === 200, 'a bot is thanked rather than told',
+      `status ${bot.status}`);
+
+    // Signed in, the session answers "who is this" and the form does not get
+    // to disagree with it.
+    const whoIn = await call(advisor, 'GET', '/api/support/who');
+    check(whoIn.data?.signedIn === true, 'signed in, it knows who is asking');
+    check(Boolean(whoIn.data?.email), 'and which address to answer on', whoIn.data?.email);
+
+    const spoof = await call(advisor, 'POST', '/api/support', {
+      name: 'Somebody Else', email: 'impostor@test.dev',
+      subject: 'Something is not working', message: `Spoof check ${stamp}`,
+    });
+    check(spoof.status === 200, 'an advisor can write in', `status ${spoof.status}`);
+    check(whoIn.data?.email !== 'impostor@test.dev',
+      'and a name typed into the form does not override the session');
+  }
+
   // ---------------------------------------------------- a seven day demo ---
   // Strangers putting real client names into somebody else's portal. The
   // countdown is the easy half; the half that matters is that a demo is its

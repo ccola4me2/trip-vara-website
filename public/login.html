@@ -22,6 +22,8 @@
     <div class="auth-card-body">
       <div class="notice notice-error" hidden></div>
       <div class="notice notice-info" id="suspended" hidden>This account has been suspended. Contact your administrator.</div>
+      <div class="notice notice-info" id="trial-over" hidden>Nothing you entered has been deleted.
+        <a href="/support">Get in touch</a> and we will switch the account back on.</div>
       <form id="login-form" novalidate>
         <div class="field">
           <label for="email">Email</label>
@@ -50,7 +52,18 @@ enhancePasswordFields();
 const params = new URLSearchParams(location.search);
 if (params.get('error') === 'suspended') document.getElementById('suspended').hidden = false;
 onSubmit(document.getElementById('login-form'), async (values) => {
-  const res = await api('/api/auth/login', { method: 'POST', body: values });
+  let res;
+  try {
+    res = await api('/api/auth/login', { method: 'POST', body: values });
+  } catch (e) {
+    // A demo that has run out is refused here, and the refusal says to get in
+    // touch. Without this it says so with nowhere to go, to the one person who
+    // cannot reach any page inside the portal.
+    if (e && e.data && e.data.status === 'trial_ended') {
+      document.getElementById('trial-over').hidden = false;
+    }
+    throw e;
+  }
   const next = params.get('next');
   location.href = next && next.startsWith('/') ? next : (res.redirect || '/app/');
 });

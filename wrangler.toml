@@ -73,6 +73,10 @@ GROUP_REDIRECT = "1"
 MAIL_FROM = "Trip Vara <noreply@tripvaratravel.com>"
 # Where operator notifications go (new advisor signups awaiting approval).
 NOTIFY_EMAIL = "brentb@cruisestoursandtravel.com"
+# Where "Get in touch" goes. Its own address rather than NOTIFY_EMAIL: a demo
+# asking how to carry on is a sales conversation and an advisor whose schedule
+# looks wrong is not, and the two want to land in different places.
+SUPPORT_EMAIL = "brentb@cruiseshoppers.com"
 SESSION_TTL_DAYS = "30"
 RESET_TTL_MINUTES = "60"
 
