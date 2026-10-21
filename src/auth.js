@@ -146,7 +146,7 @@ export async function trialOver(env, user) {
   }
   if (!agency || !agency.trial_ends_at) return null;
   if (agency.trial_ends_at > now()) return null;
-  return 'Your 14 day demo has ended. Everything you entered is still here. '
+  return 'Your 7 day demo has ended. Everything you entered is still here. '
     + 'Get in touch and we will switch the account on.';
 }
 

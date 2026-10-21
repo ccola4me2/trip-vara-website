@@ -3393,7 +3393,7 @@ async function main() {
 
 
 
-  // ------------------------------------------------- a fourteen day demo ---
+  // ---------------------------------------------------- a seven day demo ---
   // Strangers putting real client names into somebody else's portal. The
   // countdown is the easy half; the half that matters is that a demo is its
   // own agency and can never see, or be seen by, anybody else's book.
@@ -3408,7 +3408,7 @@ async function main() {
     });
     check(started.status === 201 && started.data?.started === true,
       'somebody with no account at all can start one', `status ${started.status}`);
-    check(started.data?.trialDays === 14, 'for fourteen days', `${started.data?.trialDays}`);
+    check(started.data?.trialDays === 7, 'for seven days', `${started.data?.trialDays}`);
 
     await call(demoJar, 'POST', '/api/auth/login',
       { email: demoEmail, password: 'demo-password-12345' });

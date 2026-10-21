@@ -26,7 +26,7 @@ import * as db from './db.js';
 import { EXPECTED_SCHEMA } from './schema-expected.js';
 import { sendTrialNoticeEmail } from './email.js';
 
-export const TRIAL_DAYS = 14;
+export const TRIAL_DAYS = 7;
 // How long a locked demo is kept before it is removed. Long enough that
 // nobody loses their work by being a week late paying, short enough that the
 // portal is not holding a stranger's client list for ever.
@@ -339,11 +339,15 @@ export async function handleDeleteAgency(request, env, id) {
  * How many days of notice this trial is due, or null.
  *
  * The same shape as leadFor in payremind.js, and for the same reason: `sent`
- * is the closest notice already used, so a trial seven days out that has had
- * its seven day notice waits for the three rather than sending one every time
+ * is the closest notice already used, so a trial three days out that has had
+ * its three day notice waits for the one rather than sending one every time
  * the cron ticks.
  */
-export const TRIAL_NOTICES = [7, 3, 1];
+// Three days and one. Seven was here while the trial was a fortnight, and it
+// cannot stay now that it is a week: a seven day notice on a seven day trial
+// fires the moment somebody signs up, so the first thing a new demo would get
+// is an email telling them it is nearly over.
+export const TRIAL_NOTICES = [3, 1];
 // The one on the day it ends. Deliberately not a member of the list above: it
 // is not a number of days of notice, and giving it a zero that sorts correctly
 // by accident is how a list like this quietly stops working.
@@ -354,9 +358,9 @@ export function noticeFor(endsAt, at, sent) {
   const days = Math.ceil((endsAt - at) / DAY);
   if (days <= 0) return sent === TRIAL_ENDED ? null : TRIAL_ENDED;
   // The tightest notice this day qualifies for, which means the smallest.
-  // Searching the list as written finds 7 first, so a trial one day out looked
-  // like it was due its seven day notice, saw that one had gone, and said
-  // nothing for the rest of the fortnight.
+  // Searching the list as written found the largest first, so a trial one day
+  // out looked like it was due its widest notice, saw that one had gone, and
+  // said nothing at all for the rest of the trial.
   const due = [...TRIAL_NOTICES].sort((a, b) => a - b).find((n) => days <= n);
   if (due === undefined) return null;
   // Already had this one, or a closer one. A smaller number is closer.

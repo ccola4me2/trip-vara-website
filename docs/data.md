@@ -44,7 +44,7 @@ category and the R2 key, so a restore knows what is missing.
 | | |
 |---|---|
 | Live records | Kept while the agency is on the portal |
-| Demo agencies | Locked 14 days after signup, deleted 30 days after the lock |
+| Demo agencies | Locked 7 days after signup, deleted 30 days after the lock |
 | Weekly bundles | The last 8 per agency |
 | Time Travel | 30 days, Cloudflare's own window |
 | Sessions | `SESSION_TTL_DAYS`, 30 by default, purged on the cron |
