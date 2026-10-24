@@ -108,6 +108,9 @@ const OWNED = new Set([
   // The travel insurance waiver on a reservation. The advisor's, and every statement that reads or changes
   // one for a request names user_id; the public page finds one by the code in the link, listed in ALLOWED.
   'insurance_waivers', 'trip_emails',
+  // What the agency holds for an advisor's year end tax form. Read and written by an owner only (requireAdmin), and every
+  // statement names the advisor's user_id or reaches it through the agency's own users.
+  'advisor_tax',
 ]);
 
 // Shared by a whole agency, so agency_id is the predicate that matters rather

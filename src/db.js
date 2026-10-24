@@ -492,7 +492,8 @@ const BOOKING_COLUMNS = `
   invoice_no, invoice_issued_at, invoice_notes, personal,
   created_at, updated_at, share_code, shared_at, statement_hash, itinerary_shared, options_open,
   declined_at, declined_reason, accepted_at, trip_id,
-  group_label, group_number, deposit_refundable, emails_off
+  group_label, group_number, deposit_refundable, emails_off,
+  commission_chase, commission_chase_note, commission_chase_at
 `;
 
 // The same columns qualified, for the queries that join users to name the
