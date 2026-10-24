@@ -6535,6 +6535,26 @@ async function main() {
     `${cf.commission} / ${cf.commissionPackage}`);
   check(cf.clientName === 'Angela Simic',
     'and the guest printed at the top with no label at all is the client', cf.clientName);
+
+  // The cancellation schedule a cruise line prints, read as it stands: one layout column by column, one row by row.
+  const scheduleCols = `${agentCopy}\nCancellation Schedule Cancellation Amount Date\n120 to 90 Days Prior to Sailing\n89 to 61 Days Prior to Sailing\n60 to 31 Days Prior to Sailing\n30 to 0 Days Prior to Sailing\n250.00 Deposit Amount Per Guest\n50% Per Guest\n75% Per Guest\n100% Per Guest\n13 NOV 2026\n14 DEC 2026\n12 JAN 2027\n11 FEB 2027\nIf your stateroom is a Guarantee`;
+  const scheduleRows = `${agentCopy}\nCancellation Schedule Cancellation Amount Date\n120 to 90 Days Prior to Sailing 250.00 Deposit Amount Per Guest 13 NOV 2026\n89 to 61 Days Prior to Sailing 50% Per Guest 14 DEC 2026\n60 to 31 Days Prior to Sailing 75% Per Guest 12 JAN 2027\n30 to 0 Days Prior to Sailing 100% Per Guest 11 FEB 2027\nIf your stateroom is a Guarantee`;
+  const shape = (r) => (r.data?.penalties || []).map((x) => [x.fromDays, x.toDays, x.pct, x.perGuestCents, x.date]);
+  const wantTiers = [[120, 90, null, 25000, '2026-11-13'], [89, 61, 50, null, '2026-12-14'], [60, 31, 75, null, '2027-01-12'], [30, 0, 100, null, '2027-02-11']];
+  const colsRead = await call(advisor, 'POST', '/api/import/confirmation', { text: scheduleCols });
+  const rowsRead = await call(advisor, 'POST', '/api/import/confirmation', { text: scheduleRows });
+  check(JSON.stringify(shape(colsRead)) === JSON.stringify(wantTiers), 'the cancellation schedule is read when it is printed column by column', JSON.stringify(shape(colsRead)));
+  check(JSON.stringify(shape(rowsRead)) === JSON.stringify(wantTiers), 'and when it is printed row by row', JSON.stringify(shape(rowsRead)));
+  check((readConf.data?.penalties || []).length === 0, 'a confirmation that prints no schedule has none read', JSON.stringify(readConf.data?.penalties));
+
+  // What the client has already paid, and the day the booking was made.
+  const paidCopy = agentCopy.replace('Total Booking Amount: $ 1,976.80 Remaining Due: $ 0.00',
+    'Total Booking Amount: $ 1,976.80 Payments Made: $ 500.00 Remaining Due: $ 1,476.80 Booking Date: Oct 05, 2026');
+  const paidRead = await call(advisor, 'POST', '/api/import/confirmation', { text: paidCopy });
+  check(paidRead.data?.fields?.paid === '500.00' && paidRead.data?.fields?.paidOn === '2026-10-05'
+    && paidRead.data?.fields?.gross === '1976.80',
+  'payments already made and the booking date are read, and the total is not disturbed', JSON.stringify([paidRead.data?.fields?.paid, paidRead.data?.fields?.paidOn, paidRead.data?.fields?.gross]));
+  check(cf.paid === undefined, 'a confirmation that says nothing paid has no payment filled in', String(cf.paid));
   check(cf.travellers === 2, 'with the guest count read from a total', `${cf.travellers}`);
 
   // The price line by line, in the layout an agent copy uses. Invented figures: a fare of

@@ -44,6 +44,10 @@ const LABELS = {
   // The two an agent confirmation carries that this did not read. Commission
   // is the point of the document from the agency's side, and the client's name
   // is what the reservation gets filed under.
+  // What the client has already paid, and the day the booking was made, which is when a deposit usually was.
+  paid: ['total payments received', 'payments received', 'payments made', 'total payments', 'amount paid',
+    'total paid', 'paid to date'],
+  bookingDate: ['booking date', 'date booked'],
   commission: ['fare commission', 'agent commission', 'travel agent commission',
     'commission amount', 'commission due', 'commission earned', 'total commission',
     'commission'],
@@ -936,6 +940,36 @@ export function readClientContact(lines) {
   return out;
 }
 
+/**
+ * The cancellation schedule printed on a cruise line's confirmation: each window of days before sailing, what is
+ * lost in it, and the date it begins.
+ *
+ * Read off the document rather than assumed, because the dates and the percentages are the line's own and differ by
+ * line, by sailing length and by promotion. Windows, amounts and dates are matched in the order they are printed, and
+ * a schedule whose three lists do not line up is read without its dates rather than guessed at.
+ */
+function readCancellationSchedule(text) {
+  const t = String(text || '');
+  const start = t.search(/cancellation schedule/i);
+  if (start < 0) return [];
+  const section = t.slice(start, start + 1600);
+  const ranges = [...section.matchAll(/(\d{1,3})\s+to\s+(\d{1,3})\s+days\s+prior\s+to\s+sailing/gi)];
+  if (!ranges.length) return [];
+  const amounts = [...section.matchAll(/(\d+(?:\.\d+)?)\s*%\s*per\s*guest|(\d+(?:,\d{3})*\.\d{2})\s*deposit\s*amount\s*per\s*guest/gi)];
+  const dates = [...section.matchAll(/\b(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\b/g)]
+    .map((m) => anyDate(`${m[1]} ${m[2]} ${m[3]}`)).filter(Boolean);
+  const aligned = amounts.length === ranges.length;
+  return ranges.map((r, i) => {
+    const a = aligned ? amounts[i] : null;
+    return {
+      fromDays: Number(r[1]), toDays: Number(r[2]),
+      pct: a && a[1] ? Number(a[1]) : null,
+      perGuestCents: a && a[2] ? Math.round(Number(a[2].replace(/,/g, '')) * 100) : null,
+      date: dates.length === ranges.length ? dates[i] : null,
+    };
+  }).filter((x) => x.fromDays >= x.toDays);
+}
+
 export function parseConfirmation(text) {
   const lines = stackLabels(String(text || '').split(/\r?\n/).slice(0, 400))
     .flatMap(splitColumns)
@@ -967,6 +1001,8 @@ export function parseConfirmation(text) {
   take('commission', LABELS.commission, (v) => (money(v) ? (money(v) / 100).toFixed(2) : null));
   take('commissionPackage', LABELS.commissionPackage,
     (v) => (money(v) ? (money(v) / 100).toFixed(2) : null));
+  take('paid', LABELS.paid, (v) => (money(v) ? (money(v) / 100).toFixed(2) : null));
+  take('paidOn', LABELS.bookingDate, anyDate);
 
   // The primary guest is often printed at the top of the page with no label at
   // all, ahead of the booking number: "Angela Simic BOOKING ID: 54408822".
@@ -1045,6 +1081,19 @@ export function parseConfirmation(text) {
     from.travellers = `${people.length} guest line${people.length === 1 ? '' : 's'}`;
   }
 
+  // Payments already made, in the layouts that have no "Payments Made" label of their own: a line that says
+  // payments or deposits were received, with an amount after it. Only a plain figure, never a guess.
+  if (!fields.paid) {
+    for (const line of lines) {
+      const m = /^(?:total )?(?:payments?|deposits?) (?:received|made|paid)\s*[:\-]?\s*\$?\s*([\d,]+\.\d{2})\b/i.exec(line.trim());
+      if (m && money(m[1])) {
+        fields.paid = (money(m[1]) / 100).toFixed(2);
+        from.paid = line.trim().slice(0, 160);
+        break;
+      }
+    }
+  }
+
   // A return before a departure is a misread, not a trip. Dropped rather than
   // saved, because the advisor is more likely to accept a filled field than
   // to notice a wrong one.
@@ -1076,6 +1125,8 @@ export function parseConfirmation(text) {
     pricing,
     client,
     guests: people.map((g) => g.name),
+    // What cancelling costs, window by window, as the confirmation prints it.
+    penalties: readCancellationSchedule(text),
     // Named so the page can say what it did not find rather than leaving the
     // advisor to notice the blanks.
     missing: Object.keys(LABELS).filter((k) => fields[k] === undefined),
