@@ -759,7 +759,7 @@ export async function handleCommissionDesk(request, env) {
     checkLines[r.check_id].push({
       id: r.id, booking_id: r.booking_id, client_name: r.client_name, supplier: r.supplier,
       advisor_name: r.advisor_name, amount_cents: r.amount_cents, payout_on: r.payout_on,
-      product_name: r.product_name, split_pct: splitPct(r, r.default_split_pct, r.lead_split_pct),
+      product_name: r.product_name, split_pct: splitPct(r, r.default_split_pct),
     });
   }
 
