@@ -343,6 +343,7 @@ const ADMIN_NAV = [
   { href: '/admin/onboarding', label: 'Putting an agency on', icon: I.shield, owner: true },
   { href: '/admin/groups', label: 'Group pages', icon: I.chart },
   { href: '/admin/events', label: 'Trainings and events', icon: I.calendar },
+  { href: '/admin/client-emails', label: 'Client emails', icon: I.chat },
   { href: '/admin/waiver', label: 'Waiver wording', icon: I.shield },
   { href: '/admin/specials', label: 'Supplier specials', icon: I.megaphone },
   { href: '/admin/training', label: 'Training', icon: I.book },

@@ -107,7 +107,7 @@ const OWNED = new Set([
   'quick_proposals', 'quick_proposal_images',
   // The travel insurance waiver on a reservation. The advisor's, and every statement that reads or changes
   // one for a request names user_id; the public page finds one by the code in the link, listed in ALLOWED.
-  'insurance_waivers',
+  'insurance_waivers', 'trip_emails',
 ]);
 
 // Shared by a whole agency, so agency_id is the predicate that matters rather
@@ -138,6 +138,9 @@ const AGENCY_OWNED = new Set([
   // The words of the travel insurance waiver. An owner sets them for the agency and the public page reads
   // them for the agency of whoever the waiver belongs to, so agency_id is the predicate on every statement.
   'waiver_wording',
+  // The words of the automatic client emails. An owner writes them for the agency and the sender reads them for
+  // the agency of the advisor whose client it is, so agency_id is the predicate on every statement.
+  'trip_email_wording',
   // The agency's own targets for a year. An owner's to read and set, one row per agency and year, so the
   // agency is the predicate on every statement.
   'agency_goals',

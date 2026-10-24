@@ -492,7 +492,7 @@ const BOOKING_COLUMNS = `
   invoice_no, invoice_issued_at, invoice_notes, personal,
   created_at, updated_at, share_code, shared_at, statement_hash, itinerary_shared, options_open,
   declined_at, declined_reason, accepted_at, trip_id,
-  group_label, group_number, deposit_refundable
+  group_label, group_number, deposit_refundable, emails_off
 `;
 
 // The same columns qualified, for the queries that join users to name the
@@ -770,7 +770,7 @@ export const BOOKING_CHILDREN = [
   'travellers', 'booking_pricing', 'booking_payments', 'amenities',
   'penalty_tiers', 'quote_options', 'components', 'documents',
   'itinerary_items', 'tasks', 'trip_messages', 'trip_views', 'reviews',
-  'client_credits', 'commission_receipts', 'group_registrations', 'insurance_waivers',
+  'client_credits', 'commission_receipts', 'group_registrations', 'insurance_waivers', 'trip_emails',
 ];
 
 /**
