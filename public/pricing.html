@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing | Trip Vara</title>
+<meta name="description" content="One price per advisor, everything included. No feature tiers, no trip limits, and the portal never takes your client's money.">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  /* The same visual language as the front door, kept here rather than in
+     app.css because no signed-in page is shaped like this and every one of
+     them would carry the weight. */
+  body { background: var(--shell); color: var(--ink-700); }
+  .lp-wrap { max-width: 56rem; margin: 0 auto; padding: 0 1.5rem; }
+
+  .lp-bar { display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; padding: 1.9rem 0 1.7rem; }
+  .lp-brand { display: flex; align-items: center; gap: .85rem; text-decoration: none; }
+  .lp-brand img { width: 48px; height: 48px; flex: none; }
+  .lp-brand b { display: block; font-size: 1.32rem; font-weight: 700; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--navy-800); line-height: 1.15; }
+  .lp-brand small { display: block; font-size: .78rem; letter-spacing: .02em;
+    color: var(--coral-400); margin-top: .12rem; }
+  .lp-bar nav { display: flex; align-items: center; gap: .5rem; }
+
+  .head { padding: 2.6rem 0 2rem; max-width: 40rem; }
+  .head h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.1; letter-spacing: -.02em;
+    color: var(--navy-900); margin: 0; font-weight: 700; text-wrap: balance; }
+  .head p { font-size: 1.08rem; line-height: 1.6; color: var(--ink-500); margin: 1rem 0 0; }
+
+  /* The price itself. One card, because there is one plan: tiers would be a
+     claim that some of this is worth withholding, and none of it is. */
+  .price-card { background: #fff; border: 1px solid var(--navy-100); border-radius: var(--radius);
+    box-shadow: var(--shadow-md); padding: 2rem; }
+  .rates { display: grid; gap: 1.6rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+  .rate .fig { display: block; font-size: 2.6rem; font-weight: 700; color: var(--navy-900);
+    line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .rate .fig span { font-size: 1rem; font-weight: 600; color: var(--ink-400); letter-spacing: 0; }
+  .rate .lbl { display: block; font-size: .74rem; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--coral-500); margin: .6rem 0 .3rem; }
+  .rate p { margin: 0; font-size: .9rem; line-height: 1.5; color: var(--ink-500); }
+
+  .calc { border-top: 1px solid var(--navy-100); margin-top: 1.6rem; padding-top: 1.4rem;
+    display: flex; align-items: flex-end; gap: 1.2rem; flex-wrap: wrap; }
+  .calc label { display: block; font-size: .85rem; font-weight: 600; color: var(--navy-800);
+    margin-bottom: .35rem; }
+  .calc input { width: 7rem; }
+  .calc .out { font-size: 1.5rem; font-weight: 700; color: var(--navy-900);
+    font-variant-numeric: tabular-nums; }
+  .calc .out small { display: block; font-size: .8rem; font-weight: 400; color: var(--ink-400);
+    margin-top: .2rem; }
+
+  .worked { width: 100%; border-collapse: collapse; margin-top: 1.4rem; font-size: .92rem; }
+  .worked th, .worked td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--navy-100); }
+  .worked th { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-400); }
+  .worked td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .block { padding: 2.6rem 0 0; }
+  .block h2 { font-size: 1.3rem; color: var(--navy-900); margin: 0 0 1rem; font-weight: 700; }
+  .cols { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  .cols h3 { font-size: 1rem; color: var(--navy-800); margin: 0 0 .3rem; font-weight: 700; }
+  .cols p { margin: 0; font-size: .92rem; line-height: 1.6; color: var(--ink-500); }
+
+  .included { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem 1.6rem;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+  .included li { font-size: .93rem; color: var(--ink-500); padding-left: 1.3rem; position: relative; }
+  .included li::before { content: ""; position: absolute; left: 0; top: .45rem; width: .5rem;
+    height: .5rem; border-radius: 50%; background: var(--coral-400); }
+
+  .close { text-align: center; padding: 3rem 0 4rem; }
+  .close h2 { font-size: clamp(1.5rem, 3.6vw, 2rem); color: var(--navy-900); margin: 0 0 .7rem;
+    font-weight: 700; text-wrap: balance; }
+  .close p { max-width: 32rem; margin: 0 auto 1.5rem; color: var(--ink-500); }
+  .cta { display: flex; gap: .7rem; justify-content: center; flex-wrap: wrap; }
+
+  .foot { border-top: 1px solid var(--navy-100); padding: 1.6rem 0 2.6rem; font-size: .78rem;
+    color: var(--ink-400); display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .foot a { color: var(--ink-500); }
+
+  @media (max-width: 640px) {
+    .lp-bar { padding: 1.3rem 0 1.1rem; }
+    .lp-brand img { width: 40px; height: 40px; }
+    .lp-brand b { font-size: 1.08rem; letter-spacing: .18em; }
+    .price-card { padding: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="lp-wrap">
+  <header class="lp-bar">
+    <a class="lp-brand" href="/">
+      <img src="/logo-mark.svg" alt="">
+      <span><b>TripVara</b><small>From first inquiry to welcome home.</small></span>
+    </a>
+    <nav>
+      <a class="btn btn-ghost btn-sm" href="/login">Sign in</a>
+      <a class="btn btn-primary btn-sm" href="/demo">Try it free</a>
+    </nav>
+  </header>
+
+  <section class="head">
+    <h1>$29 an advisor. Never more than $300.</h1>
+    <p>No tiers to compare, no trips a year to count, and nothing held back to sell you later.
+      The agency pays for its advisors and they all get the whole portal.</p>
+  </section>
+
+  <div class="price-card">
+    <div class="rates">
+      <div class="rate">
+        <span class="fig">$29<span> per advisor, a month</span></span>
+        <span class="lbl">The first ten</span>
+        <p>Every advisor in your agency, each with their own book and their own sign in.</p>
+      </div>
+      <div class="rate">
+        <span class="fig">$300<span> a month, whatever the size</span></span>
+        <span class="lbl">And never more than</span>
+        <p>The bill stops at $300. Past eleven advisors the agency pays the same whether it is
+          twelve of you or forty, so growing never costs more.</p>
+      </div>
+    </div>
+
+    <div class="calc">
+      <div>
+        <label for="seats">Advisors in your agency</label>
+        <input id="seats" type="number" min="1" max="500" value="3" inputmode="numeric">
+      </div>
+      <div>
+        <span class="out" id="total">$87.00 a month</span>
+        <small id="each">$29.00 each</small>
+      </div>
+    </div>
+
+    <table class="worked">
+      <thead><tr><th>Advisors</th><th class="num">A month</th><th class="num">Each</th></tr></thead>
+      <tbody id="examples"></tbody>
+    </table>
+  </div>
+
+  <section class="block">
+    <h2>What you are paying for</h2>
+    <ul class="included">
+      <li>Reservations priced by their parts, so the commission checks itself</li>
+      <li>Payment schedules on the vendor's real deadlines</li>
+      <li>Commission owed, aged, and reconciled against what arrived</li>
+      <li>Advisor splits and the payout run</li>
+      <li>Group pages, registration and the four supplier lists</li>
+      <li>Clients, households, leads and Who to call</li>
+      <li>A page your client can open, and documents you choose to share</li>
+      <li>Quotes, proposals, forms, QR codes and automations</li>
+      <li>Production reports and targets, yours and the agency's</li>
+      <li>Your name, mark and colour on everything a client sees</li>
+      <li>Every record exportable, any time, in one file</li>
+      <li>Email and the chasing, on by your choice and never by ours</li>
+    </ul>
+  </section>
+
+  <section class="block">
+    <h2>Worth being plain about</h2>
+    <div class="cols">
+      <div>
+        <h3>Who this is for</h3>
+        <p>An agency and the advisors in it, whether that is you on your own or you and thirty
+          others. Being under a host agency changes nothing: you are your own agency here, and you
+          pay for your own advisors. A host agency putting its whole network on the portal is a
+          different thing and a different conversation, so ask us rather than reading a number off
+          this page.</p>
+      </div>
+      <div>
+        <h3>We never touch your client's money</h3>
+        <p>The client pays the travel supplier, the way they always did. The portal records what
+          was paid and chases what is due. There is no card field anywhere in it, nothing held, and
+          no merchant account to answer for.</p>
+      </div>
+      <div>
+        <h3>Your records are yours</h3>
+        <p>One file, any time, with every client, reservation, payment and traveller in it. A
+          product that cannot be left should not be trusted with a business, so leaving is a button
+          rather than a conversation.</p>
+      </div>
+      <div>
+        <h3>The demo is the whole thing</h3>
+        <p>Seven days with your own clients in your own agency, no card, nothing cut out. If you
+          carry on, everything you entered stays exactly where it is: no export, no import, the
+          same account keeps working.</p>
+      </div>
+      <div>
+        <h3>Still early, and we would rather say so</h3>
+        <p>Trip Vara is new. It is built on a working agency's own back office rather than from a
+          specification, which is why it knows what a non-commissionable fare is. If something is
+          missing, tell us and you will get a straight answer about whether it is coming.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="close">
+    <h2>Try it on your own clients first.</h2>
+    <p>Seven days, your own agency, nobody else can see it. No card, and nothing to install.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="/demo">Start a 7 day demo</a>
+      <a class="btn btn-secondary" href="/support">Ask us something</a>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>&copy; 2026 Trip Vara. All rights reserved.</span>
+    <span><a href="/">Home</a> &middot; <a href="/demo">Try it free</a>
+      &middot; <a href="/login">Sign in</a> &middot; <a href="/support">Get in touch</a>
+      &middot; <a href="/privacy">Privacy policy</a></span>
+  </footer>
+</div>
+
+<script type="module">
+// The two rates, written once. The page is the only thing that quotes them, so
+// a change here is the whole change.
+const RATE = 29;
+const CAP = 300;
+
+/**
+ * What an agency of this size pays.
+ *
+ * A cap rather than a second rate, because "twenty nine an advisor, never more
+ * than three hundred" is a sentence somebody remembers and a tapering rate
+ * needs a table to explain. The cap bites at eleven advisors, where twenty
+ * nine each would come to $319.
+ *
+ * It is a cap on one agency's own advisors. A host agency's network is not an
+ * agency for this purpose, which the page says in words rather than trying to
+ * express as a number.
+ */
+function monthly(seats) {
+  const n = Math.max(1, Math.min(Number(seats) || 1, 500));
+  return { seats: n, total: Math.min(n * RATE, CAP) };
+}
+
+const money = (n) => `$${n.toLocaleString('en-US', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const seatsInput = document.getElementById('seats');
+const totalOut = document.getElementById('total');
+const eachOut = document.getElementById('each');
+
+function draw() {
+  const { seats, total } = monthly(seatsInput.value);
+  totalOut.textContent = `${money(total)} a month`;
+  eachOut.textContent = `${money(total / seats)} each`;
+}
+seatsInput.addEventListener('input', draw);
+draw();
+
+// A few sizes worked out, so somebody can see the shape without typing.
+document.getElementById('examples').innerHTML = [1, 3, 5, 10, 11, 20, 40]
+  .map((n) => {
+    const { total } = monthly(n);
+    return `<tr><td>${n}</td><td class="num">${money(total)}</td>
+      <td class="num">${money(total / n)}</td></tr>`;
+  }).join('');
+</script>
+</body></html>

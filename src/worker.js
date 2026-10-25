@@ -459,6 +459,7 @@ const PUBLIC_PAGES = new Set([
   // Public on purpose: a demo whose trial has ended cannot sign in at all, and
   // they are the likeliest person to want this page.
   '/support', '/support.html',
+  '/pricing', '/pricing.html',
   '/privacy', '/privacy.html',
 ]);
 
@@ -490,6 +491,7 @@ const PAGE_FILES = {
   '/join': '/join.html',
   '/demo': '/demo.html',
   '/support': '/support.html',
+  '/pricing': '/pricing.html',
   '/admin/agencies': '/admin/agencies.html',
   '/admin/onboarding': '/admin/onboarding.html',
   '/admin/training': '/admin/training.html',
