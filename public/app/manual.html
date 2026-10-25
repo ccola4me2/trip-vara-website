@@ -81,7 +81,7 @@
   <select id="jump"></select></div>
 
 <section class="doc" id="what" data-title="What this is">
-<p class="doc-step">Section 1 of 11</p>
+<p class="doc-step">Section 1 of 12</p>
 <h2>What this is</h2>
 
 <p class="lede">A place to keep every reservation you have sold, chase the money on
@@ -103,7 +103,7 @@
 </section>
 
 <section class="doc" id="boards" data-title="Two boards, and which one somebody goes on">
-<p class="doc-step">Section 2 of 11</p>
+<p class="doc-step">Section 2 of 12</p>
 <h2>Two boards, and which one somebody goes on</h2>
 
 <p>There are two boards and they are not a choice between them. They are the same road, and
@@ -137,7 +137,7 @@
 </section>
 
 <section class="doc" id="reservations" data-title="Taking a reservation">
-<p class="doc-step">Section 3 of 11</p>
+<p class="doc-step">Section 3 of 12</p>
 <h2>Taking a reservation</h2>
 
 <p>Everything starts on <a href="/app/reservations">Reservations</a>. A reservation is one
@@ -683,6 +683,64 @@
   previews are left out. The <strong>Admin login</strong> link in the footer of a group page goes to the portal sign in,
   and only an owner's account gets past it to those figures.</p>
 
+<h3 id="group-roster">Who is coming, and what is still missing</h3>
+<p>Everything that arrives through the page lands on the group under <strong>Who is coming</strong>.
+  Three figures sit at the top: passports outstanding, parties registered, and how many have been
+  turned into reservations. Passports are first because they are the only deadline here that nobody
+  loses money over, and so the only one nothing else is chasing.</p>
+<p>Under them is a card for each party: who booked, the cabin grade they asked for, whether they
+  agreed the terms and when, and every person they named with their date of birth, what they cannot
+  eat, anything that would make the trip easier, and who to ring if something happens. One emergency
+  contact is kept for the party rather than asked of all four.</p>
+<ul>
+  <li><strong>Passports are not shown in full.</strong> A traveller with one on file reads
+    <em>Passport on file</em> with the last three digits. You can see it is the right one without the
+    screen handing the number out. The expiry is shown in full, because that is the half you check
+    against the six month rule and a date is not an identity document.</li>
+  <li><strong>They are encrypted in the database.</strong> A group page is the one place in this
+    portal where somebody you have never met types a passport number in, so those and the dates of
+    birth are sealed. Nothing but the supplier manifest opens one.</li>
+  <li><strong>Filling one in later.</strong> Most parties register without a passport, because the
+    passport is in a drawer and the cabin is going. Press <strong>Edit</strong> beside somebody and
+    type it in when it arrives.</li>
+  <li><strong>A blank passport box means leave it alone.</strong> The box is always empty when the
+    dialog opens, because what is held is masked and putting the mask in the box would save the mask.
+    So leaving it blank keeps what is on file, and the expiry and country stay with it. There is no
+    way to clear a passport by saving an empty form.</li>
+  <li><strong>Book them</strong> turns a party into a reservation and carries the lot across: the
+    cabin price for the people they named, the fare and the taxes as separate lines so the commission
+    comes out right, the supplier's dates, the deposit, and your own fee as a line of its own.
+    Their passports stay on the group rather than moving onto the reservation, because the
+    reservation's traveller list is not encrypted and copying them over would quietly undo it.</li>
+</ul>
+
+<h3 id="group-lists">The four lists everybody asks for</h3>
+<p>Pick one beside <strong>Who is coming</strong> and press <strong>Download</strong>. All four are
+  spreadsheets, built from the same rows, because the other end of this is always a spreadsheet and a
+  cruise line's group desk will take a CSV from anybody.</p>
+<ul>
+  <li><strong>Supplier manifest.</strong> Everything the cruise line asks for: names as the passport
+    has them, dates of birth, passport numbers, expiry, country, and the emergency contact.</li>
+  <li><strong>Rooming list.</strong> One row per cabin, with who is sharing it.</li>
+  <li><strong>Flight list.</strong> Names and dates of birth, for the airline.</li>
+  <li><strong>Dining list.</strong> Only the people with something to say. A list where every row
+    reads "no requirements" is a list the restaurant will not read.</li>
+</ul>
+<p><strong>The manifest is the only one with a passport number on it</strong>, and taking one is
+  written down with the group and how many people were on it. The other three open nothing. That is
+  why it is four buttons rather than one: the dining list goes to a restaurant and should not carry
+  somebody's passport to get there.</p>
+
+<h3 id="group-deadlines">The dates that cost you the cabins</h3>
+<p>Four dates on a group are deadlines where nothing visible happens when they pass. The option date
+  goes by and the cruise line takes back what is unsold. The proposal expires and the price stops
+  being the price. The deposit date arrives and a party that never became a reservation is held by
+  nothing. The passport date passes and nobody notices at all.</p>
+<p>So you get one email about a group on any morning there is something to do about it, and none at
+  all when there is not: a group three weeks from its option date with every cabin sold is left
+  alone. Four deadlines close at once is still one email. It stops if you turn off the morning
+  reminders in <strong>Settings</strong>, because it is the same promise as those.</p>
+
 <h3 id="group-repeat">Repeating a group for next year</h3>
 <p>Press <strong>Repeat this group</strong> at the top of a group, pick the new sailing date, and a new
   group is made from it. The return date follows by the same number of nights, and the name moves on
@@ -734,7 +792,7 @@
 </section>
 
 <section class="doc" id="commission" data-title="Commission, and who keeps what">
-<p class="doc-step">Section 4 of 11</p>
+<p class="doc-step">Section 4 of 12</p>
 <h2>Commission, and who keeps what</h2>
 
 <p>Commission is what the vendor pays. You can type it, or record a percentage and let the
@@ -805,7 +863,7 @@
 </section>
 
 <section class="doc" id="clients" data-title="Clients">
-<p class="doc-step">Section 5 of 11</p>
+<p class="doc-step">Section 5 of 12</p>
 <h2>Clients</h2>
 
 <p>A client record appears the moment you take a reservation in somebody's name, so you
@@ -894,7 +952,7 @@
 </section>
 
 <section class="doc" id="clientpages" data-title="What the client can see">
-<p class="doc-step">Section 6 of 11</p>
+<p class="doc-step">Section 6 of 12</p>
 <h2>What the client can see</h2>
 
 <p class="lede">Pages you can send them, and another way in they can use on their own.
@@ -1006,7 +1064,7 @@
 </section>
 
 <section class="doc" id="daily" data-title="The day's work">
-<p class="doc-step">Section 7 of 11</p>
+<p class="doc-step">Section 7 of 12</p>
 <h2>The day's work</h2>
 
 <ul>
@@ -1039,7 +1097,7 @@
 </section>
 
 <section class="doc" id="chat" data-title="Talking to each other">
-<p class="doc-step">Section 8 of 11</p>
+<p class="doc-step">Section 8 of 12</p>
 <h2>Talking to each other</h2>
 
 <p class="lede"><a href="/app/chat">Chat</a> is for the people who work here. There is no
@@ -1121,7 +1179,7 @@
 </section>
 
 <section class="doc" id="selling" data-title="Finding the next booking">
-<p class="doc-step">Section 9 of 11</p>
+<p class="doc-step">Section 9 of 12</p>
 <h2>Finding the next booking</h2>
 
 
@@ -1172,7 +1230,7 @@
 </section>
 
 <section class="doc" id="money" data-title="Knowing where you stand">
-<p class="doc-step">Section 10 of 11</p>
+<p class="doc-step">Section 10 of 12</p>
 <h2>Knowing where you stand</h2>
 
 <ul>
@@ -1187,7 +1245,7 @@
 </section>
 
 <section class="doc" id="stuck" data-title="Things that catch people out">
-<p class="doc-step">Section 11 of 11</p>
+<p class="doc-step">Section 11 of 12</p>
 <h2>Things that catch people out</h2>
 
 
@@ -1231,6 +1289,29 @@
 <p class="muted" style="margin-top:2.5rem;font-size:.85rem;">Something here wrong, or
   missing? Tell your agency owner and it gets fixed in the portal rather than in a
   document nobody reads.</p>
+</section>
+
+<section class="doc" id="ask" data-title="Asking us, and your own records">
+<p class="doc-step">Section 12 of 12</p>
+<h2>Asking us, and your own records</h2>
+
+<h3 id="ask-us">Getting hold of somebody</h3>
+<p><strong>Get in touch</strong> at the bottom of the menu opens a short form. Say what you need,
+  even roughly, and it comes back to you by email. If something went wrong, what you were doing when
+  it did helps more than anything else.</p>
+<p>Signed in, it already knows who you are and which agency, so you do not type any of that. The page
+  works signed out as well, on purpose: if a demo has run out and the portal will not let you back
+  in, that is exactly when you need to reach somebody, and nothing you entered has been deleted.</p>
+
+<h3 id="your-records">Taking your records with you</h3>
+<p><strong>Settings</strong>, <strong>Take your records with you</strong>. One file with everything
+  in it: clients, reservations, pricing, payments, travellers, groups, vendors, credits, tasks and
+  the list of your documents. An owner gets the whole agency, an advisor gets their own, the same way
+  every screen works.</p>
+<p>The documents themselves stay in the portal, so what comes out is the list of them: what each one
+  is called, how big it is and what it belongs to. The point of the file is that this portal holds
+  the only copy of most of what is in it. The vendor has their own record of their own booking.
+  Nobody has the book.</p>
 </section>
 
 <nav class="doc-nav noprint" id="doc-nav"></nav>
