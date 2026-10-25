@@ -114,10 +114,10 @@
         <p>Every advisor in your agency, each with their own book and their own sign in.</p>
       </div>
       <div class="rate">
-        <span class="fig">$300<span> a month, whatever the size</span></span>
+        <span class="fig">$300<span> a month, up to twenty five</span></span>
         <span class="lbl">And never more than</span>
-        <p>The bill stops at $300. Past eleven advisors the agency pays the same whether it is
-          twelve of you or forty, so growing never costs more.</p>
+        <p>The bill stops at $300. Past eleven advisors it is the same whether there are twelve of
+          you or twenty five, so growing never costs more. Beyond that, ask us.</p>
       </div>
     </div>
 
@@ -161,11 +161,10 @@
     <div class="cols">
       <div>
         <h3>Who this is for</h3>
-        <p>An agency and the advisors in it, whether that is you on your own or you and thirty
+        <p>An agency and the advisors in it, whether that is you on your own or you and twenty
           others. Being under a host agency changes nothing: you are your own agency here, and you
-          pay for your own advisors. A host agency putting its whole network on the portal is a
-          different thing and a different conversation, so ask us rather than reading a number off
-          this page.</p>
+          pay for your own advisors. Beyond twenty five advisors, and for a host agency putting its
+          network on the portal, the price is a conversation rather than a number on this page.</p>
       </div>
       <div>
         <h3>We never touch your client's money</h3>
@@ -216,6 +215,10 @@
 // a change here is the whole change.
 const RATE = 29;
 const CAP = 300;
+// The cap covers an agency, not a network. Past this many advisors the sum
+// stops being a price somebody reads off a page and starts being a
+// conversation, which is the whole reason the ceiling exists.
+const CAP_UP_TO = 25;
 
 /**
  * What an agency of this size pays.
@@ -231,6 +234,7 @@ const CAP = 300;
  */
 function monthly(seats) {
   const n = Math.max(1, Math.min(Number(seats) || 1, 500));
+  if (n > CAP_UP_TO) return { seats: n, total: null };
   return { seats: n, total: Math.min(n * RATE, CAP) };
 }
 
@@ -243,6 +247,11 @@ const eachOut = document.getElementById('each');
 
 function draw() {
   const { seats, total } = monthly(seatsInput.value);
+  if (total === null) {
+    totalOut.textContent = 'Let us talk';
+    eachOut.textContent = `More than ${CAP_UP_TO} advisors is its own conversation`;
+    return;
+  }
   totalOut.textContent = `${money(total)} a month`;
   eachOut.textContent = `${money(total / seats)} each`;
 }
@@ -250,9 +259,12 @@ seatsInput.addEventListener('input', draw);
 draw();
 
 // A few sizes worked out, so somebody can see the shape without typing.
-document.getElementById('examples').innerHTML = [1, 3, 5, 10, 11, 20, 40]
+document.getElementById('examples').innerHTML = [1, 3, 5, 10, 11, 25, 40]
   .map((n) => {
     const { total } = monthly(n);
+    if (total === null) {
+      return `<tr><td>${n}</td><td class="num">Ask us</td><td class="num"></td></tr>`;
+    }
     return `<tr><td>${n}</td><td class="num">${money(total)}</td>
       <td class="num">${money(total / n)}</td></tr>`;
   }).join('');

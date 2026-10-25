@@ -3536,6 +3536,15 @@ async function main() {
   // --------------------------------------------------- getting in touch ---
   step('Getting hold of somebody');
   {
+    // An address nobody else uses, different every run.
+    //
+    // Get in touch allows ten messages an hour from one address, which is
+    // right for an office behind one connection and wrong for a suite run four
+    // times in an afternoon: the rows outlive the run and the eleventh send is
+    // refused for reasons nothing to do with the code under test. A per run
+    // address is also closer to the truth, since these are meant to be
+    // different strangers writing in.
+    const from = { 'CF-Connecting-IP': `203.0.113.${(stamp % 250) + 1}` };
     // Public on purpose. A demo whose trial has ended cannot sign in at all,
     // so a contact form behind a session would be shut to the one person it
     // was built for.
@@ -3551,22 +3560,22 @@ async function main() {
       name: `Stranger ${stamp}`, email: `stranger-${stamp}@test.dev`,
       agencyName: 'Nowhere Travel', subject: 'Carrying on after the demo',
       message: 'My trial ended. Can you switch it back on?',
-    });
+    }, from);
     check(sent.status === 200 && sent.data?.ok,
       'a stranger can write in', `status ${sent.status} ${JSON.stringify(sent.data)}`);
 
     // Guards, because this is open to the internet.
     const noMessage = await call(null, 'POST', '/api/support',
-      { email: `a-${stamp}@test.dev`, message: '   ' });
+      { email: `a-${stamp}@test.dev`, message: '   ' }, from);
     check(noMessage.status === 400, 'an empty message is refused',
       `status ${noMessage.status}`);
     const noWay = await call(null, 'POST', '/api/support',
-      { email: 'not-an-address', message: 'hello' });
+      { email: 'not-an-address', message: 'hello' }, from);
     check(noWay.status === 400, 'and so is one with no way to answer it',
       `status ${noWay.status}`);
     const bot = await call(null, 'POST', '/api/support', {
       email: `bot-${stamp}@test.dev`, message: 'spam', company_website: 'spam.example',
-    });
+    }, from);
     check(bot.status === 200, 'a bot is thanked rather than told',
       `status ${bot.status}`);
 
@@ -3579,7 +3588,7 @@ async function main() {
     const spoof = await call(advisor, 'POST', '/api/support', {
       name: 'Somebody Else', email: 'impostor@test.dev',
       subject: 'Something is not working', message: `Spoof check ${stamp}`,
-    });
+    }, from);
     check(spoof.status === 200, 'an advisor can write in', `status ${spoof.status}`);
     check(whoIn.data?.email !== 'impostor@test.dev',
       'and a name typed into the form does not override the session');
