@@ -25,6 +25,7 @@ import { migrationHint } from './schema-drift.js';
 import { goalProgress } from './goals.js';
 import { BUCKETS } from './commissions.js';
 import { SOFT_DAYS } from './payments.js';
+import { agencyEventsBetween } from './agencyevents.js';
 
 function isoDay(offsetDays = 0) {
   const d = new Date(Date.now() + offsetDays * 86400000);
@@ -261,9 +262,23 @@ export async function handleMonth(request, env) {
   const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 
   const scope = db.scopeFor(env, user, request);
+  const events = await db.calendarMonth(env, scope, { from, to });
+
+  // What the agency has arranged: trainings, webinars, meetings. Everybody's, so the advisor picker does not narrow them, and
+  // each is read in this person's own time zone. A cancelled one is left off the dashboard, the same as its list.
+  const shared = await agencyEventsBetween(env, user, from, to).catch(() => []);
+  for (const e of shared) {
+    if (e.cancelledAt) continue;
+    events.push({
+      date: e.onDate, kind: 'agency', at: e.startTime, title: e.title,
+      detail: [e.kindLabel, e.vendor].filter(Boolean).join(' · '), href: '/app/calendar',
+    });
+  }
+  events.sort((a, b) => (a.date + (a.at || '99:99') < b.date + (b.at || '99:99') ? -1 : 1));
+
   return json({
     month, from, to, today: isoDay(0),
-    events: await db.calendarMonth(env, scope, { from, to }),
+    events,
     scope: db.scopeLabel(scope, user),
   });
 }

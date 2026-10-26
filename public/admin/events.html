@@ -65,7 +65,7 @@
 </dialog>
 
 <script type="module">
-import { api, mountShell, esc, dateFmt, showError, onSubmit, linkBits } from '/js/app.js';
+import { api, mountShell, esc, dateFmt, showError, onSubmit, linkBits, sayTime } from '/js/app.js';
 await mountShell({ admin: true });
 
 const panel = document.getElementById('panel');
@@ -81,8 +81,8 @@ function row(e, advisors) {
     <td><strong>${esc(e.title)}</strong>${e.cancelledAt ? ' <span class="badge badge-red">Cancelled</span>' : ''}
       <div class="muted" style="font-size:.84rem;">${esc(e.kindLabel)}${e.vendor ? ` &middot; ${esc(e.vendor)}` : ''}${
         e.link ? ` &middot; ${linkBits(e.link)}` : ''}</div></td>
-    <td>${esc(dateFmt(e.onDate))}<div class="muted" style="font-size:.84rem;">${esc(e.startTime)}${
-      e.endTime ? ` to ${esc(e.endTime)}` : ''}${e.tz ? ` ${esc(e.tz)}` : ''}</div></td>
+    <td>${esc(dateFmt(e.onDate))}<div class="muted" style="font-size:.84rem;">${esc(sayTime(e.startTime))}${
+      e.endTime ? ` to ${esc(sayTime(e.endTime))}` : ''}${e.tz ? ` ${esc(e.tz)}` : ''}</div></td>
     <td>${going.length} of ${advisors}${going.length
       ? `<div class="muted" style="font-size:.84rem;">${esc(going.join(', '))}</div>` : ''}</td>
     <td style="white-space:nowrap;text-align:right;">

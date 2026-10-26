@@ -1020,6 +1020,7 @@ table.grid input:focus { border-color: var(--navy-400); background: #fff; }
 .dot.task { background: var(--green-600); }
 .dot.option { background: var(--red-600); }
 .dot.appointment { background: var(--coral-600); }
+.dot.agency { background: var(--teal-500); }
 .dot.lead { background: var(--amber-600); }
 .cal-day.today .dot { outline: 1px solid rgba(255,255,255,.6); }
 .cal-detail { border-top: 1px solid var(--navy-100); margin-top: .7rem; }
