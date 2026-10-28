@@ -1562,3 +1562,8 @@ code { overflow-wrap: anywhere; }
 @media (max-width: 860px) { .sidebar .nav-new { width: auto; margin-bottom: 0; } .new-menu { left: auto; right: 0; } }
 
 .docs-over { outline: 2px dashed var(--coral-500); outline-offset: -4px; background: var(--navy-50); }
+
+/* A place to drop files, which is also a button. */
+.dropzone { display: flex; flex-direction: column; gap: .25rem; align-items: center; text-align: center; padding: 1.4rem 1rem;
+  border: 2px dashed var(--navy-200, #c3d2e3); border-radius: 12px; background: var(--navy-50); cursor: pointer; }
+.dropzone:hover, .dropzone.over, .dropzone:focus-visible { border-color: var(--coral-500); background: #fff; outline: none; }

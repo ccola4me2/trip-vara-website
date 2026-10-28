@@ -117,6 +117,7 @@ import {
   handleDeleteDocument,
   handleRenameDocument,
 } from './documents.js';
+import { handleMatchDocument } from './docmatch.js';
 import {
   handleStatement,
   handleBulkQuote,
@@ -1376,6 +1377,7 @@ async function routeApi(request, env, path, method) {
   const askReview = path.match(/^\/api\/bookings\/([^/]+)\/ask-review$/);
   if (askReview && method === 'POST') return handleAskReview(request, env, askReview[1]);
   // Everyone whose documents will stop them travelling, across the whole book.
+  if (path === '/api/documents/match' && method === 'POST') return handleMatchDocument(request, env);
   if (path === '/api/documents' && method === 'GET') return handleDocumentWatch(request, env);
 
   // ---- admin ------------------------------------------------------------
