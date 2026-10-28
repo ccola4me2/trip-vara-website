@@ -1560,3 +1560,5 @@ code { overflow-wrap: anywhere; }
 }
 .new-menu a:hover { background: var(--navy-50); color: var(--navy-800); }
 @media (max-width: 860px) { .sidebar .nav-new { width: auto; margin-bottom: 0; } .new-menu { left: auto; right: 0; } }
+
+.docs-over { outline: 2px dashed var(--coral-500); outline-offset: -4px; background: var(--navy-50); }
