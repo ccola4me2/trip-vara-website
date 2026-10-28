@@ -186,7 +186,7 @@ import { handleCalendar } from './calendar.js';
 import { handleAlerts, handleAlertsSeen, pushWaiting } from './alerts.js';
 import { handleInboundInvite, addressKind } from './inbound.js';
 import {
-  handleInboundConfirmation, handleListInbox, handleMakeInboxAddress, handleGetInboxItem,
+  handleInboundConfirmation, logBounce, handleListInbox, handleMakeInboxAddress, handleGetInboxItem,
   handleResolveInbox, purgeInbox, INBOX_LIMITS,
 } from './inbox.js';
 import {
@@ -582,6 +582,7 @@ export default {
       // Import page, never turned into a reservation here. A PDF can make it a few megabytes.
       if (addressKind(message.to) === 'conf') {
         if (message.rawSize > INBOX_LIMITS.MAX_RAW_BYTES) {
+          await logBounce(env, null, { to: message.to, from: message.from, reason: 'That message is too large to be a confirmation.' });
           message.setReject('That message is too large to be a confirmation.');
           return;
         }
@@ -612,6 +613,13 @@ export default {
       ctx.waitUntil(Promise.resolve());
     } catch (e) {
       console.error('inbound invite', e);
+      // Whichever door it came through, what is said back and what is written down should be about that door: a
+      // confirmation that failed was being answered as though it had been a meeting invite.
+      if (addressKind(message.to) === 'conf') {
+        await logBounce(env, null, { to: message.to, from: message.from, reason: `It could not be read: ${String((e && e.message) || e).slice(0, 120)}` });
+        message.setReject('That confirmation could not be read. Open the Import page and drop it in there instead.');
+        return;
+      }
       message.setReject('That invite could not be read. Try adding it from the '
         + 'Calendar page instead.');
     }
