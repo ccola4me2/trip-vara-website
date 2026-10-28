@@ -19,9 +19,9 @@
 //   fired the trigger, a form submission say, must not be slowed down or made
 //   to fail by an automation that is misconfigured.
 
-import { uid, now, clean, oneOf, PermanentError } from './util.js';
+import { uid, now, clean, cleanText, oneOf, PermanentError } from './util.js';
 import { tenantFor } from './tenant.js';
-import { sendAutomationEmail } from './email.js';
+import { sendAutomationEmail, automationEmailHtml, unsubscribeParts, withUnsubscribe } from './email.js';
 import { isSuppressed } from './suppression.js';
 
 export const TRIGGERS = [
@@ -689,4 +689,72 @@ export async function handleRunAutomations(request, env) {
   await db.logActivity(env, user.id, 'automation.run',
     only ? 'Ran one automation' : 'Ran a pass', result);
   return json({ ok: true, result });
+}
+
+// ---------------------------------------------------------------------------
+// Reading an email before it goes
+// ---------------------------------------------------------------------------
+
+// What each trigger would put in the context, with made up people and dates. These are only for the preview: they are
+// the keys the real triggers send, so a placeholder that is filled here is filled in a real send too.
+const SAMPLE_PERSON = {
+  name: 'Sam Sample', first_name: 'Sam', last_name: 'Sample', full_name: 'Sam Sample',
+  email: 'sam@example.com', phone: '(555) 010-0199',
+};
+const SAMPLE_TRIP = {
+  supplier: 'Royal Caribbean', product: 'Harmony of the Seas', cruise: 'Margaritaville at Sea Paradise',
+  depart_date: '2027-03-13', return_date: '2027-03-20', days_to_go: 60,
+};
+const SAMPLE_BY_TRIGGER = {
+  'form.submitted': { ...SAMPLE_PERSON, ...SAMPLE_TRIP, formName: 'Free Guide' },
+  'contact.created': { ...SAMPLE_PERSON, ...SAMPLE_TRIP },
+  'booking.created': { ...SAMPLE_PERSON, ...SAMPLE_TRIP, final_payment_due: '2026-12-13' },
+  'booking.returned': { ...SAMPLE_PERSON, ...SAMPLE_TRIP },
+  'booking.departing': { ...SAMPLE_PERSON, ...SAMPLE_TRIP },
+  'booking.final_payment_due': { ...SAMPLE_PERSON, ...SAMPLE_TRIP, kind: 'final', amount: '1840.00', due_date: '2026-12-13' },
+  'option.chosen': { ...SAMPLE_PERSON, option: 'Balcony', amount: 184000, part: 'the whole trip', chosen_by: 'client' },
+  'quote.accepted': { ...SAMPLE_PERSON, amount: 184000 },
+  'quote.declined': { ...SAMPLE_PERSON, amount: 184000 },
+};
+
+/**
+ * POST /api/automations/preview { subject, body, triggerType } : an email step as it would read, in the real layout with the
+ * real footer, filled in with sample details. A placeholder nobody has a sample for shows in [brackets] and is listed, so it is
+ * obvious which ones depend on what the person typed in the form.
+ */
+export async function handlePreviewAutomationEmail(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+  const body = await readJson(request);
+  const subjectText = clean(body.subject, 200);
+  const bodyText = cleanText(body.body, 6000);
+  if (!subjectText && !bodyText) return badRequest('There is nothing written to show yet.');
+
+  const advisor = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
+  const base = {
+    ...(SAMPLE_BY_TRIGGER[body.triggerType] || SAMPLE_PERSON),
+    advisor_name: advisor, advisor_first_name: user.first_name || advisor, advisor_email: user.notify_email || user.email,
+    agency_name: user.agency_name || '',
+  };
+  // Anything the template mentions that has no sample is shown in brackets rather than left blank, because blank is what the
+  // person would really get and the writer needs to see where.
+  const unknown = new Set();
+  const context = { ...base };
+  for (const m of `${subjectText} ${bodyText}`.matchAll(/\{\{\s*([a-z0-9_.]+)\s*\}\}/gi)) {
+    const key = m[1];
+    const has = key.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), context);
+    if (has == null) { unknown.add(key); context[key] = `[${key}]`; }
+  }
+
+  const subject = fill(subjectText, context);
+  const baseHtml = automationEmailHtml(env, subject, fill(bodyText, context));
+  // A note to the team's own address carries no way out, the same as when it is sent; anything to a client does.
+  const parts = body.internal === true ? null
+    : await unsubscribeParts(env, { to: context.email || 'sam@example.com', agencyId: user.agency_id || null, agencyName: user.agency_name || '' });
+  return json({
+    ok: true,
+    subject,
+    html: withUnsubscribe(baseHtml, parts),
+    unknown: [...unknown],
+  });
 }

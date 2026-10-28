@@ -1079,6 +1079,17 @@ export function linkify(escaped) {
   );
 }
 
+/**
+ * The message an automation sends, before its way out is added. One function for the send and for the preview an owner reads
+ * while writing it, so what they see is built by the same code as what goes out.
+ */
+export function automationEmailHtml(env, subject, body) {
+  return layout(env, {
+    heading: subject,
+    body: `<p style="margin:0;">${linkify(escapeHtml(body)).replace(/\n/g, '<br>')}</p>`,
+  });
+}
+
 export async function sendAutomationEmail(env, to, subject, body, { unsubscribe, replyTo, internal = false } = {}) {
   // Neither of these improves by waiting five minutes and asking again.
   if (!env.RESEND_API_KEY) {
@@ -1092,10 +1103,7 @@ export async function sendAutomationEmail(env, to, subject, body, { unsubscribe,
     throw new PermanentError('An email to a client has to carry its way out. Pass the unsubscribe details, or mark it internal.');
   }
 
-  const baseHtml = layout(env, {
-    heading: subject,
-    body: `<p style="margin:0;">${linkify(escapeHtml(body)).replace(/\n/g, '<br>')}</p>`,
-  });
+  const baseHtml = automationEmailHtml(env, subject, body);
   // Every message to a client carries its way out. See unsubscribeParts.
   const parts = unsubscribe ? await unsubscribeParts(env, { to, ...unsubscribe }) : null;
   const html = withUnsubscribe(baseHtml, parts);
