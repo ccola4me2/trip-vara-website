@@ -267,6 +267,7 @@ async function main() {
   const list = await call(admin, 'GET', '/api/admin/advisors');
   const created = (list.data?.users || []).find((a) => a.email === ADVISOR_EMAIL);
   if (!check(created, 'the signup shows up for the admin')) throw new Bail('No advisor to approve.');
+  check(created.timezone === 'America/New_York', 'a new account starts on Eastern, not blank', String(created.timezone));
   // Deliberately not registered with the other cleanups: suspending the
   // advisor kills their session, and the checks after cleanup are made as the
   // advisor. Registered here it ran first and those checks then passed against
