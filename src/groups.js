@@ -20,6 +20,7 @@ import { parseGroupQuote, FIELD_WORDS } from './groupquote.js';
 import { buildSchedule } from './payments.js';
 import { assignSlug, linkInfo, releaseAllFor, cleanSlug, slugProblem, slugState } from './groupslug.js';
 import { listGroupFiles, removeGroupFiles } from './groupfiles.js';
+import { depositPerGuestFor } from './groupdeposit.js';
 import { portName } from './ports.js';
 import { SELLING } from './groupaccess.js';
 
@@ -37,7 +38,7 @@ const COLUMNS = `
   g.proposal_id, g.sailing_id, g.vendor_contact, g.departure_port,
   g.passengers, g.proposal_expires,
   g.deposit_due, g.final_payment_due, g.passport_due, g.group_number,
-  g.deposit_per_guest_cents, g.reminded_on,
+  g.deposit_per_guest_cents, g.suite_deposit_per_guest_cents, g.reminded_on,
   g.faq_json, g.terms, g.agency_fee_cents, g.fee_terms, g.trip_terms,
   g.page_slug, g.headline, g.hero_image_url, g.perks_json, g.itinerary_json, g.repeated_from,
   g.amenities_json, g.drinks_json, g.enhancements_json, g.excursions_url,
@@ -109,6 +110,8 @@ function parse(body) {
       // amount the schedule generator writes no deposit row at all and the
       // whole cost lands on the final date.
       depositPerGuestCents: Math.max(0, Math.min(toCents(body.depositPerGuest) || 0, 10000000)),
+      // Higher than the standard one when the supplier wants more down for a suite. Empty means a suite pays the standard.
+      suiteDepositPerGuestCents: Math.max(0, Math.min(toCents(body.suiteDepositPerGuest) || 0, 10000000)),
       finalPaymentDue: cleanDate(body.finalPaymentDue),
       passportDue: cleanDate(body.passportDue),
       groupNumber: clean(body.groupNumber, 60),
@@ -497,7 +500,7 @@ export async function handleBookRegistration(request, env, id) {
   const reg = await env.DB.prepare(
     `SELECT r.*, g.name AS group_name, g.vendor, g.product_name, g.destination,
             g.depart_date, g.return_date, g.group_type,
-            g.deposit_due, g.final_payment_due, g.deposit_per_guest_cents,
+            g.deposit_due, g.final_payment_due, g.deposit_per_guest_cents, g.suite_deposit_per_guest_cents,
             g.agency_fee_cents, g.fee_terms,
             rt.room_type, rt.guests AS rate_guests, rt.per_guest_cents, rt.taxes_cents
        FROM group_registrations r
@@ -536,7 +539,8 @@ export async function handleBookRegistration(request, env, id) {
   // which is the honest answer and leaves the advisor to price it.
   const fareCents = (Number(reg.per_guest_cents) || 0) * heads;
   const taxCents = (Number(reg.taxes_cents) || 0) * heads;
-  const depositCents = (Number(reg.deposit_per_guest_cents) || 0) * heads;
+  // A suite asks more down than a stateroom, when the group says so.
+  const depositCents = depositPerGuestFor(reg, reg.room_type) * heads;
   const feeCents = (Number(reg.agency_fee_cents) || 0) * heads;
 
   const booking = await db.createBooking(env, owner.id, {
@@ -697,10 +701,10 @@ async function createGroupRow(env, ownerId, raw) {
        proposal_id, sailing_id, vendor_contact, departure_port, passengers, proposal_expires,
        deposit_due, final_payment_due, passport_due, group_number,
        faq_json, terms, agency_fee_cents, fee_terms, trip_terms,
-       deposit_per_guest_cents, headline, hero_image_url, perks_json, itinerary_json,
+       deposit_per_guest_cents, suite_deposit_per_guest_cents, headline, hero_image_url, perks_json, itinerary_json,
        amenities_json, drinks_json, enhancements_json, excursions_url, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, ownerId, fields.name, fields.vendor, fields.productName, fields.destination,
          fields.groupCode, fields.departDate, fields.returnDate, fields.optionDate,
          fields.cabinsHeld, fields.status, fields.notes,
@@ -709,7 +713,7 @@ async function createGroupRow(env, ownerId, raw) {
          fields.passengers, fields.proposalExpires,
          fields.depositDue, fields.finalPaymentDue, fields.passportDue, fields.groupNumber,
          fields.faqJson, fields.terms, fields.agencyFeeCents, fields.feeTerms, fields.tripTerms,
-         fields.depositPerGuestCents, fields.headline || null, fields.heroImageUrl,
+         fields.depositPerGuestCents, fields.suiteDepositPerGuestCents, fields.headline || null, fields.heroImageUrl,
          fields.perksJson, fields.itineraryJson, fields.amenitiesJson, fields.drinksJson,
          fields.enhancementsJson, fields.excursionsUrl, ts, ts).run();
   await saveRates(env, id, ownerId, raw.rates);
@@ -854,7 +858,7 @@ export async function handleUpdateGroup(request, env, id) {
        departure_port = ?, passengers = ?, proposal_expires = ?,
        deposit_due = ?, final_payment_due = ?, passport_due = ?, group_number = ?,
        faq_json = ?, terms = ?, agency_fee_cents = ?, fee_terms = ?, trip_terms = ?,
-       deposit_per_guest_cents = ?, updated_at = ?
+       deposit_per_guest_cents = ?, suite_deposit_per_guest_cents = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`
   ).bind(fields.name, fields.vendor, fields.productName, fields.destination, fields.groupCode,
          fields.departDate, fields.returnDate, fields.optionDate, fields.cabinsHeld,
@@ -863,7 +867,7 @@ export async function handleUpdateGroup(request, env, id) {
          fields.departurePort, fields.passengers, fields.proposalExpires,
          fields.depositDue, fields.finalPaymentDue, fields.passportDue, fields.groupNumber,
          fields.faqJson, fields.terms, fields.agencyFeeCents, fields.feeTerms, fields.tripTerms,
-         fields.depositPerGuestCents, now(), id, owner.id).run();
+         fields.depositPerGuestCents, fields.suiteDepositPerGuestCents, now(), id, owner.id).run();
   if (!res.meta || res.meta.changes === 0) return notFound('Group not found.');
   const page = pageFields(raw, fields);
   if (page.sets.length) {
@@ -900,8 +904,17 @@ export async function handleSaveGroupRates(request, env, id) {
   if (!rates.length) return badRequest('There are no cabin rates to save.');
 
   await saveRates(env, id, owner.id, rates);
-  await env.DB.prepare('UPDATE travel_groups SET updated_at = ? WHERE id = ? AND user_id = ?')
-    .bind(now(), id, owner.id).run();
+  // The deposits and dates read from the same proposal, when it printed them. Only what was read is written, so a group that has a
+  // final payment date typed in keeps it when the proposal has none.
+  const dep = raw.deposits && typeof raw.deposits === 'object' ? raw.deposits : {};
+  const changes = [];
+  const put = (column, value) => { if (value) changes.push([column, value]); };
+  put('deposit_per_guest_cents', Math.max(0, Math.min(toCents(dep.depositPerGuest) || 0, 10000000)));
+  put('suite_deposit_per_guest_cents', Math.max(0, Math.min(toCents(dep.suiteDepositPerGuest) || 0, 10000000)));
+  put('deposit_due', cleanDate(dep.depositDue));
+  put('final_payment_due', cleanDate(dep.finalPaymentDue));
+  await env.DB.prepare(`UPDATE travel_groups SET ${changes.map(([c]) => `${c} = ?, `).join('')}updated_at = ? WHERE id = ? AND user_id = ?`)
+    .bind(...changes.map(([, v]) => v), now(), id, owner.id).run();
   await db.logActivity(env, user.id, 'group.rates',
     `Filled in the rates on ${owner.id === user.id ? 'a group' : 'somebody else\'s group'}: ${rates.length} cabin type${rates.length === 1 ? '' : 's'}`,
     { groupId: id });
