@@ -256,10 +256,9 @@ function page(title, body, brand, { wide = true, env = {}, hero = false, head = 
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} | ${esc(b.name)}</title>
-${neutral
-    ? `<link rel="icon" type="image/png" sizes="32x32" href="${esc(neutralAsset(env, 'icon-32.png'))}">
-<link rel="apple-touch-icon" href="${esc(neutralAsset(env, 'icon-180.png'))}">`
-    : `<link rel="icon" href="${esc(home + LOGO_PATH)}" type="${LOGO_TYPE}">`}
+<link rel="icon" type="image/png" sizes="32x32" href="${esc(neutralAsset(env, 'icon-32.png'))}">
+<link rel="shortcut icon" href="${esc(neutralAsset(env, 'favicon.ico'))}">
+<link rel="apple-touch-icon" href="${esc(neutralAsset(env, 'icon-180.png'))}">
 ${head}
 <style>
   :root { --navy:${accent}; --coral:#e55942; --ink:#2f4459; --soft:#5c7286;
