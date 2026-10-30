@@ -288,6 +288,7 @@ import {
   handleSuggestHouseholds,
   handleHouseholdRecord,
 } from './households.js';
+import { handleAddCompanion, handleRemoveCompanion } from './companions.js';
 import { handleFileGuests } from './guests.js';
 import {
   handleReadItineraryConfirmation,
@@ -856,6 +857,8 @@ async function routeApi(request, env, path, method) {
   const vendorStatementMatch = path.match(/^\/api\/commissions\/statements\/([^/]+)$/);
   const candidatesMatch = path.match(/^\/api\/commissions\/statements\/([^/]+)\/candidates$/);
   const clientMatch = path.match(/^\/api\/clients\/([^/]+)$/);
+  const companionsMatch = path.match(/^\/api\/clients\/([^/]+)\/companions$/);
+  const companionDropMatch = path.match(/^\/api\/clients\/([^/]+)\/companions\/([^/]+)$/);
   const vendorMatch = path.match(/^\/api\/vendors\/([^/]+)$/);
   const vendorStarMatch = path.match(/^\/api\/vendors\/([^/]+)\/favourite$/);
 
@@ -1347,6 +1350,10 @@ async function routeApi(request, env, path, method) {
   if (path === '/api/catalog/apply' && method === 'POST') return handleCatalogApply(request, env);
   if (path === '/api/admin/catalog' && method === 'GET') return handleCatalogStatus(request, env);
   if (path === '/api/admin/catalog' && method === 'POST') return handleCatalogImport(request, env);
+  if (companionsMatch && method === 'POST') return handleAddCompanion(request, env, companionsMatch[1]);
+  if (companionDropMatch && method === 'DELETE') {
+    return handleRemoveCompanion(request, env, companionDropMatch[1], companionDropMatch[2]);
+  }
   if (clientMatch && method === 'PUT') return handleUpdateClient(request, env, clientMatch[1]);
   if (clientMatch && method === 'DELETE') return handleDeleteClient(request, env, clientMatch[1]);
   if (path === '/api/commissions' && method === 'GET') return handleListCommissions(request, env);
