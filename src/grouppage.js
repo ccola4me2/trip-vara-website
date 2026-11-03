@@ -501,8 +501,7 @@ ${head}
     <span><b>${esc(b.name)}</b><small>${esc(b.tagline || '')}</small></span>`}</div>`}
   ${body}
   ${neutral ? '' : `<p class="foot">&copy; ${new Date().getFullYear()} ${esc(b.name)}
-    &middot; <a href="${esc(home)}/privacy">Privacy policy</a>${POWERED_BY}
-    &middot; <a href="${esc(home)}/login?next=%2Fadmin%2Fgroups" rel="nofollow">Admin login</a></p>`}
+    &middot; <a href="${esc(home)}/privacy">Privacy policy</a>${POWERED_BY}</p>`}
 ${hero ? '' : '</div>'}</body></html>`;
 }
 
