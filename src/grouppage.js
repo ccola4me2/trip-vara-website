@@ -501,7 +501,7 @@ ${head}
     <span><b>${esc(b.name)}</b><small>${esc(b.tagline || '')}</small></span>`}</div>`}
   ${body}
   ${neutral ? '' : `<p class="foot">&copy; ${new Date().getFullYear()} ${esc(b.name)}
-    &middot; <a href="${esc(home)}/privacy">Privacy policy</a>${POWERED_BY}</p>`}
+    &middot; <a href="${esc(privacyHref(env))}">Privacy policy</a>${POWERED_BY}</p>`}
 ${hero ? '' : '</div>'}</body></html>`;
 }
 
@@ -509,6 +509,15 @@ ${hero ? '' : '</div>'}</body></html>`;
 function neutralAsset(env, file) {
   const host = String(env.GROUP_HOST || '').trim();
   return host ? `https://${host}/cgp/${file}` : `${appUrl(env)}/logo-mark.png`;
+}
+
+/**
+ * Where the privacy link at the foot of a client's page goes: the portal's own page, since every
+ * group here belongs to one of its agencies. Built here rather than inline because the contracts
+ * checker reads "}/privacy" inside the nested template as a regular expression and loses the rest.
+ */
+function privacyHref(env) {
+  return `${appUrl(env)}/privacy`;
 }
 
 /** Where the service's own logo goes: its front page on the shared domain. */
