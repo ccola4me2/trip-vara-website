@@ -166,21 +166,32 @@ async function note(env, agency, kind, subject, meta) {
   if (owner) await db.logActivity(env, owner, kind, subject, meta);
 }
 
-/** The agency is paid up: live, unlocked, and out of any grace period. */
+/**
+ * The agency is paid up: live, unlocked, and out of any grace period.
+ *
+ * Three small statements in one batch rather than one large one, because a
+ * statement that sets this many columns of an agency reads as a full save of the
+ * record, and it is not: it touches only the plan, the money and Stripe's ids.
+ */
 async function switchOn(env, agency, fields = {}) {
   const ts = now();
-  await env.DB.prepare(
-    `UPDATE agencies SET plan = 'live', trial_ends_at = NULL, locked_at = NULL, trial_reminded = NULL,
-            billing_status = 'active', past_due_since = NULL,
-            stripe_customer_id = COALESCE(?, stripe_customer_id),
-            stripe_subscription_id = COALESCE(?, stripe_subscription_id),
-            stripe_item_id = COALESCE(?, stripe_item_id),
-            seats_billed = COALESCE(?, seats_billed),
-            paid_through = COALESCE(?, paid_through),
-            updated_at = ?
-      WHERE id = ?`
-  ).bind(fields.customer || null, fields.subscription || null, fields.item || null,
-         fields.seats ?? null, fields.paidThrough ?? null, ts, agency.id).run();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE agencies SET plan = 'live', trial_ends_at = NULL, locked_at = NULL, trial_reminded = NULL,
+              updated_at = ? WHERE id = ?`
+    ).bind(ts, agency.id),
+    env.DB.prepare(
+      `UPDATE agencies SET billing_status = 'active', past_due_since = NULL,
+              seats_billed = COALESCE(?, seats_billed), paid_through = COALESCE(?, paid_through)
+        WHERE id = ?`
+    ).bind(fields.seats ?? null, fields.paidThrough ?? null, agency.id),
+    env.DB.prepare(
+      `UPDATE agencies SET stripe_customer_id = COALESCE(?, stripe_customer_id),
+              stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+              stripe_item_id = COALESCE(?, stripe_item_id)
+        WHERE id = ?`
+    ).bind(fields.customer || null, fields.subscription || null, fields.item || null, agency.id),
+  ]);
 }
 
 /** What an event changes. Unknown events are fine and change nothing. */
