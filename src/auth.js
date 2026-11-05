@@ -12,7 +12,6 @@ import {
   isValidEmail, normalizeEmail, clean, readJson, now,
 } from './util.js';
 import { validZone } from './eventzone.js';
-import { lapseState, LAPSED_MESSAGE } from './lapse.js';
 import * as db from './db.js';
 import { getAgencyBySlug, houseAgency } from './brand.js';
 import { sendAdvisorPendingEmail, sendAdminNewSignupEmail, sendPasswordResetEmail } from './email.js';
@@ -115,7 +114,7 @@ export function isActiveAdvisor(user) {
  * everywhere at once, and a list of places to remember to check is a list with
  * one missing.
  */
-export async function requireUser(request, env, { allowLocked = false } = {}) {
+export async function requireUser(request, env) {
   const user = await getCurrentUser(request, env);
   if (!user) return { response: unauthorized() };
   if (user.status === 'pending') {
@@ -124,12 +123,8 @@ export async function requireUser(request, env, { allowLocked = false } = {}) {
   if (user.status !== 'active') {
     return { response: forbidden('This account is not active.') };
   }
-  // The billing screens ask to be let through a lock, because the person who
-  // can lift it is exactly who the lock has just shut out.
-  if (!allowLocked) {
-    const over = await trialOver(env, user);
-    if (over) return { response: forbidden(over) };
-  }
+  const over = await trialOver(env, user);
+  if (over) return { response: forbidden(over) };
   return { user };
 }
 
@@ -147,24 +142,12 @@ export async function trialOver(env, user) {
   let agency;
   try {
     agency = await env.DB.prepare(
-      'SELECT plan, trial_ends_at, billing_status, past_due_since FROM agencies WHERE id = ?'
+      "SELECT plan, trial_ends_at FROM agencies WHERE id = ? AND plan = 'demo'"
     ).bind(user.agency_id).first();
   } catch {
-    // The billing columns arrive with their migration, which is applied by
-    // hand. Until it is, the question is still the old one, and a demo that has
-    // run out must go on being locked.
-    try {
-      agency = await env.DB.prepare(
-        'SELECT plan, trial_ends_at FROM agencies WHERE id = ?'
-      ).bind(user.agency_id).first();
-    } catch {
-      return null;
-    }
+    return null;
   }
-  if (!agency) return null;
-  if (lapseState(agency, now()).locked) return LAPSED_MESSAGE;
-  if (agency.plan !== 'demo') return null;
-  if (!agency.trial_ends_at) return null;
+  if (!agency || !agency.trial_ends_at) return null;
   if (agency.trial_ends_at > now()) return null;
   // No number in this sentence, deliberately. It is read off TRIAL_DAYS as it
   // is today, and the person reading it signed up under whatever it was then:
@@ -173,8 +156,7 @@ export async function trialOver(env, user) {
   // on the record and the one they were told about; this message only has to
   // say that it has passed.
   return 'Your demo has ended. Everything you entered is still here. '
-    + 'If you own the agency, subscribe under Admin, then Billing, and the account '
-    + 'switches straight back on. Otherwise get in touch and we will switch it on.';
+    + 'Get in touch and we will switch the account on.';
 }
 
 /**
@@ -185,8 +167,8 @@ export async function trialOver(env, user) {
  * stranger is one three minutes after filling in a form, so anything that
  * reaches past their own agency needs requirePlatformOwner instead.
  */
-export async function requireAdmin(request, env, opts) {
-  const { user, response } = await requireUser(request, env, opts);
+export async function requireAdmin(request, env) {
+  const { user, response } = await requireUser(request, env);
   if (response) return { response };
   if (!isAdmin(user)) return { response: forbidden('Admin access required.') };
   return { user };

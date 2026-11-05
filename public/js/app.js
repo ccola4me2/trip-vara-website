@@ -355,7 +355,6 @@ const ADMIN_NAV = [
   { href: '/admin/', label: 'Advisors', icon: I.people },
   { href: '/admin/agencies', label: 'Agencies', icon: I.handshake },
   { href: '/admin/commissions', label: 'Commissions', icon: I.chart },
-  { href: '/admin/billing', label: 'Billing', icon: I.shield },
   { href: '/admin/tax', label: 'Tax and 1099', icon: I.book },
   // Only whoever runs the portal. The page is the runbook for creating an
   // agency and moving people between them, and it opens by saying an agency

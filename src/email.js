@@ -354,23 +354,6 @@ export function sendDemoStartedEmail(env, { name, email, agencyName, trialDays, 
   });
 }
 
-/** Tells whoever runs the portal that an agency has paid, so a demo converting is never a surprise. */
-export function sendSubscribedEmail(env, { agencyName, email }) {
-  const to = env.NOTIFY_EMAIL;
-  if (!to) return Promise.resolve({ skipped: true });
-  return send(env, {
-    to,
-    subject: `Subscribed: ${agencyName}`,
-    html: layout(env, {
-      heading: 'An agency has subscribed',
-      body: `<p style="margin:0 0 12px;"><strong>${escapeHtml(agencyName)}</strong> has paid and is now
-             live.${email ? ` Billing contact: ${escapeHtml(email)}.` : ''}</p>
-             <p style="margin:0;">The account switched on by itself. Nothing is waiting for you.</p>`,
-      cta: { label: 'See the agencies', href: `${appUrl(env)}/admin/agencies` },
-    }),
-  });
-}
-
 export function sendAdminNewSignupEmail(env, user) {
   const to = env.NOTIFY_EMAIL;
   if (!to) return Promise.resolve({ skipped: true });
@@ -878,9 +861,6 @@ export function sendTrialNoticeEmail(env, { to, copyTo, agencyName, days, appUrl
 
   const ended = days === 0;
   const when = ended ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
-  // Only offered once there is something to subscribe to. A button to a page
-  // that says billing is not on yet would be worse than no button.
-  const canPay = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_FULL);
 
   const subject = ended
     ? `Your ${agencyName} demo has ended`
@@ -893,17 +873,13 @@ export function sendTrialNoticeEmail(env, { to, copyTo, agencyName, days, appUrl
        <p style="margin:0 0 12px;"><strong>Everything you put in is still there.</strong> Every
        client, every reservation, every payment. Nothing has been deleted and nothing will be
        while we are talking.</p>
-       <p style="margin:0 0 16px;">${canPay
-    ? 'Subscribe and it switches back on by itself, within a minute. '
-    : 'Reply to this and we will switch it back on. '}Carrying on
+       <p style="margin:0 0 16px;">Reply to this and we will switch it back on. Carrying on
        keeps all of it exactly where it is: there is nothing to move or import.</p>`
     : `<p style="margin:0 0 12px;">Your demo of Trip Vara ends <strong>${escapeHtml(when)}</strong>.</p>
        <p style="margin:0 0 12px;">If you carry on, everything you have entered stays exactly
        where it is. There is no export, no import, and nothing to set up again: the same
        account keeps working.</p>
-       <p style="margin:0 0 16px;">${canPay
-    ? 'Subscribing takes a minute and the account carries straight on. '
-    : ''}If you would rather not, you need do nothing at all.</p>`;
+       <p style="margin:0 0 16px;">If you would rather not, you need do nothing at all.</p>`;
 
   return send(env, {
     to: copyTo ? [to, copyTo] : to,
@@ -912,9 +888,7 @@ export function sendTrialNoticeEmail(env, { to, copyTo, agencyName, days, appUrl
     html: layout(env, {
       heading: ended ? 'Your demo has ended' : `Your demo ends ${when}`,
       body,
-      cta: canPay
-        ? { label: 'Subscribe', href: `${appUrl}/admin/billing` }
-        : (ended ? undefined : { label: 'Open the portal', href: `${appUrl}/app/` }),
+      cta: ended ? undefined : { label: 'Open the portal', href: `${appUrl}/app/` },
     }),
   });
 }

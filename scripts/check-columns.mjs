@@ -49,18 +49,6 @@ const DELIBERATE = {
   agencies: {
     ghl_location_id: 'what the old CRM called this agency. Every row it keyed has '
       + 'been moved to agency_id; see 0062_agency_partition.sql',
-    // The shared agency read goes out to the browser on /api/agencies and onto
-    // every page an agency brands. Stripe\u0027s ids and the state of an agency\u0027s
-    // payments are for billing.js alone, which reads them with its own query.
-    product: 'which plan the agency is on, read by billing.js',
-    stripe_customer_id: 'Stripe\u0027s id for the agency, read only by billing.js and never sent to a browser',
-    stripe_subscription_id: 'the same, for the subscription',
-    stripe_item_id: 'the same, for the line that carries the advisor count',
-    billing_status: 'read by billing.js and the sign-in door, each with its own query',
-    past_due_since: 'the same: starts the grace period after a failed payment',
-    paid_through: 'read only by billing.js, for the billing page',
-    seats_billed: 'read only by billing.js, which keeps it in step with the advisor count',
-    terms_accepted_at: 'when the owner agreed to the terms. Read only where it is shown',
   },
 };
 

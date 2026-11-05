@@ -256,9 +256,6 @@ jobs:
           # The suite also covers the other side, where no key is set and the
           # form leaves those boxes out.
           echo "PII_KEY=$(openssl rand -base64 32)" > .dev.vars
-          # The webhook secret the billing checks sign with. A throwaway: there is
-          # no Stripe key here, so nothing in this run can reach Stripe at all.
-          echo "STRIPE_WEBHOOK_SECRET=whsec_smoke_test" >> .dev.vars
           # --test-scheduled exposes /__scheduled, so the smoke suite can run
           # the cron rather than leaving the whole scheduled handler as the one
           # part of this Worker nothing ever executes.
