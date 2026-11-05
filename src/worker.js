@@ -341,6 +341,9 @@ import {
   remindTrials, handleRunTrialNotices,
 } from './demo.js';
 import {
+  handleStripeWebhook, handleBillingStatus, handleBillingCheckout, handleBillingPortal, syncSeats,
+} from './billing.js';
+import {
   handleListCommissions,
   handleSetCommissionStatus,
 } from './commissions.js';
@@ -536,6 +539,7 @@ const PAGE_FILES = {
   '/app/settings': '/app/settings.html',
   '/admin/manual': '/admin/manual.html',
   '/admin/commissions': '/admin/commissions.html',
+  '/admin/billing': '/admin/billing.html',
   '/admin': '/admin/index.html',
   '/admin/': '/admin/index.html',
 };
@@ -653,6 +657,9 @@ export default {
     // Before the sweep locks anything, so the day it ends the person is told
     // rather than just shut out.
     job('trial notices', () => remindTrials(env));
+    // What Stripe bills follows how many advisors there are. A no-op until
+    // billing is switched on, and one query after that when nothing changed.
+    job('billing seats', () => syncSeats(env));
     job('purge automation runs', async () => { await purgeOldRuns(env); await purgeInbox(env); await purgeExpiredProposals(env); });
 
     // The catalog import is a no-op once the current monthly snapshot is fully
@@ -1420,6 +1427,12 @@ async function routeApi(request, env, path, method) {
   // A fourteen day demo, started by somebody with no account at all. Before
   // the agency routes, none of which a stranger may reach.
   if (path === '/api/demo' && method === 'POST') return handleStartDemo(request, env);
+  // Paying. The webhook is called by Stripe, so it has no session and proves
+  // itself by its signature instead; the other three ask who you are.
+  if (path === '/api/stripe/webhook' && method === 'POST') return handleStripeWebhook(request, env);
+  if (path === '/api/billing' && method === 'GET') return handleBillingStatus(request, env);
+  if (path === '/api/billing/checkout' && method === 'POST') return handleBillingCheckout(request, env);
+  if (path === '/api/billing/portal' && method === 'POST') return handleBillingPortal(request, env);
   // Deliberately not behind requireUser: see the note in support.js.
   if (path === '/api/support' && method === 'POST') return handleSupport(request, env);
   if (path === '/api/support/who' && method === 'GET') return handleSupportWho(request, env);

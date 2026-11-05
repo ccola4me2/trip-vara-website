@@ -16,6 +16,8 @@
  * Usage: node scripts/smoke.mjs [baseUrl] [adminEmail] [adminPassword]
  */
 
+import { createHmac } from 'node:crypto';
+
 const BASE = process.argv[2] || 'http://127.0.0.1:8787';
 const ADMIN_EMAIL = process.argv[3] || 'local@test.dev';
 const ADMIN_PASSWORD = process.argv[4] || 'local-test-12345';
@@ -3959,6 +3961,126 @@ async function main() {
     check(houseRefused.status === 400,
       'and the portal\'s own agency cannot be removed that way at all',
       `status ${houseRefused.status}`);
+  }
+
+  // Paying. Stripe tells the portal what happened by webhook, so these drive the
+  // webhook the way Stripe would: signed, replayed, out of order. Nothing here
+  // calls Stripe, because nothing in a test should be able to charge a card.
+  step('Paying for it');
+  {
+    const secret = 'whsec_smoke_test';
+    let serial = 0;
+    const sign = (event, at = Math.floor(Date.now() / 1000)) => ({
+      'stripe-signature': `t=${at},v1=${createHmac('sha256', secret).update(`${at}.${JSON.stringify(event)}`).digest('hex')}`,
+    });
+    const hook = (type, object, headers) => {
+      serial += 1;
+      const event = { id: `evt_${stamp}_${serial}`, type, data: { object } };
+      return call(null, 'POST', '/api/stripe/webhook', event, headers ? headers(event) : sign(event));
+    };
+
+    const probe = await call(null, 'POST', '/api/stripe/webhook', { id: 'evt_probe', type: 'ping' });
+    if (probe.status === 503) {
+      skip('the payment webhook', 'no STRIPE_WEBHOOK_SECRET is set on this Worker');
+    } else {
+      const payJar = jar();
+      const payEmail = `pay-${stamp}@example.test`;
+      const payStart = await call(payJar, 'POST', '/api/demo', {
+        agencyName: `Pay Travel ${stamp}`, firstName: 'Pat', lastName: 'Payer',
+        email: payEmail, password: 'demo-password-12345',
+      });
+      await call(payJar, 'POST', '/api/auth/login', { email: payEmail, password: 'demo-password-12345' });
+      const payMe = await call(payJar, 'GET', '/api/auth/me');
+      const payAgency = payMe.data?.user?.agencyId;
+      if (payAgency) cleanup('the paying agency', () => call(admin, 'DELETE', `/api/agencies/${payAgency}`));
+      check(payStart.status === 201 && Boolean(payAgency), 'a demo agency to pay with', `status ${payStart.status}`);
+
+      const before = await call(payJar, 'GET', '/api/billing');
+      check(before.status === 200 && before.data?.plan === 'demo' && before.data?.billingStatus === null
+        && before.data?.monthlyCents === 2900 && before.data?.isOwner === true,
+      'a demo owner sees a demo, one advisor, and $29 a month', JSON.stringify(before.data));
+      const noKey = await call(payJar, 'POST', '/api/billing/checkout', {});
+      check(noKey.status === 503, 'checkout says billing is not on, rather than failing, until a Stripe key is set',
+        `status ${noKey.status}`);
+      const stranger = await call(jar(), 'GET', '/api/billing');
+      check(stranger.status === 401, 'nobody signed out can read an agency billing state', `status ${stranger.status}`);
+
+      // Who is allowed to say an agency has paid: only Stripe, by signature.
+      const unsigned = await call(null, 'POST', '/api/stripe/webhook',
+        { id: `evt_${stamp}_x`, type: 'checkout.session.completed', data: { object: { mode: 'subscription', client_reference_id: payAgency } } });
+      check(unsigned.status === 400, 'a webhook with no signature is refused', `status ${unsigned.status}`);
+      const forged = await hook('checkout.session.completed',
+        { mode: 'subscription', client_reference_id: payAgency, customer: 'cus_forged' },
+        () => ({ 'stripe-signature': `t=${Math.floor(Date.now() / 1000)},v1=${'0'.repeat(64)}` }));
+      check(forged.status === 400, 'and one signed with the wrong secret', `status ${forged.status}`);
+      const stale = await hook('checkout.session.completed',
+        { mode: 'subscription', client_reference_id: payAgency, customer: 'cus_stale' },
+        (event) => sign(event, Math.floor(Date.now() / 1000) - 3600));
+      check(stale.status === 400, 'and a correctly signed one that is an hour old, so a captured request cannot be replayed',
+        `status ${stale.status}`);
+      const stillDemo = await call(payJar, 'GET', '/api/billing');
+      check(stillDemo.data?.plan === 'demo', 'and none of them switched the agency on', JSON.stringify(stillDemo.data?.plan));
+
+      const customer = `cus_smoke_${stamp}`;
+      const subscription = `sub_smoke_${stamp}`;
+      const done = await hook('checkout.session.completed',
+        { mode: 'subscription', client_reference_id: payAgency, customer, subscription });
+      check(done.status === 200, 'a signed checkout switches it on', `status ${done.status} ${done.raw.slice(0, 120)}`);
+      const live = await call(payJar, 'GET', '/api/billing');
+      check(live.data?.plan === 'live' && live.data?.billingStatus === 'active' && live.data?.hasCustomer === true
+        && live.data?.locked === false, 'the demo is now a live, paying agency', JSON.stringify(live.data));
+
+      const sameEvent = { id: `evt_${stamp}_dup`, type: 'invoice.payment_failed', data: { object: { customer } } };
+      const first = await call(null, 'POST', '/api/stripe/webhook', sameEvent, sign(sameEvent));
+      const second = await call(null, 'POST', '/api/stripe/webhook', sameEvent, sign(sameEvent));
+      check(first.status === 200 && second.data?.duplicate === true,
+        'an event Stripe sends twice is applied once', `${first.status} ${JSON.stringify(second.data)}`);
+
+      const failed = await call(payJar, 'GET', '/api/billing');
+      check(failed.data?.billingStatus === 'past_due' && failed.data?.locked === false
+        && failed.data?.graceEndsAt === failed.data?.pastDueSince + 7 * 86400,
+      'a failed payment starts seven days of grace, and does not lock anything yet', JSON.stringify(failed.data));
+      const working = await call(payJar, 'GET', '/api/clients');
+      check(working.status === 200, 'and the portal keeps working through it', `status ${working.status}`);
+
+      await hook('invoice.payment_failed', { customer });
+      const again = await call(payJar, 'GET', '/api/billing');
+      check(again.data?.pastDueSince === failed.data?.pastDueSince,
+        'a second failure does not restart the clock', `${failed.data?.pastDueSince} then ${again.data?.pastDueSince}`);
+
+      const cancelled = await hook('customer.subscription.deleted', { id: subscription, customer, status: 'canceled' });
+      check(cancelled.status === 200, 'a cancelled subscription is heard', `status ${cancelled.status}`);
+      const locked = await call(payJar, 'GET', '/api/clients');
+      check(locked.status === 403 && /lapsed/.test(locked.data?.error || ''),
+        'and the portal closes, saying why', `status ${locked.status} ${locked.raw.slice(0, 120)}`);
+      const stillBilling = await call(payJar, 'GET', '/api/billing');
+      check(stillBilling.status === 200 && stillBilling.data?.locked === true && stillBilling.data?.billingStatus === 'canceled',
+        'while the billing page still opens for the person who can fix it', JSON.stringify(stillBilling.data));
+      const reachCheckout = await call(payJar, 'POST', '/api/billing/checkout', {});
+      check(reachCheckout.status === 503,
+        'and so does checkout: a locked owner gets as far as Stripe, not a wall', `status ${reachCheckout.status}`);
+
+      const paidAgain = await hook('invoice.paid',
+        { customer, lines: { data: [{ period: { end: Math.floor(Date.now() / 1000) + 30 * 86400 } }] } });
+      check(paidAgain.status === 200, 'a payment arriving is heard', `status ${paidAgain.status}`);
+      const open = await call(payJar, 'GET', '/api/clients');
+      const afterPay = await call(payJar, 'GET', '/api/billing');
+      check(open.status === 200 && afterPay.data?.billingStatus === 'active' && afterPay.data?.paidThrough > 0,
+        'paying switches everything straight back on, with the date it is paid to', `${open.status} ${JSON.stringify(afterPay.data)}`);
+
+      const oldOne = await hook('customer.subscription.deleted', { id: 'sub_an_old_one', customer, status: 'canceled' });
+      const kept = await call(payJar, 'GET', '/api/billing');
+      check(oldOne.status === 200 && kept.data?.billingStatus === 'active',
+        'an old subscription being tidied up does not lock an agency that has subscribed again', JSON.stringify(kept.data));
+
+      const unknown = await hook('charge.refunded', { customer });
+      check(unknown.status === 200, 'an event it has no use for is acknowledged and ignored', `status ${unknown.status}`);
+
+      const refused = await call(admin, 'DELETE', `/api/agencies/${payAgency}`);
+      check(refused.status === 400 && /subscription/.test(refused.data?.error || ''),
+        'an agency that is still being billed cannot be removed from under Stripe', `status ${refused.status}`);
+      await hook('customer.subscription.deleted', { id: subscription, customer, status: 'canceled' });
+    }
   }
 
   step('A special, its public page, and the enquiry it pulls');

@@ -346,6 +346,16 @@ export async function handleDeleteAgency(request, env, id) {
   const agency = await env.DB.prepare('SELECT name FROM agencies WHERE id = ?').bind(id).first();
   if (!agency) return notFound('Agency not found.');
 
+  // Removing an agency that is still being billed would leave Stripe charging
+  // somebody for a portal that no longer exists. Cancel the subscription first.
+  let billing = null;
+  try {
+    billing = await env.DB.prepare('SELECT billing_status FROM agencies WHERE id = ?').bind(id).first();
+  } catch { /* before the billing migration there is nothing to be billed */ }
+  if (billing && (billing.billing_status === 'active' || billing.billing_status === 'past_due')) {
+    return badRequest('That agency has a live subscription. Cancel it in Stripe first, then remove it.');
+  }
+
   const rows = await purgeAgency(env, id);
   await db.logActivity(env, user.id, 'agency.remove',
     `Removed ${agency.name} and everything in it`, { id, rows });
