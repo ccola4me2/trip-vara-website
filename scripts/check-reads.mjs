@@ -43,6 +43,7 @@ const SRC = join(ROOT, 'src');
 const ALLOWED = new Map([
   ['catalog.js', 'the CruiseFeed catalog response, whose field names are theirs and not ours'],
   ['catalogmirror.js', 'the same response, on the way into the mirror'],
+  ['billing.js', 'the event and session objects Stripe sends, whose field names are theirs and not ours'],
 ]);
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.js')).sort();
