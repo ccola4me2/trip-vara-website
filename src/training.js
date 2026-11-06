@@ -201,7 +201,7 @@ export const LESSONS = [
     why: 'A vendor is holding cabins for you and there is a date they take them back. This tracks how many are sold and how long you have, and gives the group a page of its own to share. It can start from the cruise line\'s own proposal: upload the PDF and the details fill in for you to check.',
     manual: 'reservations',
     page: '/app/groups',
-    doing: 'Start a group by uploading a proposal or contract, and read what it says it filled in and what it left blank. Margaritaville, Norwegian and Celebrity are read in full; any other line only where the document labels a detail clearly. Nothing saves until you press the button. Then, on the Sign-up page card, tick the page on and fill in what the group gets: amenities such as onboard credit, drink packages, enhancements, the itinerary, a shore excursions link and PDFs to download. Look at the short link in the box at the top, and read What is on the group\'s page at the bottom to see everything your people will see. Selling this group says whether other advisors may put clients into it, and what they are told. When the same group runs again, use Repeat this group instead of starting over. If you run no groups yet, know it exists for when you do.',
+    doing: 'Start a group by uploading a proposal or contract, and read what it says it filled in and what it left blank. Margaritaville, Norwegian and Celebrity are read in full; any other line only where the document labels a detail clearly. Nothing saves until you press the button. A rate band takes two deposits per guest, the standard one and a higher Suite deposit for suites; leave the suite one empty and suites pay the standard. Then, on the Sign-up page card, tick the page on and fill in what the group gets: amenities such as onboard credit, drink packages, enhancements, the itinerary, a shore excursions link and PDFs to download. Look at the short link in the box at the top, and read What is on the group\'s page at the bottom to see everything your people will see. Selling this group says whether other advisors may put clients into it, and what they are told. When the same group runs again, use Repeat this group instead of starting over. If you run no groups yet, know it exists for when you do.',
   },
   {
     key: 'group-roster',
@@ -276,6 +276,15 @@ export const LESSONS = [
     doing: 'Put one real family together and look at what their page becomes.',
   },
   {
+    key: 'companions',
+    section: 'client',
+    title: 'Who they travel with',
+    why: 'The sister two states away, the friend they cruise with every year. Link them once and every future reservation offers them as a traveller with their passport already filled in.',
+    manual: 'companions',
+    page: '/app/clients',
+    doing: 'Open a client who travels with somebody outside their house and use Travels with to link the two. Then start a reservation for either one and watch the other come up as a traveller, name and passport already there.',
+  },
+  {
     key: 'pipeline',
     section: 'client',
     title: 'Sales opportunities',
@@ -339,6 +348,15 @@ export const LESSONS = [
     doing: 'Say hello, and put your name to a question you already have.',
   },
   {
+    key: 'ask',
+    section: 'day',
+    title: 'Getting hold of somebody',
+    why: 'Something is wrong, or something is missing, and it is not in the manual. Asking is faster than working around it, and it works even if you cannot sign in.',
+    manual: 'ask-us',
+    page: '/support',
+    doing: 'Send one real question, however small, so you know where the form is before the morning you need it.',
+  },
+  {
     key: 'vendors',
     section: 'day',
     title: 'Vendors',
@@ -390,7 +408,7 @@ export const LESSONS = [
     why: 'Your own forms, hosted on your domain. A form submission arrives as a lead rather than as an email you have to retype.',
     manual: 'selling',
     page: '/app/formbuilder',
-    doing: 'Look at a form and submit it yourself once, then find yourself on the lead board.',
+    doing: 'Look at a form and submit it yourself once, then find yourself on the lead board. A form can also be kept private, so only the people you send the link to can reach it rather than anybody who finds the address.',
   },
   {
     key: 'qr',
