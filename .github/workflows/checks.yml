@@ -256,6 +256,11 @@ jobs:
           # The suite also covers the other side, where no key is set and the
           # form leaves those boxes out.
           echo "PII_KEY=$(openssl rand -base64 32)" > .dev.vars
+          # The Group Desk on the other portal asks this one what Margaritaville
+          # reservations its members have. That endpoint fails closed without a
+          # shared secret, so without one here the suite would only ever see it
+          # refuse, which is half the behaviour.
+          echo "PEER_SECRET=$(openssl rand -base64 32)" >> .dev.vars
           # --test-scheduled exposes /__scheduled, so the smoke suite can run
           # the cron rather than leaving the whole scheduled handler as the one
           # part of this Worker nothing ever executes.

@@ -12423,6 +12423,97 @@ async function main() {
 
   }
 
+  // ------------------------------------------------- the desk asking us --
+  step('What the Group Desk may ask this portal');
+  {
+    // The desk lives on the other portal and its members are in an agency of
+    // their own, so nothing of this portal is visible to them. This is the one
+    // question it may ask: what Margaritaville reservations does the person at
+    // this address have, so a cabin booked here stops being retyped there.
+    const secret = process.env.PEER_SECRET
+      || (await import('node:fs')).readFileSync('.dev.vars', 'utf8')
+        .split('\n').find((l) => l.startsWith('PEER_SECRET='))?.slice(12).trim();
+
+    const shut = await call(null, 'POST', '/api/peer/mas-bookings', { emails: [ADVISOR_EMAIL] });
+    check(shut.status === 403, 'with no secret at all it answers nobody', `status ${shut.status}`);
+
+    const wrong = await call(null, 'POST', '/api/peer/mas-bookings', { emails: [ADVISOR_EMAIL] },
+      { 'X-Peer-Secret': 'not-the-secret-but-long-enough-to-be-one' });
+    check(wrong.status === 403, 'and a wrong secret is no better', `status ${wrong.status}`);
+
+    // A signed in advisor is not the desk. The session is irrelevant here:
+    // this door opens for the secret or for nothing.
+    const asAdvisor = await call(advisor, 'POST', '/api/peer/mas-bookings', { emails: [ADVISOR_EMAIL] });
+    check(asAdvisor.status === 403, 'nor does being signed in as somebody open it',
+      `status ${asAdvisor.status}`);
+
+    if (!secret) {
+      skip('the desk bridge', 'no PEER_SECRET in this environment');
+    } else {
+      const hdr = { 'X-Peer-Secret': secret };
+
+      const nobody = await call(null, 'POST', '/api/peer/mas-bookings',
+        { emails: [`nobody-${stamp}@test.dev`] }, hdr);
+      check(nobody.status === 200 && Array.isArray(nobody.data?.people)
+        && nobody.data.people.length === 0,
+        'an address nobody here claims is no person, not an error',
+        `status ${nobody.status}`);
+
+      // A Margaritaville reservation with a group number, which is how the
+      // desk finds the ones that belong on a group's sheet.
+      const mas = await call(advisor, 'POST', '/api/bookings', {
+        clientName: `Desk Client ${stamp}`, supplier: 'Margaritaville at Sea',
+        productName: 'Margaritaville at Sea Islander', productType: 'cruise',
+        confirmationNumber: `MAS${stamp}`, cabin: '5235', cabinCategory: 'Partial View Balcony',
+        groupNumber: '4882', departDate: isoDay(200), returnDate: isoDay(205),
+        gross: '1976.80', deposit: '400', depositRefundable: 'refundable',
+        commission: '80.93', status: 'booked', travellers: 2,
+      });
+      check(mas.status === 201, 'a Margaritaville reservation is taken here',
+        `status ${mas.status}`);
+
+      const asked = await call(null, 'POST', '/api/peer/mas-bookings',
+        { emails: [ADVISOR_EMAIL.toUpperCase()] }, hdr);
+      check(asked.status === 200, 'the desk may ask about an advisor here', `status ${asked.status}`);
+      // Upper cased on purpose: the desk holds whatever address was typed into
+      // it, and a capital letter must not hide somebody's reservations.
+      const person = (asked.data?.people || [])[0];
+      check(person && person.email === ADVISOR_EMAIL,
+        'and the address comes back matched whatever its case', person?.email);
+
+      const row = (person?.bookings || []).find((b) => b.bookingNo === `MAS${stamp}`);
+      check(row, 'the Margaritaville reservation is in the answer');
+      check(row?.cabinNo === '5235' && row?.category === 'Partial View Balcony',
+        'with its cabin and category', `${row?.cabinNo} / ${row?.category}`);
+      check(row?.groupNumber === '4882',
+        'and the group number the sheet matches on', row?.groupNumber);
+      check(row?.totalCents === 197680,
+        'the trip total comes across in cents', String(row?.totalCents));
+      check(row?.status === 'held' || row?.status === 'deposit',
+        'and a status the sheet understands', row?.status);
+
+      // The promise the desk page makes in writing: a sheet shows what a trip
+      // costs and what has been paid, and never any commission.
+      const everything = JSON.stringify(asked.data);
+      check(!/commission/i.test(everything), 'no commission is sent, under any name');
+      check(!/8093|80\.93/.test(everything), 'nor the commission figure by accident');
+
+      // The Carnival reservation from earlier must not be swept up with it.
+      check(!(person?.bookings || []).some((b) => b.bookingNo === `SMK${stamp}`),
+        'a reservation with another supplier is not in the answer');
+
+      check((asked.data?.people || []).length === 1,
+        'one address asked about is one person back', String((asked.data?.people || []).length));
+
+      const none = await call(null, 'POST', '/api/peer/mas-bookings', {}, hdr);
+      check(none.status === 200 && (none.data?.people || []).length === 0,
+        'asking about nobody returns nobody rather than everybody',
+        `status ${none.status}`);
+
+      await call(advisor, 'DELETE', `/api/bookings/${mas.data.booking.id}`);
+    }
+  }
+
   // ------------------------------------------- taking the records away --
   step('An agency can take its own records with it');
   {

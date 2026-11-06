@@ -336,6 +336,7 @@ import {
 } from './tripemails.js';
 import { handleSaveWording, handleClearWording } from './wording.js';
 import { isGroupHost, serveGroupHost, serveSlug, redirectForCode } from './grouphost.js';
+import { handlePeerMasBookings } from './peerdesk.js';
 import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
   remindTrials, handleRunTrialNotices,
@@ -867,6 +868,10 @@ async function routeApi(request, env, path, method) {
   // The other portal asking whether a group name is already held here. Public, and it says
   // nothing but yes or no: the names are addresses that were handed out anyway.
   if (path === '/api/public/group-slug-taken' && method === 'GET') return handlePublicSlugTaken(request, env);
+  // The Group Desk, on the other portal, asking what Margaritaville reservations its members
+  // have here. Not public: it carries a client's name, a cabin and money, so it checks a shared
+  // secret and answers nobody at all when there is not one set.
+  if (path === '/api/peer/mas-bookings' && method === 'POST') return handlePeerMasBookings(request, env);
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
   if (path === '/api/auth/logout' && method === 'POST') return handleLogout(request, env);
   if (path === '/api/auth/me' && method === 'GET') return handleMe(request, env);
