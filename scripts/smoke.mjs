@@ -3591,7 +3591,16 @@ async function main() {
     // refused for reasons nothing to do with the code under test. A per run
     // address is also closer to the truth, since these are meant to be
     // different strangers writing in.
-    const from = { 'CF-Connecting-IP': `203.0.113.${(stamp % 250) + 1}` };
+    // Its own address per run, because the support form is rate limited per
+    // address per hour and the suite sends more than one message. One octet of
+    // TEST-NET-3 gave 254 of them, which a day of local runs against the same
+    // database exhausts: the second run of the hour started failing on a limit
+    // the first run had used up. Two octets of the benchmarking range give
+    // sixty five thousand, which no amount of rerunning works through.
+    // CI never saw this, because CI starts on an empty database every time.
+    const from = {
+      'CF-Connecting-IP': `198.18.${Math.floor(stamp / 251) % 256}.${(stamp % 251) + 1}`,
+    };
     // Public on purpose. A demo whose trial has ended cannot sign in at all,
     // so a contact form behind a session would be shut to the one person it
     // was built for.
@@ -12510,6 +12519,67 @@ async function main() {
         'asking about nobody returns nobody rather than everybody',
         `status ${none.status}`);
 
+      // ---- and the other way: a cabin that exists only on a sheet ----
+      //
+      // Somebody uploads the cruise line's agent copy onto a group's sheet and
+      // the cabin is there, with guests and a booking number, in a portal this
+      // one cannot see. This writes it into the advisor's own book once.
+      const cabin = {
+        email: ADVISOR_EMAIL, bookingNo: `DESK${stamp}`, clientName: `Desk Cabin ${stamp}`,
+        productName: 'Margaritaville at Sea Beachcomber', cabinNo: '7014',
+        category: 'Breezy Balcony', guests: 2, groupNumber: '5097',
+        departDate: isoDay(240), returnDate: isoDay(247), totalCents: 284500,
+      };
+
+      const closed = await call(null, 'POST', '/api/peer/mas-reservation', cabin);
+      check(closed.status === 403, 'taking a cabin across needs the secret too',
+        `status ${closed.status}`);
+
+      const made = await call(null, 'POST', '/api/peer/mas-reservation', cabin, hdr);
+      check(made.status === 201 && made.data?.created === true,
+        'a cabin from a sheet becomes a reservation here', `status ${made.status}`);
+
+      const createdId = made.data?.id;
+      const got = await call(advisor, 'GET', `/api/bookings/${createdId}`);
+      const bk = got.data?.booking;
+      check(bk?.confirmation_number === `DESK${stamp}`, 'with its booking number',
+        bk?.confirmation_number);
+      check(bk?.cabin === '7014' && bk?.cabin_category === 'Breezy Balcony',
+        'its cabin and category', `${bk?.cabin} / ${bk?.cabin_category}`);
+      check(bk?.group_number === '5097', 'and the group number, so the sheet finds it again',
+        bk?.group_number);
+      check(bk?.gross_cents === 284500, 'the trip total, in cents', String(bk?.gross_cents));
+      check(bk?.supplier === 'Margaritaville at Sea', 'filed under the right supplier', bk?.supplier);
+      check(bk?.status === 'booked', 'and booked rather than a quote', bk?.status);
+      // Nothing is guessed. A sheet knows a total paid but not when or against
+      // what, and an invented instalment is worse than a blank one.
+      check(!bk?.deposit_cents, 'no deposit is invented', String(bk?.deposit_cents));
+      check(!bk?.commission_cents, 'and no commission', String(bk?.commission_cents));
+
+      // The client record comes with it, so the reservation is not an orphan.
+      const clients = await call(advisor, 'GET', '/api/clients?q=' + encodeURIComponent(`Desk Cabin ${stamp}`));
+      check((clients.data?.clients || []).some((c) => c.name === `Desk Cabin ${stamp}`),
+        'and the client is on the books rather than just a name on the trip');
+
+      // Pressed twice, or retried after a timeout.
+      const again = await call(null, 'POST', '/api/peer/mas-reservation', cabin, hdr);
+      check(again.status === 200 && again.data?.created === false && again.data?.id === createdId,
+        'taking the same cabin across again is the same reservation, not a second one',
+        `${again.status} ${again.data?.id === createdId}`);
+
+      const nobodyHere = await call(null, 'POST', '/api/peer/mas-reservation',
+        { ...cabin, email: `ghost-${stamp}@test.dev`, bookingNo: `GHOST${stamp}` }, hdr);
+      check(nobodyHere.status === 404,
+        'and a cabin for somebody with no account here is refused, not filed under nobody',
+        `status ${nobodyHere.status}`);
+
+      const noNumber = await call(null, 'POST', '/api/peer/mas-reservation',
+        { ...cabin, bookingNo: '' }, hdr);
+      check(noNumber.status === 400,
+        'without a booking number it is refused, because nothing could stop a duplicate',
+        `status ${noNumber.status}`);
+
+      await call(advisor, 'DELETE', `/api/bookings/${createdId}`);
       await call(advisor, 'DELETE', `/api/bookings/${mas.data.booking.id}`);
     }
   }

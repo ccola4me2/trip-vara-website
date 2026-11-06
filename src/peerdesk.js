@@ -25,8 +25,9 @@
 //   hands over a client's name, cabin and money, so with no shared secret
 //   configured it answers nobody, including the desk.
 
-import { json, clean, cleanText, normalizeEmail } from './util.js';
+import { json, badRequest, clean, cleanText, normalizeEmail, readJson } from './util.js';
 import { listPricing, clientLines } from './pricing.js';
+import * as db from './db.js';
 
 // Reservations with this anywhere in the supplier or the product.
 const MAS = '%margaritaville%';
@@ -153,4 +154,96 @@ export async function handlePeerMasBookings(request, env) {
     });
   }
   return json({ people });
+}
+
+/**
+ * POST /api/peer/mas-reservation
+ *
+ * The other direction: a cabin that exists only on a group's sheet, written
+ * into the advisor's own book here.
+ *
+ * Somebody uploads the cruise line's agent copy onto a sheet and the cabin
+ * appears there with the guests, the booking number and the money on it. None
+ * of that reaches this portal, so the same booking has to be typed in again to
+ * be tracked, chased and paid on. This takes it across once.
+ *
+ * It creates and it never changes. A booking number already on this advisor's
+ * books comes back as the one that is there rather than a second copy of it,
+ * so pressing the button twice, or a retry after a timeout, cannot split one
+ * cabin into two reservations. Nothing here can edit, reprice or cancel a
+ * reservation: the desk may put a booking into somebody's book and that is the
+ * whole of its reach.
+ *
+ * What it does not invent: no payment schedule, no deposit, no commission. A
+ * sheet knows what has been paid in total but not when, how, or against which
+ * instalment, and a money record guessed from that is worse than one the
+ * advisor enters. The trip total is a fact and is carried.
+ */
+export async function handlePeerMasReservation(request, env) {
+  if (!peerAllowed(env, request)) return json({ error: 'Not for you.' }, 403);
+
+  const body = await readJson(request).catch(() => ({}));
+  const email = normalizeEmail(clean(body.email, 254));
+  if (!email) return badRequest('Which advisor this is for.');
+
+  // Whose book, decided here and never by the caller. The desk sends the
+  // address of the person who pressed the button, so the only book reachable
+  // is that person's own.
+  const user = await env.DB.prepare(
+    "SELECT id FROM users WHERE LOWER(email) = ? AND status = 'active'"
+  ).bind(email).first().catch(() => null);
+  if (!user) return json({ error: 'Nobody here signs in with that address.' }, 404);
+
+  const confirmationNumber = clean(body.bookingNo, 40);
+  if (!confirmationNumber) {
+    return badRequest('A booking number, so this cannot be taken across twice.');
+  }
+
+  const already = await env.DB.prepare(
+    'SELECT id FROM bookings WHERE user_id = ? AND confirmation_number = ?'
+  ).bind(user.id, confirmationNumber).first().catch(() => null);
+  if (already) return json({ ok: true, id: already.id, created: false });
+
+  const clientName = clean(body.clientName, 120)
+    || clean(String(body.guestNames || '').split(',')[0], 120);
+  if (!clientName) return badRequest('A name for the client.');
+
+  const clientId = await db.resolveClient(env, user.id, clientName);
+
+  const booking = await db.createBooking(env, user.id, {
+    clientName,
+    clientId,
+    supplier: 'Margaritaville at Sea',
+    productType: 'cruise',
+    productName: clean(body.productName, 160) || 'Margaritaville at Sea',
+    confirmationNumber,
+    groupNumber: clean(body.groupNumber, 40),
+    departDate: clean(body.departDate, 10) || null,
+    returnDate: clean(body.returnDate, 10) || null,
+    cabin: clean(body.cabinNo, 20),
+    cabinCategory: clean(body.category, 60),
+    travellers: Math.max(1, Math.min(Number(body.guests) || 1, 12)),
+    grossCents: Math.max(0, Math.trunc(Number(body.totalCents) || 0)),
+    status: 'booked',
+    notes: cleanText(body.notes, 400),
+    // createBooking binds every column, and D1 refuses undefined outright, so
+    // the fields a sheet has no answer for are spelled out as null rather than
+    // left off. The money ones are deliberate blanks, not oversights: see the
+    // note above on what this does not invent.
+    destination: null,
+    depositDue: null,
+    finalPaymentDue: null,
+    depositCents: 0,
+    // Not null in the schema, so a blank here is a zero and a pending, which
+    // is exactly what an advisor who has not worked the commission out yet has.
+    commissionCents: 0,
+    commissionStatus: 'pending',
+    depositRefundable: null,
+  });
+
+  await db.logActivity(env, user.id, 'booking.create',
+    `Took a cabin across from the group desk: ${confirmationNumber}`,
+    { id: booking?.id, desk: true });
+
+  return json({ ok: true, id: booking?.id, created: true }, 201);
 }

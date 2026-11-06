@@ -336,7 +336,7 @@ import {
 } from './tripemails.js';
 import { handleSaveWording, handleClearWording } from './wording.js';
 import { isGroupHost, serveGroupHost, serveSlug, redirectForCode } from './grouphost.js';
-import { handlePeerMasBookings } from './peerdesk.js';
+import { handlePeerMasBookings, handlePeerMasReservation } from './peerdesk.js';
 import {
   handleStartDemo, handleConvertAgency, handleRunDemoSweep, handleDeleteAgency, sweepDemos,
   remindTrials, handleRunTrialNotices,
@@ -872,6 +872,9 @@ async function routeApi(request, env, path, method) {
   // have here. Not public: it carries a client's name, a cabin and money, so it checks a shared
   // secret and answers nobody at all when there is not one set.
   if (path === '/api/peer/mas-bookings' && method === 'POST') return handlePeerMasBookings(request, env);
+  // And the other way: a cabin that exists only on a group's sheet, written into
+  // that advisor's own book here. Creates, never changes, and never twice.
+  if (path === '/api/peer/mas-reservation' && method === 'POST') return handlePeerMasReservation(request, env);
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
   if (path === '/api/auth/logout' && method === 'POST') return handleLogout(request, env);
   if (path === '/api/auth/me' && method === 'GET') return handleMe(request, env);
