@@ -74,13 +74,38 @@ function draw(d) {
     <p style="margin:0; white-space:pre-wrap;">${esc(m.message)}</p>
     <p style="margin:.6rem 0 0;"><a class="btn btn-secondary btn-sm"
       href="mailto:${encodeURIComponent(m.email)}?subject=${
-        encodeURIComponent('Re: ' + (m.subject || 'your message'))}">Reply by email</a></p>
+        encodeURIComponent('Re: ' + (m.subject || 'your message'))}">Reply by email</a>
+      <button class="btn btn-ghost btn-sm" data-drop="${esc(m.id)}"
+        title="Throw this message away. It does not come back.">Remove</button></p>
   </li>`).join('')}</ul>`;
+
+  panel.querySelectorAll('[data-drop]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const m = all.find((x) => x.id === b.dataset.drop);
+      // Named in the question, because the rows look alike at a glance and
+      // this does not come back.
+      if (!confirm(`Remove the message from ${m && m.name ? m.name : (m ? m.email : 'this person')}?\n\n`
+        + 'It is deleted for good. If you have answered it, the thread is in your email.')) return;
+      b.disabled = true;
+      b.textContent = 'Removing...';
+      try {
+        await api(`/api/admin/support/${encodeURIComponent(b.dataset.drop)}`, { method: 'DELETE' });
+        await load();
+      } catch (ex) {
+        b.disabled = false;
+        b.textContent = 'Remove';
+        showError(err, ex);
+      }
+    });
+  });
 }
 
-try {
-  draw(await api('/api/admin/support'));
-} catch (ex) { panel.innerHTML = ''; showError(err, ex); }
+async function load() {
+  try {
+    draw(await api('/api/admin/support'));
+  } catch (ex) { panel.innerHTML = ''; showError(err, ex); }
+}
+await load();
 </script>
 </body>
 </html>

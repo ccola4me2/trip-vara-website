@@ -435,7 +435,7 @@ import { handleAttribution } from './attribution.js';
 import { handleListReviews, handleAskReview } from './reviews.js';
 import {
   handleListAdvisors,
-  handleSetAdvisorStatus, handleStartActing, handleStopActing, handleListSupport,
+  handleSetAdvisorStatus, handleStartActing, handleStopActing, handleListSupport, handleDeleteSupport,
   handleSetAdvisorSplit,
   handleUpdateAdvisor,
   handleSetBookingSplit,
@@ -849,6 +849,7 @@ async function routeApi(request, env, path, method) {
   const joinMatch = path.match(/^\/api\/join\/([^/]+)$/);
   const advisorAgencyMatch = path.match(/^\/api\/admin\/advisors\/([^/]+)\/agency$/);
   const actMatch = path.match(/^\/api\/admin\/act\/([^/]+)$/);
+  const supportOneMatch = path.match(/^\/api\/admin\/support\/([^/]+)$/);
   const enquiryBookMatch = path.match(/^\/api\/specials\/enquiries\/([^/]+)\/book$/);
   const enquiryMatch = path.match(/^\/api\/specials\/enquiries\/([^/]+)$/);
   const receiptMatch = path.match(/^\/api\/commissions\/receipts\/([^/]+)$/);
@@ -1455,6 +1456,9 @@ async function routeApi(request, env, path, method) {
   }
   if (path === '/api/admin/lifecycle' && method === 'POST') return handleRunLifecycle(request, env);
   if (path === '/api/admin/support' && method === 'GET') return handleListSupport(request, env);
+  if (supportOneMatch && method === 'DELETE') {
+    return handleDeleteSupport(request, env, decodeURIComponent(supportOneMatch[1]));
+  }
   if (path === '/api/admin/advisors' && method === 'GET') return handleListAdvisors(request, env);
   // Working inside somebody's account. Stopping is a DELETE on the bare path,
   // the same shape the other portal uses, and it is the one of the two that has

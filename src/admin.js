@@ -229,6 +229,33 @@ export async function handleListSupport(request, env) {
   });
 }
 
+/**
+ * DELETE /api/admin/support/:id : throw a message away once it is dealt with.
+ *
+ * A real delete rather than a handled flag. A support message is a question
+ * somebody asked, not a record the portal owes anybody: once it is answered it
+ * is correspondence, and the copy that matters is in the email thread. An
+ * inbox that only ever grows is one nobody opens, which defeats the point of
+ * having it at all.
+ *
+ * Gone for good, so it says so at the door rather than leaving somebody to
+ * find out. The row is read first, so what was removed can be named in the log.
+ */
+export async function handleDeleteSupport(request, env, id) {
+  const { user: admin, response } = await requirePlatformOwner(request, env);
+  if (response) return response;
+
+  const row = await env.DB.prepare(
+    'SELECT id, email, subject FROM support_messages WHERE id = ?'
+  ).bind(id).first().catch(() => null);
+  if (!row) return notFound('That message is not here.');
+
+  await env.DB.prepare('DELETE FROM support_messages WHERE id = ?').bind(id).run();
+  await db.logActivity(env, admin.id, 'support.delete',
+    `Removed a message from ${row.email}`, { id, subject: row.subject || null });
+  return json({ ok: true });
+}
+
 /** The session's own id, so acting can be switched on for this browser and no other. */
 async function sessionHash(request) {
   const token = parseCookies(request)[SESSION_COOKIE];

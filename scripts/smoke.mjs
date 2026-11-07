@@ -12715,6 +12715,23 @@ async function main() {
       String(box.data?.unsent));
     check(box.data.messages[0].created_at >= box.data.messages[box.data.messages.length - 1].created_at,
       'newest first, so the one somebody is waiting on is at the top');
+
+    // Answered means finished. An inbox that only grows is one nobody opens,
+    // which defeats the point of having built it.
+    const notYours = await call(advisor, 'DELETE', `/api/admin/support/${mine.id}`);
+    check(notYours.status === 403, 'an advisor cannot throw somebody\'s message away',
+      `status ${notYours.status}`);
+
+    const gone = await call(admin, 'DELETE', `/api/admin/support/${mine.id}`);
+    check(gone.status === 200, 'the portal owner can remove one', `status ${gone.status}`);
+
+    const after = await call(admin, 'GET', '/api/admin/support');
+    check(!(after.data?.messages || []).some((m) => m.id === mine.id),
+      'and it is gone from the list');
+
+    const twice = await call(admin, 'DELETE', `/api/admin/support/${mine.id}`);
+    check(twice.status === 404, 'removing it again says there is nothing there',
+      `status ${twice.status}`);
   }
 
   // ------------------------------------------- working as somebody else --
