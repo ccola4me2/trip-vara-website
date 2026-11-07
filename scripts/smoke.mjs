@@ -12622,6 +12622,83 @@ async function main() {
     }
   }
 
+  // ------------------------------------------- working as somebody else --
+  step('Working inside somebody else\'s account');
+  {
+    // An agency signs up, cannot get started, and the only way to help is to
+    // see what they see. The portal's operator may sit in their seat; nobody
+    // else may, not even an agency owner inside their own agency.
+    const shut = await call(advisor, 'POST', `/api/admin/act/${advisorId}`, {});
+    check(shut.status === 403, 'an advisor cannot work as anybody', `status ${shut.status}`);
+
+    const mine = await call(admin, 'POST', `/api/admin/act/${adminId}`, {});
+    check(mine.status === 400, 'and nobody works as themselves', `status ${mine.status}`);
+
+    const ghost = await call(admin, 'POST', '/api/admin/act/not-a-real-person', {});
+    check(ghost.status === 404, 'nor as somebody who does not exist', `status ${ghost.status}`);
+
+    // The operator's own session, borrowed.
+    const act = await call(admin, 'POST', `/api/admin/act/${advisorId}`, {});
+    check(act.status === 200, 'the portal owner can work as an advisor', `status ${act.status}`);
+
+    const who = await call(admin, 'GET', '/api/auth/me');
+    check(who.data?.user?.email === ADVISOR_EMAIL,
+      'and from then on the session is that advisor', who.data?.user?.email);
+    check(who.data?.actingAs?.admin?.email === ADMIN_EMAIL,
+      'while still saying who is really behind it, for the banner',
+      who.data?.actingAs?.admin?.email);
+    check(who.data?.actingAs?.user?.email === ADVISOR_EMAIL,
+      'and whose seat it is', who.data?.actingAs?.user?.email);
+
+    // The point of the whole thing: their screens, their data, not the
+    // operator's. The reservation made earlier in this run is the advisor's.
+    const theirs = await call(admin, 'GET', '/api/bookings');
+    check(theirs.status === 200, 'their screens answer', `status ${theirs.status}`);
+    check((theirs.data?.bookings || []).some((b) => b.id === bookingId),
+      'and show their reservations, which is the whole point');
+
+    // One identity at a time. The admin screens are shut while acting, so a
+    // suspension or a plan change can never be made by a session that reads as
+    // somebody else entirely.
+    const admins = await call(admin, 'GET', '/api/admin/advisors');
+    check(admins.status === 403, 'the admin screens are shut while acting', `status ${admins.status}`);
+
+    // The one that matters most. A reservation's commission share is the field
+    // advisors were once able to set three different ways, and the fix was to
+    // make the owner's endpoint the only way. A borrowed seat must not become
+    // a fourth: this portal shows a borrowed owner's own screens on purpose,
+    // so that the operator sees what they see, and requireAdmin rather than a
+    // hidden button is what keeps the writing shut.
+    const split = await call(admin, 'PUT', `/api/admin/bookings/${bookingId}/split`, { pct: 90 });
+    check(split.status === 403, 'and a commission share cannot be set from a borrowed seat',
+      `status ${split.status}`);
+    const act2 = await call(admin, 'POST', `/api/admin/act/${adminId}`, {});
+    check(act2.status === 403, 'and acting cannot be used to hop on to somebody else',
+      `status ${act2.status}`);
+
+    const stop = await call(admin, 'DELETE', '/api/admin/act');
+    check(stop.status === 200, 'stopping works from inside the borrowed seat',
+      `status ${stop.status}`);
+    const back = await call(admin, 'GET', '/api/auth/me');
+    check(back.data?.user?.email === ADMIN_EMAIL, 'and hands the session back',
+      back.data?.user?.email);
+    check(!back.data?.actingAs, 'with nothing still borrowed');
+    const adminsAgain = await call(admin, 'GET', '/api/admin/advisors');
+    check(adminsAgain.status === 200, 'and the admin screens open again',
+      `status ${adminsAgain.status}`);
+
+    // It is the session that is borrowed, not the account, so a second sign in
+    // is unaffected and nothing is left switched on for somebody to find.
+    const other = jar();
+    await call(other, 'POST', '/api/auth/login', { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    await call(admin, 'POST', `/api/admin/act/${advisorId}`, {});
+    const elsewhere = await call(other, 'GET', '/api/auth/me');
+    check(elsewhere.data?.user?.email === ADMIN_EMAIL,
+      'signed in on another machine, the operator is still themselves',
+      elsewhere.data?.user?.email);
+    await call(admin, 'DELETE', '/api/admin/act');
+  }
+
   // ------------------------------------------- taking the records away --
   step('An agency can take its own records with it');
   {

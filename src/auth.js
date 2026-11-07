@@ -94,12 +94,32 @@ export function isAdmin(user) {
 /**
  * Is this session sitting in somebody else's seat?
  *
- * Never, here. This portal has no working as an advisor: one person, one seat,
- * and no acting_as column on sessions. The question exists so the modules that
- * have to ask it are the same file on both sides.
+ * One identity at a time. While acting as somebody the session IS them, and
+ * the handful of places that must know the difference ask here rather than
+ * reading the column, so a shared module never has to know which portal it is
+ * running on.
  */
-export function borrowedSeat() {
-  return false;
+export function borrowedSeat(user) {
+  return Boolean(user && user.acting_as);
+}
+
+/**
+ * Who actually signed in, whoever the session is currently working as.
+ *
+ * Used by the two handlers that have to work while acting: stopping, and
+ * saying so on the page. Everything else wants the effective user and gets it
+ * from requireUser without knowing any of this exists.
+ */
+export function realUserOf(user) {
+  if (!user) return null;
+  return {
+    id: user.real_user_id,
+    email: user.real_email,
+    name: `${user.real_first_name || ''} ${user.real_last_name || ''}`.trim(),
+    role: user.real_role,
+    platformOwner: Boolean(user.real_platform_owner),
+    agencyId: user.real_agency_id,
+  };
 }
 
 export function isActiveAdvisor(user) {
@@ -170,6 +190,13 @@ export async function trialOver(env, user) {
 export async function requireAdmin(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return { response };
+  // One identity at a time. While acting as somebody the session IS them, so
+  // isAdmin already says no; this says why, and shuts the ambiguous case where
+  // a suspension or a plan change gets made by a session that reads as
+  // somebody else entirely.
+  if (user.acting_as) {
+    return { response: forbidden('Stop working as somebody before using the admin screens.') };
+  }
   if (!isAdmin(user)) return { response: forbidden('Admin access required.') };
   return { user };
 }
@@ -292,7 +319,15 @@ export async function handleLogout(request, env) {
 export async function handleMe(request, env) {
   const user = await getCurrentUser(request, env);
   if (!user) return json({ user: null }, 200);
-  return json({ user: publicUser(user) });
+  // `actingAs` is what the shell reads to put a banner across every page. It
+  // has to be impossible to forget whose account you are working in, because
+  // the whole point is that the portal behaves as though you are them.
+  return json({
+    user: publicUser(user),
+    actingAs: user.acting_as
+      ? { user: publicUser(user), admin: realUserOf(user) }
+      : null,
+  });
 }
 
 export async function handleUpdateProfile(request, env) {

@@ -1,0 +1,20 @@
+-- The portal's operator works inside somebody's account.
+--
+-- An agency signs up, cannot get started, and the only way to help is to see
+-- what they see. Rebuilding every advisor screen with an "on behalf of"
+-- argument threaded through it is the wrong answer twice over: it is the whole
+-- portal again, and it would be subtly different from the thing being
+-- debugged. Instead the session carries who it is acting as, and every handler
+-- downstream stays exactly as it is, because for as long as it lasts it is
+-- genuinely that person's session.
+--
+-- On the session rather than on the user, deliberately. It ends when the
+-- operator signs out or presses stop, it cannot be left switched on for
+-- somebody else to find, and an operator signed in on two machines is only
+-- acting on the one where they started.
+--
+-- Narrower here than on the other portal: there an agency owner may work as
+-- their own advisors, here only the person who runs the platform may act at
+-- all. An agency owner already sees their whole agency, so acting would add
+-- nothing except a way to write as somebody else.
+ALTER TABLE sessions ADD COLUMN acting_as TEXT;

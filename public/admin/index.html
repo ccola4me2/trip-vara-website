@@ -14,6 +14,9 @@
   <div class="main">
     <header class="topbar">
       <div><h1>Advisors</h1><p class="sub">Approve access, set what advisors keep, and see who is waiting.</p></div>
+      <select id="actas" aria-label="Work as somebody" style="width:auto;" hidden>
+        <option value="">Work as somebody...</option>
+      </select>
       <select id="filter" aria-label="Filter" style="width:auto;">
         <option value="">Everyone</option>
         <option value="pending">Pending approval</option>
@@ -227,6 +230,44 @@ const statsEl = document.getElementById('stats');
 const filter = document.getElementById('filter');
 const TONE = { active: 'badge-green', pending: 'badge-amber', suspended: 'badge-red' };
 
+// Working inside somebody's account, for when an agency cannot get started and
+// the only way to help is to see what they see. The portal's operator only, so
+// the control is not even drawn for an agency owner: the server refuses them
+// too, and a control that fails when pressed is worse than no control.
+const actas = document.getElementById('actas');
+
+function fillActAs(users) {
+  if (!RUNS_THE_PORTAL) return;
+  const able = (users || []).filter((u) => u.status === 'active'
+    && !u.platformOwner && u.id !== (me && me.id));
+  if (!able.length) return;
+  actas.hidden = false;
+  actas.innerHTML = '<option value="">Work as somebody...</option>'
+    + able.map((u) => `<option value="${esc(u.id)}">${esc(u.name || u.email)}${
+      u.agencyName ? ` (${esc(u.agencyName)})` : ''}</option>`).join('');
+}
+
+actas.addEventListener('change', async () => {
+  const id = actas.value;
+  if (!id) return;
+  const who = actas.options[actas.selectedIndex].textContent;
+  if (!confirm(`Work inside ${who}'s account?\n\n`
+    + 'You will see exactly what they see, anything you add will belong to '
+    + 'them, and the admin screens are closed until you stop.')) {
+    actas.value = '';
+    return;
+  }
+  actas.disabled = true;
+  try {
+    await api(`/api/admin/act/${encodeURIComponent(id)}`, { method: 'POST', body: {} });
+    window.location.href = '/app/';
+  } catch (err) {
+    alert(err.message || 'Could not switch.');
+    actas.value = '';
+    actas.disabled = false;
+  }
+});
+
 function render(users, counts) {
   statsEl.innerHTML = `
     <div class="stat"><p class="label">Advisors</p><p class="value">${counts.total}</p>
@@ -302,6 +343,7 @@ async function load() {
     const q = filter.value ? `?status=${filter.value}` : '';
     const data = await api(`/api/admin/advisors${q}`);
     render(data.users, data.counts);
+    fillActAs(data.users);
   } catch (err) { showError(panel, err); }
 }
 filter.addEventListener('change', load);

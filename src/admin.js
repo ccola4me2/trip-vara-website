@@ -2,11 +2,13 @@
 // and suspend access.
 
 import {
-  json, badRequest, notFound, clean, cleanText, readJson,
-  normalizeEmail, isValidEmail,
+  json, badRequest, notFound, forbidden, clean, cleanText, readJson,
+  normalizeEmail, isValidEmail, parseCookies, sha256Hex,
 } from './util.js';
 import { tenantFor } from './tenant.js';
-import { requireAdmin, requirePlatformOwner, publicUser } from './auth.js';
+import {
+  requireAdmin, requirePlatformOwner, requireUser, publicUser, realUserOf, SESSION_COOKIE,
+} from './auth.js';
 import * as db from './db.js';
 import { sendAdvisorApprovedEmail, checkResend, sendTestEmail } from './email.js';
 import { remindTasks } from './taskmail.js';
@@ -190,6 +192,72 @@ export async function handleSetBookingSplit(request, env, bookingId) {
     `${booking.client_name}: ${pct === null ? 'follows the agreement' : `${pct}%`}`,
     { bookingId, pct });
   return json({ ok: true, booking: updated });
+}
+
+/** The session's own id, so acting can be switched on for this browser and no other. */
+async function sessionHash(request) {
+  const token = parseCookies(request)[SESSION_COOKIE];
+  return token ? sha256Hex(token) : null;
+}
+
+/**
+ * POST /api/admin/act/:id : work inside somebody's account.
+ *
+ * An agency signs up, does not get started, and the only way to help is to see
+ * what they see. From here the portal behaves exactly as it does for them,
+ * because the session genuinely is theirs: every screen, every scope, every
+ * empty list they are staring at.
+ *
+ * The portal's operator only. On the other portal an agency owner may work as
+ * their own advisors; here nobody else may act at all. An agency owner already
+ * sees their whole agency, so acting would add nothing except the ability to
+ * write as somebody else, and writing as somebody else is the part worth
+ * keeping rare.
+ *
+ * While acting, requireAdmin refuses outright, so the admin screens, the
+ * plans, the approvals and the splits are all shut until you stop. You are in
+ * their seat and nothing more.
+ */
+export async function handleStartActing(request, env, userId) {
+  const { user: admin, response } = await requirePlatformOwner(request, env);
+  if (response) return response;
+
+  const target = await db.getUserById(env, userId);
+  if (!target) return notFound('Advisor not found.');
+  if (target.id === admin.id) return badRequest('You are already yourself.');
+  // Another operator reaches every agency here, so working as one would be
+  // borrowing authority rather than borrowing a seat.
+  if (target.platform_owner) {
+    return forbidden('That account runs the portal, so it is not one to work as.');
+  }
+  if (target.status !== 'active') return badRequest('That account is not active.');
+
+  const hash = await sessionHash(request);
+  if (!hash) return forbidden('No session to switch.');
+  await db.setSessionActingAs(env, hash, target.id);
+
+  // Logged against the operator, so somebody's history can always be read back
+  // as "this stretch was the office, not them".
+  await db.logActivity(env, admin.id, 'admin.act.start',
+    `Started working as ${target.email}`, { userId: target.id });
+  return json({ ok: true, actingAs: publicUser(target) });
+}
+
+/** POST /api/admin/act/stop : back to your own seat. Must work while acting, so not requireAdmin. */
+export async function handleStopActing(request, env) {
+  const { user, response } = await requireUser(request, env);
+  if (response) return response;
+
+  const hash = await sessionHash(request);
+  if (!hash) return forbidden('No session to switch.');
+  await db.setSessionActingAs(env, hash, null);
+
+  if (user.acting_as) {
+    const admin = realUserOf(user);
+    await db.logActivity(env, admin.id, 'admin.act.stop',
+      `Stopped working as ${user.email}`, { userId: user.id });
+  }
+  return json({ ok: true });
 }
 
 export async function handleSetAdvisorStatus(request, env, userId) {

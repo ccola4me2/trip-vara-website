@@ -1387,17 +1387,49 @@ function watchMoneyFields() {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
+/**
+ * The bar across every page while the portal's operator is in somebody's account.
+ *
+ * Loud on purpose. The whole feature is that the portal behaves exactly as that
+ * person does, so the failure mode is forgetting and filing something under the
+ * wrong name, and the only defence is that it is impossible not to notice.
+ */
+function mountActingBanner({ user, admin }) {
+  if (document.getElementById('acting-bar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'acting-bar';
+  bar.className = 'acting-bar';
+  bar.innerHTML = `<span>You are working in
+      <strong>${esc(user.name || user.email)}</strong>'s account${
+        admin && admin.name ? ` as ${esc(admin.name)}` : ''}.
+      Anything you add here is theirs.</span>
+    <button class="btn btn-sm" type="button" id="acting-stop">Stop</button>`;
+  document.body.prepend(bar);
+  document.body.classList.add('is-acting');
+  document.getElementById('acting-stop').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Stopping...';
+    try {
+      await api('/api/admin/act', { method: 'DELETE' });
+      window.location.href = '/admin/';
+    } catch (err) {
+      e.target.disabled = false;
+      e.target.textContent = 'Stop';
+      alert(err.message || 'Could not stop.');
+    }
+  });
+}
+
 export async function mountShell({ admin = false } = {}) {
-  // actingAs is always null here and is destructured all the same, with a
-  // default, so this function reads identically to the cttagents copy where
-  // the borrowed seat is real. It arrived without this line once: the scope
-  // memory was ported across the fork and the destructuring was not, which
-  // made every signed-in page throw a ReferenceError before its own script ran.
-  // See borrowedSeat() in src/auth.js for why the answer is always no here.
+  // actingAs is null unless the portal's operator is sitting in somebody's
+  // seat. It is destructured with a default all the same: it arrived without
+  // one once, ported across the fork while the scope memory was not, and every
+  // signed-in page threw a ReferenceError before its own script ran.
   const { user, actingAs = null } = await api('/api/auth/me');
   if (!user) { window.location.href = '/login'; throw new Error('Signed out'); }
   // An owner not sitting in somebody else's seat. Everybody else has no choice of scope to remember.
   scopeOwner = user.role === 'admin' && !actingAs ? user.id : null;
+  if (actingAs) mountActingBanner(actingAs);
 
   const sidebar = document.getElementById('sidebar');
   if (!sidebar) return user;
