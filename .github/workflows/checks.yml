@@ -261,6 +261,14 @@ jobs:
           # shared secret, so without one here the suite would only ever see it
           # refuse, which is half the behaviour.
           echo "PEER_SECRET=$(openssl rand -base64 32)" >> .dev.vars
+          # Cloudflare's published testing pair: the site key renders a widget
+          # and the secret accepts any token. With nothing set, every public
+          # form here fails open and the configured half of the code is never
+          # run, which is how Get in touch came to refuse every message the day
+          # real keys were added: the page had a placeholder and no widget, and
+          # no test could tell, because no test had ever seen the keys set.
+          echo "TURNSTILE_SITE_KEY=1x00000000000000000000AA" >> .dev.vars
+          echo "TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA" >> .dev.vars
           # --test-scheduled exposes /__scheduled, so the smoke suite can run
           # the cron rather than leaving the whole scheduled handler as the one
           # part of this Worker nothing ever executes.

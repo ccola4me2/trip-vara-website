@@ -96,6 +96,26 @@ try {
     document.getElementById('lede').textContent =
       `Signed in as ${who.email}. Tell us what you need and we will come back to you there.`;
   }
+  // The widget, put up only when the portal has keys for it. Every other
+  // public form here is rendered by the Worker and gets this in its markup;
+  // this page is a static file, so it has to ask.
+  //
+  // The handler refuses a submission with no token the moment the keys exist,
+  // so without this the page was a box that could not be sent: it stood there
+  // with an empty placeholder and told everybody they did not look like a
+  // person. Switching Turnstile on broke exactly one form and it was this one,
+  // which is the form somebody locked out of the portal is left with.
+  if (who && who.turnstileSiteKey) {
+    const holder = document.getElementById('turnstile');
+    holder.className = 'cf-turnstile';
+    holder.dataset.sitekey = who.turnstileSiteKey;
+    holder.dataset.theme = 'light';
+    const tag = document.createElement('script');
+    tag.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    tag.async = true;
+    tag.defer = true;
+    document.head.appendChild(tag);
+  }
 } catch {
   // Signed out, or the call failed. The form asks for a name and an email
   // either way, so there is nothing to recover from.

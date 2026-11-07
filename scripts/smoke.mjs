@@ -21,6 +21,9 @@ const ADMIN_EMAIL = process.argv[3] || 'local@test.dev';
 const ADMIN_PASSWORD = process.argv[4] || 'local-test-12345';
 
 const stamp = Date.now().toString(36);
+// The same moment as a number, for the places that do arithmetic on it. stamp
+// itself is base36 and silently turns every sum into NaN.
+const runNumber = Date.now();
 const ADVISOR_EMAIL = `smoke-${stamp}@test.dev`;
 const ADVISOR_PASSWORD = 'smoke-test-12345';
 
@@ -102,7 +105,34 @@ function jar() {
   };
 }
 
+// The addresses open to the internet, which carry a Turnstile token in a real
+// browser. Listed rather than guessed, so adding a public form makes somebody
+// think about whether it is guarded.
+// Every one of these is a handler that calls verifyTurnstile: a lead form, a
+// group page's short enquiry, its registration form, a deal enquiry, and Get
+// in touch. Listed rather than pattern-guessed, so adding a public form makes
+// somebody decide whether it is guarded.
+const PUBLIC_POSTS = [
+  /^\/api\/public\/forms\//,   // a lead form
+  /^\/g\/[^/]+\/?$/,           // the short enquiry on a group page
+  /^\/g\/[^/]+\/register$/,    // registering for a group trip
+  /^\/gs\/[^/]+\/?$/,          // the same enquiry reached by the group's short name
+  /^\/gs\/[^/]+\/register$/,   // and registering there
+  /^\/s\/[^/]+\/?$/,           // asking about a deal
+  /^\/api\/support$/,          // Get in touch
+];
+
 async function call(cookieJar, method, path, body, extraHeaders = {}) {
+  // A submission with no token is refused the moment the portal has Turnstile
+  // keys, which is right: that is what a bot looks like. The suite posts
+  // straight at the endpoint rather than through a page, so it has to send one
+  // the way a browser would. The testing secret takes any string and a portal
+  // with no keys ignores the field, so this covers both deployments.
+  if (method === 'POST' && body && typeof body === 'object'
+      && body['cf-turnstile-response'] === undefined
+      && PUBLIC_POSTS.some((rx) => rx.test(path))) {
+    body = { 'cf-turnstile-response': 'smoke', ...body };
+  }
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
@@ -3610,14 +3640,17 @@ async function main() {
     // address is also closer to the truth, since these are meant to be
     // different strangers writing in.
     // Its own address per run, because the support form is rate limited per
-    // address per hour and the suite sends more than one message. One octet of
-    // TEST-NET-3 gave 254 of them, which a day of local runs against the same
-    // database exhausts: the second run of the hour started failing on a limit
-    // the first run had used up. Two octets of the benchmarking range give
-    // sixty five thousand, which no amount of rerunning works through.
-    // CI never saw this, because CI starts on an empty database every time.
+    // address per hour and the suite sends several messages.
+    //
+    // Built from runNumber, not from stamp. stamp is Date.now().toString(36),
+    // a base36 string, so every arithmetic spelling of this produced NaN and
+    // every run of the suite since it was written has posted from the literal
+    // address "198.18.NaN.NaN". One address, shared by every run, quietly
+    // using up a ten an hour limit: the symptom was the support checks failing
+    // on a second run and passing again later, which reads exactly like
+    // flakiness and is not.
     const from = {
-      'CF-Connecting-IP': `198.18.${Math.floor(stamp / 251) % 256}.${(stamp % 251) + 1}`,
+      'CF-Connecting-IP': `198.18.${Math.floor(runNumber / 251) % 256}.${(runNumber % 251) + 1}`,
     };
     // Public on purpose. A demo whose trial has ended cannot sign in at all,
     // so a contact form behind a session would be shut to the one person it
@@ -3630,21 +3663,47 @@ async function main() {
     check(whoOut.status === 200 && whoOut.data?.signedIn === false,
       'and says it does not know who is asking', JSON.stringify(whoOut.data));
 
+    // Whether the portal has Turnstile keys, which decides whether this form
+    // needs a token at all. Both ways round are real deployments, and the one
+    // that was never tested is the one that broke: with keys set, the page has
+    // to put a widget up or every message is refused as "not a person". The
+    // page is a static file, so it asks here for the site key.
+    const guarded = Boolean(whoOut.data?.turnstileSiteKey);
+    if (guarded) {
+      const pageHtml = page.raw || '';
+      check(/challenges\.cloudflare\.com/.test(pageHtml) || /turnstileSiteKey/.test(pageHtml),
+        'with keys set, the page knows how to put the widget up');
+      // An explicit empty token, so the helper in call() leaves it alone: this
+      // is the one submission that is meant to look like a bot.
+      const noToken = await call(null, 'POST', '/api/support', {
+        name: 'No Token', email: `notoken-${stamp}@test.dev`, message: 'No widget here.',
+        'cf-turnstile-response': '',
+      }, from);
+      check(noToken.status === 400,
+        'and a submission with no token is refused, which is the whole point',
+        `status ${noToken.status}`);
+    } else {
+      skip('the Turnstile half of the support form', 'no keys in this environment');
+    }
+
     const sent = await call(null, 'POST', '/api/support', {
       name: `Stranger ${stamp}`, email: `stranger-${stamp}@test.dev`,
       agencyName: 'Nowhere Travel', subject: 'Carrying on after the demo',
       message: 'My trial ended. Can you switch it back on?',
+      // Any string passes against the testing secret, and is ignored entirely
+      // when there are no keys, so one call covers both deployments.
+      'cf-turnstile-response': 'smoke',
     }, from);
     check(sent.status === 200 && sent.data?.ok,
       'a stranger can write in', `status ${sent.status} ${JSON.stringify(sent.data)}`);
 
     // Guards, because this is open to the internet.
     const noMessage = await call(null, 'POST', '/api/support',
-      { email: `a-${stamp}@test.dev`, message: '   ' }, from);
+      { email: `a-${stamp}@test.dev`, message: '   ', 'cf-turnstile-response': 'smoke' }, from);
     check(noMessage.status === 400, 'an empty message is refused',
       `status ${noMessage.status}`);
     const noWay = await call(null, 'POST', '/api/support',
-      { email: 'not-an-address', message: 'hello' }, from);
+      { email: 'not-an-address', message: 'hello', 'cf-turnstile-response': 'smoke' }, from);
     check(noWay.status === 400, 'and so is one with no way to answer it',
       `status ${noWay.status}`);
     const bot = await call(null, 'POST', '/api/support', {
@@ -12629,7 +12688,9 @@ async function main() {
     // question survives a mail failure. Nothing read those rows back until
     // now, which made the safety net useless: the message was safe and nobody
     // could see it.
-    const ip = { 'CF-Connecting-IP': `198.19.${Math.floor(stamp / 251) % 256}.${(stamp % 251) + 1}` };
+    const ip = {
+      'CF-Connecting-IP': `198.19.${Math.floor(runNumber / 251) % 256}.${(runNumber % 251) + 1}`,
+    };
     const wrote = await call(null, 'POST', '/api/support', {
       name: `Asker ${stamp}`, email: `asker-${stamp}@test.dev`,
       agencyName: 'Somebody Travel', subject: 'Carrying on after the demo',

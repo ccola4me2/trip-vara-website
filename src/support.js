@@ -28,7 +28,7 @@ import {
 } from './util.js';
 import { getCurrentUser } from './auth.js';
 import { sendSupportEmail } from './email.js';
-import { verifyTurnstile, TURNSTILE_FAILED } from './turnstile.js';
+import { verifyTurnstile, TURNSTILE_FAILED, turnstileReady } from './turnstile.js';
 
 // Messages from one address in an hour.
 //
@@ -89,6 +89,16 @@ export async function handleSupportWho(request, env) {
     name: asker?.name || '',
     email: asker?.email || '',
     agencyName: asker?.agencyName || '',
+    // The site key, so a static page can put the widget up. Public by design:
+    // every server rendered form here already prints it into the markup.
+    //
+    // It has to come from the server rather than be written into the page,
+    // because this endpoint refuses a submission with no token the moment the
+    // keys exist. A page that cannot see whether they do would either carry a
+    // widget that never loads, or none when one is required, and the second is
+    // what happened: Get in touch refused every message the day Turnstile was
+    // switched on, which is the one form somebody locked out of the portal has.
+    turnstileSiteKey: turnstileReady(env) ? String(env.TURNSTILE_SITE_KEY) : null,
   });
 }
 
