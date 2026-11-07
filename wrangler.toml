@@ -64,6 +64,14 @@ APP_URL = "https://tripvaratravel.com"
 # The shared domain group pages are shared on. It is attached to the CTT Worker, which hands a
 # name that is not its own to this portal through its PEER binding; this portal answers for the
 # names it holds. Set here too so the same code recognises the host when a request is passed on.
+# Proving there is a person on the other end of a public form: the join pages, the
+# lead forms, group registration and Get in touch. The site key is public by design,
+# it is printed into the page for the browser to use, so it belongs in here. Its other
+# half, TURNSTILE_SECRET_KEY, is a Worker secret and is not in this file.
+#
+# Both halves or neither: turnstileReady() wants the pair, and with only one set every
+# public form carries on with the honeypot and the rate limit exactly as before.
+TURNSTILE_SITE_KEY = "0x4AAAAAAF3ijeHJkN9qonr-"
 GROUP_HOST = "cruisegrouppage.com"
 # What this portal's links on that domain start with: Trip Vara's groups are under /tv, each page
 # carrying its own agency's name, logo and colours. Cruises Tours and Travel's are at the root.
