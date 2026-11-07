@@ -194,6 +194,41 @@ export async function handleSetBookingSplit(request, env, bookingId) {
   return json({ ok: true, booking: updated });
 }
 
+/**
+ * GET /api/admin/support : what people have written in.
+ *
+ * The Get in touch form writes the row first and sends the email second, on
+ * purpose, so a question survives a mail service having a bad morning. Until
+ * now nothing read the rows back, which made the safety net useless: a message
+ * whose email failed was safe in the database and invisible to everybody.
+ *
+ * `sent` is the column that matters. A row with sent = 0 is one nobody was
+ * ever told about, so the page leads with those.
+ */
+export async function handleListSupport(request, env) {
+  const { response } = await requirePlatformOwner(request, env);
+  if (response) return response;
+
+  const { results } = await env.DB.prepare(
+    `SELECT m.id, m.name, m.email, m.agency_name, m.subject, m.message, m.sent, m.created_at,
+            m.user_id,
+            a.name AS agency, a.plan AS plan
+       FROM support_messages m
+       LEFT JOIN users u ON u.id = m.user_id
+       LEFT JOIN agencies a ON a.id = u.agency_id
+      ORDER BY m.created_at DESC
+      LIMIT 200`
+  ).all().catch(() => ({ results: [] }));
+
+  const rows = results || [];
+  return json({
+    messages: rows,
+    // Counted here rather than in the page, so the two cannot disagree about
+    // what "nobody was told" means.
+    unsent: rows.filter((m) => !m.sent).length,
+  });
+}
+
 /** The session's own id, so acting can be switched on for this browser and no other. */
 async function sessionHash(request) {
   const token = parseCookies(request)[SESSION_COOKIE];

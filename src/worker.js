@@ -435,7 +435,7 @@ import { handleAttribution } from './attribution.js';
 import { handleListReviews, handleAskReview } from './reviews.js';
 import {
   handleListAdvisors,
-  handleSetAdvisorStatus, handleStartActing, handleStopActing,
+  handleSetAdvisorStatus, handleStartActing, handleStopActing, handleListSupport,
   handleSetAdvisorSplit,
   handleUpdateAdvisor,
   handleSetBookingSplit,
@@ -500,6 +500,7 @@ const PAGE_FILES = {
   '/pricing': '/pricing.html',
   '/admin/agencies': '/admin/agencies.html',
   '/admin/onboarding': '/admin/onboarding.html',
+  '/admin/support': '/admin/support.html',
   '/admin/training': '/admin/training.html',
   '/admin/groups': '/admin/groups.html',
   '/admin/events': '/admin/events.html',
@@ -1453,6 +1454,7 @@ async function routeApi(request, env, path, method) {
     return handleJoinInfo(request, env, decodeURIComponent(joinMatch[1]));
   }
   if (path === '/api/admin/lifecycle' && method === 'POST') return handleRunLifecycle(request, env);
+  if (path === '/api/admin/support' && method === 'GET') return handleListSupport(request, env);
   if (path === '/api/admin/advisors' && method === 'GET') return handleListAdvisors(request, env);
   // Working inside somebody's account. Stopping is a DELETE on the bare path,
   // the same shape the other portal uses, and it is the one of the two that has

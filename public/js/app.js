@@ -367,6 +367,7 @@ const ADMIN_NAV = [
   { href: '/admin/client-emails', label: 'Client emails', icon: I.chat },
   { href: '/admin/waiver', label: 'Waiver wording', icon: I.shield },
   { href: '/admin/specials', label: 'Supplier specials', icon: I.megaphone },
+  { href: '/admin/support', label: 'Asked us', icon: I.chat, owner: true },
   { href: '/admin/training', label: 'Training', icon: I.book },
   { href: '/admin/manual', label: 'Running the agency', icon: I.book },
   { href: '/app/', label: 'Back to portal', icon: I.back },

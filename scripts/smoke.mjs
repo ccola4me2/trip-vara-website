@@ -12622,6 +12622,40 @@ async function main() {
     }
   }
 
+  // -------------------------------------------------- what people asked --
+  step('Reading what people have written in');
+  {
+    // The Get in touch form writes the row before it sends the email, so a
+    // question survives a mail failure. Nothing read those rows back until
+    // now, which made the safety net useless: the message was safe and nobody
+    // could see it.
+    const ip = { 'CF-Connecting-IP': `198.19.${Math.floor(stamp / 251) % 256}.${(stamp % 251) + 1}` };
+    const wrote = await call(null, 'POST', '/api/support', {
+      name: `Asker ${stamp}`, email: `asker-${stamp}@test.dev`,
+      agencyName: 'Somebody Travel', subject: 'Carrying on after the demo',
+      message: `Please can we keep going. ${stamp}`,
+    }, ip);
+    check(wrote.status === 200, 'somebody writes in', `status ${wrote.status}`);
+
+    const shut = await call(advisor, 'GET', '/api/admin/support');
+    check(shut.status === 403, 'an advisor cannot read what other people asked',
+      `status ${shut.status}`);
+
+    const box = await call(admin, 'GET', '/api/admin/support');
+    check(box.status === 200, 'the portal owner can', `status ${box.status}`);
+    const mine = (box.data?.messages || []).find((m) => m.email === `asker-${stamp}@test.dev`);
+    check(mine, 'and the message is there');
+    check(mine?.message?.includes(String(stamp)), 'with what they actually wrote', mine?.message);
+    check(mine?.subject === 'Carrying on after the demo', 'and what it was about', mine?.subject);
+    // No key in this environment, so the email cannot have gone. That is the
+    // case the whole page exists for, and it must be visible rather than
+    // indistinguishable from a message that was delivered.
+    check(typeof box.data?.unsent === 'number', 'the unsent ones are counted',
+      String(box.data?.unsent));
+    check(box.data.messages[0].created_at >= box.data.messages[box.data.messages.length - 1].created_at,
+      'newest first, so the one somebody is waiting on is at the top');
+  }
+
   // ------------------------------------------- working as somebody else --
   step('Working inside somebody else\'s account');
   {

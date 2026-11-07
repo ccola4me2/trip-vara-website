@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asked us | Trip Vara Portal</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar">
+      <div><h1>Asked us</h1>
+        <p class="sub">Everything sent through Get in touch, newest first. The message is written down before
+          the email goes out, so this is the copy that survives whatever the mail service is doing.</p></div>
+    </header>
+    <div class="content">
+      <div id="err"></div>
+      <div id="stats" class="stats"></div>
+      <div class="card"><div class="card-body" id="panel">
+        <p class="spinner">Loading...</p>
+      </div></div>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { api, mountShell, esc, showError } from '/js/app.js';
+await mountShell({ admin: true });
+
+const panel = document.getElementById('panel');
+const statsEl = document.getElementById('stats');
+const err = document.getElementById('err');
+
+const when = (secs) => {
+  if (!secs) return '';
+  const d = new Date(secs * 1000);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+    + ', ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+};
+
+function draw(d) {
+  const all = d.messages || [];
+  statsEl.innerHTML = `
+    <div class="stat"><p class="label">Messages</p><p class="value">${all.length}</p>
+      <p class="meta">Last 200</p></div>
+    <div class="stat"><p class="label">Nobody was told</p><p class="value">${d.unsent}</p>
+      <p class="meta">The email did not go out</p></div>`;
+
+  if (!all.length) {
+    panel.innerHTML = '<div class="empty"><h3>Nothing yet</h3>'
+      + '<p>Nobody has used Get in touch. The form is at <strong>/support</strong> and works '
+      + 'signed out, which is deliberate: somebody whose demo has ended cannot sign in at all.</p></div>';
+    return;
+  }
+
+  panel.innerHTML = `<ul class="rows">${all.map((m) => `<li>
+    <div class="row-between">
+      <span>
+        <span class="t">${esc(m.name || m.email)}</span>
+        <span class="m">${esc(m.email)}${
+          m.agency ? ` &middot; ${esc(m.agency)}` : (m.agency_name ? ` &middot; ${esc(m.agency_name)}` : '')}${
+          m.plan === 'demo' ? ' &middot; on a demo' : ''}${
+          m.user_id ? '' : ' &middot; not signed in'}</span>
+      </span>
+      <span style="text-align:right;">
+        <span class="m">${esc(when(m.created_at))}</span>
+        ${m.sent ? '' : '<div><span class="badge badge-red">nobody was told</span></div>'}
+      </span>
+    </div>
+    <p style="margin:.5rem 0 .2rem;"><strong>${esc(m.subject || 'A question')}</strong></p>
+    <p style="margin:0; white-space:pre-wrap;">${esc(m.message)}</p>
+    <p style="margin:.6rem 0 0;"><a class="btn btn-secondary btn-sm"
+      href="mailto:${encodeURIComponent(m.email)}?subject=${
+        encodeURIComponent('Re: ' + (m.subject || 'your message'))}">Reply by email</a></p>
+  </li>`).join('')}</ul>`;
+}
+
+try {
+  draw(await api('/api/admin/support'));
+} catch (ex) { panel.innerHTML = ''; showError(err, ex); }
+</script>
+</body>
+</html>
