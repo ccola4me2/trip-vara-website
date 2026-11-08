@@ -411,6 +411,37 @@ async function main() {
       'and removing it puts the final balance back');
   }
 
+  // A new price moves the automatic final balance and its reminder. On a trip of its own, because
+  // saving a pricing grid replaces the commission the shared reservation is checked against.
+  {
+    const priced = await call(advisor, 'POST', '/api/bookings', {
+      clientName: `Repriced ${stamp}`, supplier: 'Carnival', productType: 'cruise',
+      departDate: isoDay(120), gross: '4000', deposit: '1000', depositRefundable: 'refundable',
+      depositDue: isoDay(10), finalPaymentDue: isoDay(60), status: 'booked',
+    });
+    const pid = priced.data?.booking?.id;
+    if (check(Boolean(pid), 'a trip of its own for the repricing check')) {
+      await call(advisor, 'POST', `/api/bookings/${pid}/schedule`, {});
+      const finalOf = async () => {
+        const rs = (await call(advisor, 'GET', `/api/bookings/${pid}/record`)).data?.payments || [];
+        return [rs.find((x) => x.kind === 'final' && x.payment_class === 'hard'),
+          rs.find((x) => x.kind === 'final' && x.payment_class === 'soft')];
+      };
+      const grid = (amount) => call(advisor, 'PUT', `/api/bookings/${pid}/pricing`,
+        { cells: [{ kind: 'fare', amount, commissionable: 1 }] });
+      await grid('3500');
+      const [lowH, lowS] = await finalOf();
+      check(lowH?.amount_cents === 250000 && lowS?.amount_cents === 250000,
+        'a lower price in the pricing grid lowers the final balance and its reminder',
+        `${lowH?.amount_cents} and ${lowS?.amount_cents}`);
+      await grid('4000');
+      const [backH] = await finalOf();
+      check(backH?.amount_cents === 300000,
+        'and putting the price back puts the final balance back', `${backH?.amount_cents}`);
+      await dropBooking(pid);
+    }
+  }
+
   // The dashboard is the thing an advisor actually looks at, so check the
   // schedule reaches it rather than trusting the write.
   const dash = await call(advisor, 'GET', '/api/dashboard');
