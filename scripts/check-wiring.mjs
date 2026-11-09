@@ -173,6 +173,32 @@ for (const [file, code] of modules) {
 }
 
 // ---------------------------------------------------------------------------
+// Can somebody who is stuck actually see the way to ask?
+// ---------------------------------------------------------------------------
+//
+// The demo page carried its "Get in touch" link inside the panel that appears
+// after a successful signup. So the only person who could see it was the one
+// who had just succeeded, and the person it exists for, whose signup was
+// refused or whose trial has run out, was shown nothing at all.
+//
+// The same shape as a widget that never loads: the help was wired to the happy
+// path. These are the pages somebody lands on when they cannot get in, so the
+// link has to be outside anything that starts life hidden.
+{
+  const HELP_PAGES = ['public/demo.html', 'public/login.html'];
+  for (const rel of HELP_PAGES) {
+    let html = '';
+    try { html = readFileSync(join(ROOT, rel), 'utf8'); } catch { continue; }
+    // Anything inside an element that starts hidden does not count as seen.
+    const onArrival = html.replace(/<(div|section|p)\b[^>]*\bhidden\b[^>]*>[\s\S]*?<\/\1>/gi, '');
+    if (!onArrival.includes('/support')) {
+      problems.push(`${rel} shows nobody the way to ask for help on arrival `
+        + '(a /support link is either missing or only inside something hidden)');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 if (problems.length) {
   console.error(`check-wiring: ${problems.length} route${problems.length === 1 ? '' : 's'} `
