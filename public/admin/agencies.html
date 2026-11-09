@@ -40,7 +40,16 @@
       <div class="field-row">
         <div class="field"><label for="logoUrl">Logo address</label>
           <input id="logoUrl" name="logoUrl" maxlength="500" placeholder="https://...">
-          <p class="field-hint">Wherever it already lives on their own site.</p></div>
+          <p class="field-hint">Wherever it already lives on their own site, or upload one below
+            and this fills itself in.</p>
+          <div id="logo-upload" hidden style="margin-top:.5rem;">
+            <img id="logo-now" alt="" hidden
+              style="max-height:4rem;max-width:8rem;display:block;margin-bottom:.4rem;">
+            <input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+            <p class="field-hint">PNG, JPEG, WebP or GIF, up to 2 MB. A square picture with a
+              see through background sits best.</p>
+            <button class="btn btn-ghost btn-sm" type="button" id="logo-drop" hidden>Remove the logo</button>
+          </div></div>
         <div class="field"><label for="brandColor">Brand colour</label>
           <input id="brandColor" name="brandColor" maxlength="7" placeholder="#1b3a5f">
           <p class="field-hint" id="colourHint">Six hex digits after a hash.</p></div>
@@ -202,6 +211,7 @@ function draw() {
 function openCreate() {
   editingId = null;
   form.reset();
+  drawLogo(null);
   form.elements.joinOpen.checked = true;
   document.getElementById('dlg-title').textContent = 'Add an agency';
   form.querySelector('.notice-error').hidden = true;
@@ -220,8 +230,54 @@ function openEdit(a) {
   set('address', a.address);
   set('paymentFormUrl', a.payment_form_url);
   form.elements.joinOpen.checked = Boolean(a.join_open);
+  drawLogo(a);
   dlg.showModal();
 }
+
+// Uploading is only offered on an agency that exists: a new one has no id to
+// hang a picture off yet, so it is saved first and the logo added by editing it.
+function drawLogo(a) {
+  const box = document.getElementById('logo-upload');
+  const shown = document.getElementById('logo-now');
+  const drop = document.getElementById('logo-drop');
+  box.hidden = !a;
+  if (!a) return;
+  shown.hidden = !a.logo_url;
+  if (a.logo_url) shown.src = a.logo_url;
+  // Only an uploaded one can be removed here. A pasted link is cleared by
+  // emptying the box above it, which is where it came from.
+  drop.hidden = !a.logo_key;
+}
+
+document.getElementById('logo-file').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file || !editingId) return;
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const out = await api(`/api/agencies/${encodeURIComponent(editingId)}/logo`,
+      { method: 'POST', body });
+    form.elements.logoUrl.value = out.url || '';
+    await load();
+    drawLogo((d.agencies || []).find((x) => x.id === editingId));
+  } catch (ex) {
+    showError(document.getElementById('err'), ex);
+  }
+  e.target.value = '';
+});
+
+document.getElementById('logo-drop').addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Take the uploaded logo off this agency?')) return;
+  try {
+    await api(`/api/agencies/${encodeURIComponent(editingId)}/logo`, { method: 'DELETE' });
+    form.elements.logoUrl.value = '';
+    await load();
+    drawLogo((d.agencies || []).find((x) => x.id === editingId));
+  } catch (ex) {
+    showError(document.getElementById('err'), ex);
+  }
+});
 
 onSubmit(form, async (values) => {
   const body = { ...values, joinOpen: form.elements.joinOpen.checked };

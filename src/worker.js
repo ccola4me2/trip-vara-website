@@ -320,6 +320,9 @@ import { handleGroupList, LISTS as GROUP_LISTS } from './groupmanifest.js';
 import { handleRunGroupReminders } from './groupremind.js';
 import { handleSlugCheck, handleSetSlug, handleReleaseSlug, handlePublicSlugTaken } from './groupslug.js';
 import { handleUploadPicture, handleRemovePicture, serveGroupPicture } from './grouppicture.js';
+import {
+  handleUploadAgencyLogo, handleRemoveAgencyLogo, serveAgencyLogo,
+} from './agencylogo.js';
 import { handleUploadGroupFile, handleDeleteGroupFile, serveGroupFile } from './groupfiles.js';
 import {
   handleListQuickProposals, handleCreateQuickProposal, handleGetQuickProposal, handleSaveQuickProposal,
@@ -823,6 +826,7 @@ async function routeApi(request, env, path, method) {
   const groupRepeatMatch = path.match(/^\/api\/groups\/([^/]+)\/repeat$/);
   const groupRatesMatch = path.match(/^\/api\/groups\/([^/]+)\/rates$/);
   const groupPictureMatch = path.match(/^\/api\/groups\/([^/]+)\/picture$/);
+  const agencyLogoMatch = path.match(/^\/api\/agencies\/([^/]+)\/logo$/);
   const groupFilesMatch = path.match(/^\/api\/groups\/([^/]+)\/files$/);
   const groupFileMatch = path.match(/^\/api\/groups\/([^/]+)\/files\/([^/]+)$/);
   const groupBookMatch = path.match(/^\/api\/groups\/registrations\/([^/]+)\/book$/);
@@ -841,6 +845,12 @@ async function routeApi(request, env, path, method) {
   const optionsOpenMatch = path.match(/^\/api\/bookings\/([^/]+)\/options-open$/);
   const libMatch = path.match(/^\/api\/itinerary-library\/([^/]+)$/);
   const convertMatch = path.match(/^\/api\/agencies\/([^/]+)\/plan$/);
+  if (agencyLogoMatch && method === 'POST') {
+    return handleUploadAgencyLogo(request, env, decodeURIComponent(agencyLogoMatch[1]));
+  }
+  if (agencyLogoMatch && method === 'DELETE') {
+    return handleRemoveAgencyLogo(request, env, decodeURIComponent(agencyLogoMatch[1]));
+  }
   const agencyOneMatch = path.match(/^\/api\/agencies\/([^/]+)$/);
   const houseMatch = path.match(/^\/api\/households\/([^/]+)$/);
   const houseMemberMatch = path.match(/^\/api\/households\/([^/]+)\/members$/);
@@ -1587,6 +1597,10 @@ async function routePage(request, env, path) {
   // An uploaded picture for a group's page, public while the page is on.
   const pictureOf = path.match(/^\/gi\/([^/]+)\/?$/);
   if (pictureOf) return serveGroupPicture(request, env, decodeURIComponent(pictureOf[1]));
+  // An agency's uploaded logo. Public with no condition: it is on client pages,
+  // on quotes and in email, which outlive any one switch.
+  const logoOf = path.match(/^\/al\/([^/]+)\/?$/);
+  if (logoOf) return serveAgencyLogo(request, env, decodeURIComponent(logoOf[1]));
   // A PDF a group's page offers for download, public while the page is on.
   const fileOf = path.match(/^\/gf\/([^/]+)\/?$/);
   if (fileOf) return serveGroupFile(request, env, decodeURIComponent(fileOf[1]));

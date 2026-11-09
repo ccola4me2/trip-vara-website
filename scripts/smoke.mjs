@@ -12712,6 +12712,62 @@ async function main() {
     }
   }
 
+  // ----------------------------------------------------- an agency's logo --
+  step("An agency's own logo, uploaded rather than linked");
+  {
+    // logo_url was only ever an address on the agency's own site, which is a
+    // hard first task for an agency that has not got one, and breaks the day
+    // somebody tidies their server up.
+    const mine = (await call(admin, 'GET', '/api/agencies')).data?.agencies || [];
+    const houseId = mine.find((a) => a.slug === 'trip-vara')?.id;
+    if (!houseId) { skip('the agency logo', 'no house agency here'); } else {
+      // The smallest real PNG: an 8 bit RGBA pixel. What matters is the first
+      // bytes, because that is what the upload reads rather than the name.
+      const PNG = Uint8Array.from(atob(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+      ), (c) => c.charCodeAt(0));
+
+      const notAPicture = new FormData();
+      notAPicture.append('file', new Blob([new TextEncoder().encode('just words')],
+        { type: 'image/png' }), 'liar.png');
+      const lied = await fetch(`${BASE}/api/agencies/${houseId}/logo`,
+        { method: 'POST', headers: { cookie: admin.header() }, body: notAPicture });
+      check(lied.status === 400,
+        'a file that calls itself a picture and is not is refused', `status ${lied.status}`);
+
+      const form = new FormData();
+      form.append('file', new Blob([PNG], { type: 'image/png' }), 'logo.png');
+      const up = await fetch(`${BASE}/api/agencies/${houseId}/logo`,
+        { method: 'POST', headers: { cookie: admin.header() }, body: form });
+      const upBody = await up.json().catch(() => ({}));
+      check(up.status === 200 && /\/al\//.test(upBody.url || ''),
+        'a logo uploads and the agency points at it', `status ${up.status} ${upBody.url}`);
+
+      // The whole reason it is served through the Worker: a client opening a
+      // quote has no account, and the bucket has no addresses of its own.
+      const seen = await call(null, 'GET', `/al/${houseId}`);
+      check(seen.status === 200, 'and anybody can see it, with no session at all',
+        `status ${seen.status}`);
+
+      const after = ((await call(admin, 'GET', '/api/agencies')).data?.agencies || [])
+        .find((a) => a.id === houseId);
+      check(Boolean(after?.logo_key), 'the agency remembers which file is its own');
+      check(String(after?.logo_url || '').includes(`/al/${houseId}`),
+        'and its logo address is the one it was given', after?.logo_url);
+
+      const notTheirs = await fetch(`${BASE}/api/agencies/${houseId}/logo`,
+        { method: 'POST', headers: { cookie: advisor.header() }, body: form });
+      check(notTheirs.status === 403 || notTheirs.status === 401,
+        'an advisor cannot put a logo on an agency', `status ${notTheirs.status}`);
+
+      const off = await call(admin, 'DELETE', `/api/agencies/${houseId}/logo`);
+      check(off.status === 200 && off.data?.cleared === true,
+        'it can be taken off again', `status ${off.status}`);
+      const gone = await call(null, 'GET', `/al/${houseId}`);
+      check(gone.status === 404, 'and then it is not served to anybody', `status ${gone.status}`);
+    }
+  }
+
   // -------------------------------------------------- what people asked --
   step('Reading what people have written in');
   {

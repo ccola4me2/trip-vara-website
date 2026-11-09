@@ -98,7 +98,7 @@ export async function handleListAgencies(request, env) {
 
   const { results } = await env.DB.prepare(
     `SELECT a.id, a.name, a.slug, a.address, a.phone, a.email,
-            a.website, a.seller_of_travel, a.logo_url, a.brand_color, a.tagline,
+            a.website, a.seller_of_travel, a.logo_url, a.logo_key, a.brand_color, a.tagline,
             a.join_open, a.created_at, a.updated_at, a.payment_form_url,
             -- The trial, so the agencies screen can say how long is left and
             -- offer to turn one live rather than making somebody guess.

@@ -1,0 +1,14 @@
+-- An agency's logo, uploaded rather than linked.
+--
+-- logo_url has always been a link to wherever the logo already lived on the
+-- agency's own site. That is fine for an agency that has a site and a hard
+-- first task for one that does not: "go and find somewhere to host a PNG" is a
+-- poor thing to ask somebody on their first morning, and a link to somebody
+-- else's server breaks the day they tidy it up.
+--
+-- So the picture can live in the private bucket instead, exactly as a group's
+-- hero picture does, and be served through the Worker. This column holds the
+-- object, so the old one can be removed when a new one replaces it. logo_url
+-- still holds the address, which is what every branded page already reads, and
+-- a pasted link still works and leaves this NULL.
+ALTER TABLE agencies ADD COLUMN logo_key TEXT;
