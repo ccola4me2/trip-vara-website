@@ -559,7 +559,9 @@ async function noticesFor(env, user, scope) {
   const unanswered = await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM clients c
       WHERE ${fresh.sql}
-        AND ((c.lead_stage = 'new' AND c.lead_next_step_on IS NULL)
+        -- Every new form lead is given a hello step for the next day, so a date does not mean somebody has been dealt
+        -- with. Stage is what says that: New has not been answered, whatever date it carries.
+        AND (c.lead_stage = 'new'
           OR (c.lead_stage = 'contacted' AND c.lead_next_step_on IS NOT NULL AND c.lead_next_step_on <= ?))
         AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.client_id = c.id AND b.status IN ('booked', 'travelled'))`
   ).bind(...fresh.binds, isoDay(0)).first().catch(() => null);
