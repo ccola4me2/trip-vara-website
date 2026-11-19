@@ -435,6 +435,7 @@ import {
   handleMonth,
 } from './reports.js';
 import { handleAttribution } from './attribution.js';
+import { handleConfirmationUpdate } from './confirmupdate.js';
 import { handleListReviews, handleAskReview } from './reviews.js';
 import {
   handleListAdvisors,
@@ -839,6 +840,7 @@ async function routeApi(request, env, path, method) {
   const myTplMatch = path.match(/^\/api\/form-templates\/([^/]+)$/);
   const itinMatch = path.match(/^\/api\/bookings\/([^/]+)\/itinerary$/);
   const itinConfMatch = path.match(/^\/api\/bookings\/([^/]+)\/confirmation$/);
+  const confUpdateMatch = path.match(/^\/api\/bookings\/([^/]+)\/confirmation-update$/);
   const itinItemMatch = path.match(/^\/api\/bookings\/([^/]+)\/itinerary\/([^/]+)$/);
   const itinShareMatch = path.match(/^\/api\/bookings\/([^/]+)\/itinerary-shared$/);
   const itinUseMatch = path.match(/^\/api\/bookings\/([^/]+)\/itinerary\/from-library$/);
@@ -1284,6 +1286,7 @@ async function routeApi(request, env, path, method) {
     return handleShareItinerary(request, env, itinShareMatch[1]);
   }
   if (itinConfMatch && method === 'POST') return handleReadItineraryConfirmation(request, env, itinConfMatch[1]);
+  if (confUpdateMatch && method === 'POST') return handleConfirmationUpdate(request, env, confUpdateMatch[1]);
   if (itinMatch && method === 'GET') return handleListItinerary(request, env, itinMatch[1]);
   if (itinMatch && method === 'POST') return handleSaveItem(request, env, itinMatch[1], null);
   if (itinItemMatch && method === 'PUT') {
