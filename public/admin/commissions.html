@@ -451,8 +451,21 @@ let all = null;
 let allOpen = null;
 const allSort = { key: 'back', dir: 1 };
 const allFilter = { q: '', advisor: '', vendor: '', state: '', from: '', to: '' };
-const STATE_LABEL = { unpaid: 'Nothing received', short: 'Paid short', settled: 'Settled', over: 'Overpaid' };
-const STATE_BADGE = { unpaid: 'badge-amber', short: 'badge-red', settled: 'badge-green', over: 'badge-navy' };
+const STATE_LABEL = { unpaid: 'Nothing received', short: 'Paid short', bonus: 'Bonus to come', settled: 'Settled', over: 'Overpaid' };
+const STATE_BADGE = { unpaid: 'badge-amber', short: 'badge-red', bonus: 'badge-amber', settled: 'badge-green', over: 'badge-navy' };
+
+/**
+ * The state a reservation is shown in.
+ *
+ * Paid short is for a vendor who paid less than the commission on the fare. A reservation whose commission is all in and whose
+ * only open part is a bonus is not short: nothing was underpaid, a bonus is still on its way.
+ */
+function stateOf(r) {
+  const o = r.outstanding_by_kind || {};
+  return r.settlement === 'short' && !o.base && !o.package && o.bonus > 0 ? 'bonus' : r.settlement;
+}
+const stateLabel = (r) => (stateOf(r) === 'bonus'
+  ? `Bonus ${money((r.outstanding_by_kind || {}).bonus)} to come` : (STATE_LABEL[r.settlement] || r.settlement || ''));
 
 async function loadAll() {
   try {
@@ -469,7 +482,9 @@ function allRows() {
     if (allFilter.vendor && r.supplier !== allFilter.vendor) return false;
     if (allFilter.state === 'hold') { if (!onHold(r)) return false; }
     else if (allFilter.state === 'due') { if (!(r.due_cents > 0)) return false; }
-    else if (allFilter.state && r.settlement !== allFilter.state) return false;
+    // Settled includes the ones only waiting on a bonus: the commission itself is in and paid.
+    else if (allFilter.state === 'settled') { if (stateOf(r) !== 'settled' && stateOf(r) !== 'bonus') return false; }
+    else if (allFilter.state && stateOf(r) !== allFilter.state) return false;
     if (allFilter.from && (r.depart_date || '') < allFilter.from) return false;
     if (allFilter.to && (r.depart_date || '9999') > allFilter.to) return false;
     if (q) {
@@ -541,7 +556,7 @@ function allBody() {
       <td>${r.depart_date ? `${esc(dateFmt(safeOn(r.depart_date)))}${onHold(r) ? ' <span class="badge badge-amber">hold</span>' : ''}` : ''}</td>
       <td class="r cd-money">${money(r.commission_cents)}</td>
       <td class="r cd-money">${money(r.received_cents)}</td>
-      <td><span class="badge ${STATE_BADGE[r.settlement] || ''}">${esc(STATE_LABEL[r.settlement] || r.settlement)}</span></td>
+      <td><span class="badge ${STATE_BADGE[stateOf(r)] || ''}">${esc(stateLabel(r))}</span></td>
       <td class="r cd-money">${money(r.payout_cents)}</td>
       <td class="r cd-money">${money(r.paid_out_cents)}</td>
       <td class="r cd-money"><strong>${money(Math.max(r.due_cents, 0))}</strong></td>
@@ -569,7 +584,7 @@ function drawAll() {
     <div><label for="af-vendor">Vendor</label><select id="af-vendor" data-af="vendor">${opt(vendors, allFilter.vendor)}</select></div>
     <div><label for="af-state">Status</label><select id="af-state" data-af="state">
       <option value="">All</option>
-      ${[['unpaid', 'Nothing received'], ['short', 'Paid short'], ['settled', 'Settled'], ['over', 'Overpaid'], ['due', 'Still due to an advisor'], ['hold', 'Held until 30 days before sailing']].map(([k, l]) =>
+      ${[['unpaid', 'Nothing received'], ['short', 'Paid short'], ['bonus', 'Bonus to come'], ['settled', 'Settled (includes bonus to come)'], ['over', 'Overpaid'], ['due', 'Still due to an advisor'], ['hold', 'Held until 30 days before sailing']].map(([k, l]) =>
     `<option value="${k}"${allFilter.state === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
     <div><label for="af-from">Sails from</label><input id="af-from" data-af="from" type="date" value="${esc(allFilter.from)}"></div>
     <div><label for="af-to">Sails to</label><input id="af-to" data-af="to" type="date" value="${esc(allFilter.to)}"></div>
@@ -588,7 +603,7 @@ function downloadAll() {
   const head = ['Client', 'Advisor', 'Vendor', 'Ship', 'Confirmation', 'Sails', 'Safe to pay from', 'Returns', 'Expected', 'Received', 'Status',
     'Split to advisor %', 'Advisor share of received', 'Paid out', 'Still due to advisor', 'Agency keeps'];
   const lines = [head.join(',')].concat(rows.map((r) => [r.client_name, r.advisor_name, r.supplier, r.product_name, r.confirmation_number,
-    r.depart_date, safeOn(r.depart_date) || '', r.return_date, dollars(r.commission_cents), dollars(r.received_cents), STATE_LABEL[r.settlement] || r.settlement,
+    r.depart_date, safeOn(r.depart_date) || '', r.return_date, dollars(r.commission_cents), dollars(r.received_cents), stateLabel(r),
     r.split_pct, dollars(r.payout_cents), dollars(r.paid_out_cents), dollars(Math.max(r.due_cents, 0)),
     dollars(r.agency_received_cents)].map(csvCell).join(',')));
   const href = URL.createObjectURL(new Blob([`${lines.join('\n')}\n`], { type: 'text/csv' }));
@@ -837,7 +852,7 @@ function reportData() {
     return { cols: [['name', 'Reservation', 'text'], ['advisor', 'Advisor', 'text'], ['vendor', 'Vendor', 'text'], ['state', 'Status', 'text'],
       ['expected', 'Expected', 'money'], ['received', 'Received', 'money'], ['variance', 'Difference', 'money']],
     rows: rows.filter((r) => r.settlement === 'short' || r.settlement === 'over').map((r) => ({
-      name: r.client_name, advisor: r.advisor_name, vendor: r.supplier, state: STATE_LABEL[r.settlement], expected: r.commission_cents,
+      name: r.client_name, advisor: r.advisor_name, vendor: r.supplier, state: stateLabel(r), expected: r.commission_cents,
       received: r.received_cents, variance: r.variance_cents })) };
   }
   return { cols: [['name', 'Received', 'text'], ['vendor', 'Vendor', 'text'], ['number', 'Check number', 'text'], ['statement', 'Check total', 'money'],
