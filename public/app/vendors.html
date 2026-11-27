@@ -135,6 +135,10 @@
         <div class="card-head">
           <input id="search" type="search" placeholder="Search suppliers or managers"
             aria-label="Search vendors" style="width:20rem;max-width:100%;">
+        <select id="sort" aria-label="Order" style="width:auto;">
+          <option value="default">Most business first</option>
+          <option value="name">A to Z</option>
+        </select>
           <div class="toolbar" style="margin:0;padding:0;">
             <button class="btn btn-ghost btn-sm" id="import-open" hidden>Import a list</button>
             <button class="btn btn-primary btn-sm" id="add-vendor">Add a vendor</button>
@@ -178,6 +182,20 @@ const err = document.getElementById('err');
 const panel = document.getElementById('panel');
 const rail = document.getElementById('rail');
 const search = document.getElementById('search');
+// The order, remembered between visits, the same as the Clients page. Somebody
+// who reads down a list alphabetically does it every day, and being put back
+// to the default each morning is the sort of small daily annoyance nobody
+// bothers to report.
+const SORT_KEY = 'tv.vendors.sort';
+const sortPicker = document.getElementById('sort');
+try {
+  if (localStorage.getItem(SORT_KEY) === 'name') sortPicker.value = 'name';
+} catch { /* private window, or storage turned off. The default is fine. */ }
+sortPicker.addEventListener('change', () => {
+  try { localStorage.setItem(SORT_KEY, sortPicker.value); } catch { /* see above */ }
+  load();
+});
+
 const dlg = document.getElementById('dlg');
 const form = document.getElementById('vendor-form');
 
@@ -671,7 +689,8 @@ async function load({ keepScroll = false } = {}) {
   const at = keepScroll ? window.scrollY : 0;
   try {
     const q = search.value.trim();
-    const params = [advisorParam(), q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean);
+    const params = [advisorParam(), q ? `q=${encodeURIComponent(q)}` : '',
+      sortPicker.value === 'name' ? 'sort=name' : ''].filter(Boolean);
     const data = await api(`/api/vendors${params.length ? '?' + params.join('&') : ''}`);
     truncated = Boolean(data.truncated);
     mountScopePicker(document.getElementById('scope'), data, load);

@@ -4891,8 +4891,43 @@ async function main() {
     check((still.data?.clients || []).length >= 2, 'and the clients are all still there',
       String((still.data?.clients || []).length));
 
-    for (const c of [zed, ayy]) {
-      await call(advisor, 'DELETE', `/api/clients/${c.data.client.id}`);
+    // The same question of the other two lists that are read down rather than
+    // searched. Leads order by what is due, vendors by how much business, and
+    // both are the wrong answer to "where is the one beginning with B".
+    const leadZ = await call(advisor, 'POST', '/api/leads',
+      { name: `Zzz Lead ${stamp}`, source: 'Referral' });
+    const leadA = await call(advisor, 'POST', '/api/leads',
+      { name: `Aaa Lead ${stamp}`, source: 'Referral' });
+    check(leadZ.status === 201 && leadA.status === 201, 'two leads at opposite ends',
+      `${leadZ.status} ${leadA.status}`);
+    const leadsAZ = await call(advisor, 'GET', `/api/leads?sort=name&q=${encodeURIComponent(stamp)}`);
+    // The board hands back leads grouped by stage, so they have to be flattened
+    // before the order within a stage can be read.
+    const leadNames = (leadsAZ.data?.stages || [])
+      .flatMap((st) => st.leads || []).map((l) => l.name)
+      .filter((n) => n && n.includes(stamp));
+    check(leadsAZ.status === 200, 'the lead board answers when asked for A to Z',
+      `status ${leadsAZ.status}`);
+    check(leadNames.indexOf(`Aaa Lead ${stamp}`) < leadNames.indexOf(`Zzz Lead ${stamp}`),
+      'and the leads come back in order', leadNames.join(' | '));
+
+    const vendZ = await call(advisor, 'POST', '/api/vendors', { name: `Zzz Vendor ${stamp}` });
+    const vendA = await call(advisor, 'POST', '/api/vendors', { name: `Aaa Vendor ${stamp}` });
+    check(vendZ.data?.id && vendA.data?.id, 'two vendors at opposite ends',
+      `${vendZ.status} ${vendA.status}`);
+    const vendAZ = await call(advisor, 'GET', `/api/vendors?sort=name&q=${encodeURIComponent(stamp)}`);
+    const vendNames = (vendAZ.data?.vendors || []).map((v) => v.name);
+    check(vendAZ.status === 200, 'the directory answers when asked for A to Z',
+      `status ${vendAZ.status}`);
+    check(vendNames.indexOf(`Aaa Vendor ${stamp}`) < vendNames.indexOf(`Zzz Vendor ${stamp}`),
+      'and the vendors come back in order', vendNames.join(' | '));
+
+    for (const v of [vendZ, vendA]) {
+      await call(advisor, 'DELETE', `/api/vendors/${v.data.id}`);
+    }
+    for (const c of [zed, ayy, leadZ, leadA]) {
+      const id = c.data?.client?.id || c.data?.lead?.id;
+      if (id) await call(advisor, 'DELETE', `/api/clients/${id}`);
     }
   }
 

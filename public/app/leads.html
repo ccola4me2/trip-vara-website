@@ -28,6 +28,10 @@
       <div class="toolbar" style="margin:0;">
         <span id="scope"></span>
         <input id="q" type="search" placeholder="Search" style="width:11rem;">
+        <select id="sort" aria-label="Order" style="width:auto;">
+          <option value="default">What is due first</option>
+          <option value="name">A to Z</option>
+        </select>
         <select id="view" aria-label="How to show them" style="width:auto;">
           <option value="board">Board</option>
           <option value="list">List</option>
@@ -144,6 +148,20 @@ const err = document.getElementById('err');
 const dlg = document.getElementById('dlg');
 const q = document.getElementById('q');
 const view = document.getElementById('view');
+// The order, remembered between visits, the same as the Clients page. Somebody
+// who reads down a list alphabetically does it every day, and being put back
+// to the default each morning is the sort of small daily annoyance nobody
+// bothers to report.
+const SORT_KEY = 'tv.leads.sort';
+const sortPicker = document.getElementById('sort');
+try {
+  if (localStorage.getItem(SORT_KEY) === 'name') sortPicker.value = 'name';
+} catch { /* private window, or storage turned off. The default is fine. */ }
+sortPicker.addEventListener('change', () => {
+  try { localStorage.setItem(SORT_KEY, sortPicker.value); } catch { /* see above */ }
+  load();
+});
+
 let data = null;
 let editing = null;
 
@@ -613,6 +631,7 @@ async function load() {
     const params = [];
     if (q.value.trim()) params.push(`q=${encodeURIComponent(q.value.trim())}`);
     if (advisorParam()) params.push(advisorParam());
+    if (sortPicker.value === 'name') params.push('sort=name');
     data = await api(`/api/leads${params.length ? `?${params.join('&')}` : ''}`);
     mountScopePicker(document.getElementById('scope'), data, load);
     render();

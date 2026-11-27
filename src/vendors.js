@@ -98,6 +98,22 @@ export async function resolveVendor(env, userId, name) {
   return row ? row.id : null;
 }
 
+/**
+ * How the supplier directory is ordered.
+ *
+ * `business` is the default: who you have sold the most of, then by name. That
+ * puts the vendors you actually use at the top, which is right for a page you
+ * open to look something up in a hurry.
+ *
+ * `name` is for the other use of a directory, reading down it to see who is in
+ * there. A directory is supposed to list everything, so being able to read it
+ * in order matters more here than on most pages.
+ */
+const VENDOR_SORTS = {
+  business: 'gross_cents DESC, v.name COLLATE NOCASE ASC',
+  name: 'v.name COLLATE NOCASE ASC',
+};
+
 export async function handleListVendors(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
@@ -118,6 +134,7 @@ export async function handleListVendors(request, env) {
   // any advisor opening this page read what every other advisor had earned. An
   // owner sees everything and may narrow to one advisor; an advisor sees their
   // own and nobody else's, which is scopeFor's rule on every other screen.
+  const sort = new URL(request.url).searchParams.get('sort') === 'name' ? 'name' : 'business';
   const scope = db.agencyScope(user);
   const scoped = db.scopeWhere(scope, 'v.user_id');
   const viewing = db.scopeFor(env, user, request);
@@ -154,7 +171,7 @@ export async function handleListVendors(request, env) {
               AND b.status IN ('quoted','booked') AND b.final_payment_due IS NULL) AS undated
        FROM vendors v
       WHERE ${scoped.sql}${narrow}
-      ORDER BY gross_cents DESC, v.name ASC LIMIT ?`
+      ORDER BY ${VENDOR_SORTS[sort] || VENDOR_SORTS.business} LIMIT ?`
     // One over the cap, so a truncated list can be reported as truncated. This
     // page is a directory: it is supposed to list everything, and a silent cut
     // meant a vendor could be added and simply not appear. Found by adding one.

@@ -65,6 +65,23 @@ function shape(r) {
   };
 }
 
+/**
+ * How the lead board is ordered.
+ *
+ * `due` is the default and the reason this page is a worklist: whatever has a
+ * next step date first, soonest, then the newest lead.
+ *
+ * `name` means plainly that. Somebody who asks for alphabetical is reading
+ * down a list rather than working it, and keeping half the old order on top of
+ * theirs would be a worse answer than either one. Unlike the Clients page
+ * there is nothing pinned to hold above it: a next step date is data, not
+ * somebody saying "always show me this one first".
+ */
+const LEAD_SORTS = {
+  due: 'c.lead_next_step_on IS NULL ASC, c.lead_next_step_on ASC, c.lead_at DESC',
+  name: 'c.name COLLATE NOCASE ASC',
+};
+
 export async function handleLeadBoard(request, env) {
   const { user, response } = await requireUser(request, env);
   if (response) return response;
@@ -73,6 +90,7 @@ export async function handleLeadBoard(request, env) {
   const scope = db.scopeFor(env, user, request);
   const scoped = db.scopeWhere(scope, 'c.user_id');
   const query = clean(url.searchParams.get('q'), 80);
+  const sort = url.searchParams.get('sort') === 'name' ? 'name' : 'due';
 
   const binds = [...scoped.binds];
   let search = '';
@@ -97,7 +115,7 @@ export async function handleLeadBoard(request, env) {
               WHERE b.client_id = c.id AND b.status IN ('booked','travelled')) AS trips
        FROM clients c
       WHERE ${scoped.sql} AND c.lead_stage IS NOT NULL ${search}
-      ORDER BY c.lead_next_step_on IS NULL ASC, c.lead_next_step_on ASC, c.lead_at DESC
+      ORDER BY ${LEAD_SORTS[sort] || LEAD_SORTS.due}
       LIMIT 500`
   ).bind(...binds).all();
 
