@@ -32,6 +32,10 @@
         <input id="q" type="search" placeholder="Name, email or phone" style="min-width:240px;">
         <label style="display:flex;align-items:center;gap:.4rem;font-weight:400;">
           <input type="checkbox" id="pinned-only" style="width:auto;"> Pinned only</label>
+        <select id="sort" aria-label="Order" style="width:auto;">
+          <option value="value">Most valuable first</option>
+          <option value="name">A to Z</option>
+        </select>
       </div>
       <div id="picked"></div>
       <section class="card" id="panel"><p class="spinner">Loading clients...</p></section>
@@ -193,6 +197,16 @@ const panel = document.getElementById('panel');
 const err = document.getElementById('err');
 const q = document.getElementById('q');
 const pinnedOnly = document.getElementById('pinned-only');
+
+// The order, remembered between visits. Somebody who works down the book
+// alphabetically does it every day, and being put back to most valuable each
+// morning is the kind of small daily annoyance nobody bothers to report.
+const SORT_KEY = 'tv.clients.sort';
+const sortPicker = document.getElementById('sort');
+try {
+  const kept = localStorage.getItem(SORT_KEY);
+  if (kept === 'name' || kept === 'value') sortPicker.value = kept;
+} catch { /* private window, or storage turned off. The default is fine. */ }
 let timer = null;
 
 const short = (iso) => (iso ? dateFmt(iso).replace(/,? \d{4}$/, '') : '-');
@@ -439,6 +453,7 @@ async function load() {
     const params = [];
     if (q.value.trim()) params.push(`q=${encodeURIComponent(q.value.trim())}`);
     if (pinnedOnly.checked) params.push('pinned=1');
+    if (sortPicker.value === 'name') params.push('sort=name');
     if (advisorParam()) params.push(advisorParam());
     const d = await api(`/api/clients${params.length ? '?' + params.join('&') : ''}`);
     mountScopePicker(document.getElementById('scope'), d, load);
@@ -594,6 +609,10 @@ houseForm.addEventListener('submit', async (e) => {
 
 q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 200); });
 pinnedOnly.addEventListener('change', load);
+sortPicker.addEventListener('change', () => {
+  try { localStorage.setItem(SORT_KEY, sortPicker.value); } catch { /* see above */ }
+  load();
+});
 await load();
 await drawDupes();
 // From the New menu in the sidebar.

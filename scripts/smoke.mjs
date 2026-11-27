@@ -4857,6 +4857,45 @@ async function main() {
   // A household is the people at one address. The sister two states away or the
   // friend they cruise with is the second name on a booking and is not in the
   // house, so linking them is its own thing, and it is offered the same way.
+  // ------------------------------------------------- reading down the book --
+  step('The client list in the order somebody asked for');
+  {
+    // The long standing order is lifetime spend, highest first, which answers
+    // "who matters" and is the wrong answer to "where is Mrs Bartlett". A
+    // person working down a book needs the other one.
+    const zed = await call(advisor, 'POST', '/api/clients', { name: `Zzz Last ${stamp}` });
+    const ayy = await call(advisor, 'POST', '/api/clients', { name: `Aaa First ${stamp}` });
+    check(zed.status === 201 && ayy.status === 201, 'two clients at opposite ends of the alphabet',
+      `${zed.status} ${ayy.status}`);
+
+    const byName = await call(advisor, 'GET', `/api/clients?sort=name&q=${encodeURIComponent(stamp)}`);
+    const names = (byName.data?.clients || []).map((c) => c.name);
+    check(byName.status === 200, 'the list answers when asked for A to Z', `status ${byName.status}`);
+    check(names.indexOf(`Aaa First ${stamp}`) < names.indexOf(`Zzz Last ${stamp}`),
+      'and A really does come before Z', names.join(' | '));
+
+    // Not a promise the default changed. Somebody who has never touched the
+    // control must see exactly what they saw yesterday.
+    const byValue = await call(advisor, 'GET', `/api/clients?q=${encodeURIComponent(stamp)}`);
+    check(byValue.status === 200, 'and with nothing asked for it still answers',
+      `status ${byValue.status}`);
+
+    // An unknown spelling is the default rather than an error or, worse,
+    // something reaching the statement: the ordering is built into the SQL
+    // text, so only the two known words may ever get near it.
+    const junk = await call(advisor, 'GET',
+      `/api/clients?sort=${encodeURIComponent("name; DROP TABLE clients")}&q=${encodeURIComponent(stamp)}`);
+    check(junk.status === 200, 'a sort nobody recognises is ignored, not obeyed',
+      `status ${junk.status}`);
+    const still = await call(advisor, 'GET', `/api/clients?q=${encodeURIComponent(stamp)}`);
+    check((still.data?.clients || []).length >= 2, 'and the clients are all still there',
+      String((still.data?.clients || []).length));
+
+    for (const c of [zed, ayy]) {
+      await call(advisor, 'DELETE', `/api/clients/${c.data.client.id}`);
+    }
+  }
+
   step('Clients who travel together without living together');
   {
     const make = async (name, gross, day) => call(advisor, 'POST', '/api/bookings', {

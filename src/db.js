@@ -2288,7 +2288,26 @@ export async function clientStats(env, scope, { query, pinnedOnly } = {}) {
 
 /**
  */
-export async function listClients(env, scope, { query, pinnedOnly, limit } = {}) {
+/**
+ * How the Clients page is ordered.
+ *
+ * `value` is the long standing default and stays it: the people who have spent
+ * the most, first. That answers "who matters" and is the wrong answer to
+ * "where is Mrs Bartlett", which is what somebody working down a list is
+ * actually asking.
+ *
+ * Pinned clients lead either way, because that is the whole of what pinning is
+ * for, and sorting them in with everybody else would make the pin do nothing.
+ *
+ * NOCASE so that a lower case surname files with its own letter rather than
+ * after Z, which is what a plain comparison does and what nobody expects.
+ */
+const CLIENT_SORTS = {
+  value: 'lifetime_cents DESC',
+  name: 'c.name COLLATE NOCASE ASC',
+};
+
+export async function listClients(env, scope, { query, pinnedOnly, limit, sort } = {}) {
   const scoped = scopeWhere(scope, 'c.user_id');
   const where = [scoped.sql];
   const binds = [...scoped.binds];
@@ -2317,7 +2336,7 @@ export async function listClients(env, scope, { query, pinnedOnly, limit } = {})
             (SELECT h.name FROM households h WHERE h.id = c.household_id) AS household_name
        FROM clients c
       WHERE ${where.join(' AND ')}
-      ORDER BY c.pinned_at IS NULL ASC, c.pinned_at ASC, lifetime_cents DESC
+      ORDER BY c.pinned_at IS NULL ASC, c.pinned_at ASC, ${CLIENT_SORTS[sort] || CLIENT_SORTS.value}
       LIMIT ?`
   ).bind(...binds, takeWithProbe(limit, CLIENT_CAP)).all();
   return results || [];

@@ -36,10 +36,15 @@ export async function handleListClients(request, env) {
   // over the same filtered set the list uses, and reading the parameter twice
   // is how the two quietly come apart.
   const pinnedOnly = url.searchParams.get('pinned') === '1';
+  // Only ever one of the two spellings the query knows. Anything else falls
+  // through to the default rather than reaching the statement, because the
+  // ordering is built into the SQL text rather than bound to it.
+  const sort = url.searchParams.get('sort') === 'name' ? 'name' : 'value';
   const clients = await db.listClients(env, scope, {
     limit: url.searchParams.get('limit'),
     query,
     pinnedOnly,
+    sort,
   });
   // One row past the cap, so the page can say it was cut. Filtering a list
   // that is already short is how a search for somebody who exists comes back
